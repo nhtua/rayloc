@@ -7,7 +7,7 @@ scaffold. The CLI supports help and version output; scanning, configuration
 loading, reporting, and hook management are planned and are not implemented yet.
 The features and usage examples below describe the intended behavior.
 
-`rayloc` (derived from the Vietnamese *rây lọc* — a fine-mesh strainer) is an ultra-fast, zero-dependency secret scanner built in Rust. Designed to run seamlessly as a git `pre-commit` hook or CI step, it catches passwords, API keys, access tokens, and high-entropy strings **before** they land in your git history.
+`rayloc` (derived from the Vietnamese *rây lọc* — a fine-mesh strainer) is a secret scanner being built in Rust for fast local scans. Designed to run as a git `pre-commit` hook or CI step, it aims to catch passwords, API keys, access tokens, and context-associated high-entropy strings **before** they land in your git history.
 
 Unlike coarse filters, `rayloc` lets smooth code flow through while trapping microscopic security risks.
 
@@ -15,38 +15,35 @@ Unlike coarse filters, `rayloc` lets smooth code flow through while trapping mic
 
 ## Features
 
-- 🏎️ **Blazing Fast**: Written in Rust using parallel multi-threaded scanning (`rayon`) and pre-compiled RegexSets. Scans pre-commit diffs in under 5ms.
+- 🏎️ **Fast Scanning**: Planned parallel scanning (`rayon`) and regexes compiled once per process. Under 5ms for small staged scans is a stretch goal; end-to-end performance has not been measured yet.
 - 🎯 **Targeted Git Diff Mode**: Scans only added lines in staged changes or git diffs—ignoring existing codebase noise and deleted lines.
 - 🔒 **Auto-Redaction**: Safe by default. Output automatically masks detected secrets in terminal logs so sensitive data is never printed or exposed in CI logs.
-- 📦 **Single Executable**: Distributed as a standalone binary. Download, place in your `PATH` or `.git/hooks/`, and run. Zero runtime dependencies.
-- 📝 **Flexible Configuration**: Full support for `.rayloc.yaml` custom rules/entropy settings and `.raylocignore` files using standard `.gitignore` glob syntax.
+- 📦 **Single Executable**: Planned standalone binaries with no extra language runtime. Git modes and hook management require Git to be installed.
+- 📝 **Flexible Configuration**: Planned `.rayloc.yaml` custom rules/entropy settings and `.raylocignore` files using standard `.gitignore` syntax.
+
+Detection and performance contracts are described in the
+[technical design](technical-design.md), with evidence and experiments in the
+[design validation report](docs/research/technical-design-validation.md).
 
 ---
 
 ## Installation
 
-### Option 1: Download Compiled Binary (Recommended)
-
-Download the latest pre-compiled single binary for your platform from GitHub Releases and add it to your path:
+Build the current scaffold from this checkout:
 
 ```bash
-# Linux / macOS
-curl -sSL [https://github.com/your-org/rayloc/releases/latest/download/rayloc-$(uname](https://github.com/your-org/rayloc/releases/latest/download/rayloc-$(uname) -s | tr '[:upper:]' '[:lower:]')-$(uname -m) -o rayloc
-chmod +x rayloc
-sudo mv rayloc /usr/local/bin/
+cargo build --release
+./target/release/rayloc --help
 ```
 
-### Option 2: Install via Cargo
-
-```bash
-cargo install rayloc
-```
+Standalone release downloads and registry installation are planned. The package
+currently has `publish = false`; scanning is not available in the built scaffold.
 
 ---
 
 ## Quick Start & Usage
 
-`rayloc` supports four primary scanning modes:
+`rayloc` is designed to support four primary scanning modes:
 
 ### 1. Git Diff Mode (Pre-Commit / Added Content Only)
 Scans only the staged changes queued for the next commit:
@@ -54,10 +51,13 @@ Scans only the staged changes queued for the next commit:
 rayloc scan --staged
 ```
 
-Scan diff against a target branch:
+Scan tracked working-tree changes against a commit or branch, including staged
+and unstaged changes (untracked files are excluded):
 ```bash
 rayloc scan --diff main
 ```
+
+This compares directly with `main`; it does not scan history or use a merge base.
 
 ### 2. Directory Mode
 Recursively scan an entire workspace or folder:
@@ -88,11 +88,12 @@ To automatically scan every commit before it occurs:
 rayloc hook install
 ```
 
-Or manually add the following line to your `.git/hooks/pre-commit`:
+Or manually integrate the following into your active Git `pre-commit` hook
+(Git may use a custom hooks directory):
 
 ```bash
 #!/bin/sh
-rayloc scan --staged
+exec rayloc scan --staged
 ```
 
 ---
@@ -106,7 +107,8 @@ Place a `.rayloc.yaml` file in your repository root to configure detection sensi
 ```yaml
 version: "1"
 
-# Global default Shannon entropy threshold (0.0 to 8.0)
+# Generic fallback entropy threshold in bits/byte (0.0 to 8.0).
+# Built-in alphabet thresholds are separate; provider rules bypass this gate.
 default_entropy_threshold: 4.5
 
 # Exclude common generated files by default
@@ -119,34 +121,41 @@ rules:
     entropy: 3.8
     severity: "High"
 
-  - id: generic-private-key
+  - id: custom-private-key-marker
     description: "Private Encryption Key Header"
-    regex: '-----BEGIN [A-Z ]+ PRIVATE KEY-----'
+    regex: '-----BEGIN (?:(?:RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----'
     severity: "Critical"
 
-  - id: slack-webhook
+  - id: custom-slack-webhook
     description: "Slack Incoming Webhook URL"
     regex: 'https://hooks\.slack\.com/services/T[a-zA-Z0-9_]+/B[a-zA-Z0-9_]+/[a-zA-Z0-9_]+'
     severity: "High"
 ```
 
+Custom rules add to built-ins and check entropy only when `entropy` is specified.
+The optional entropy gate measures the secret capture (the whole match by
+default). Custom regexes match individual physical lines in the initial design.
+
 ### Ignore Patterns (`.raylocignore`)
 
-`rayloc` respects both `.gitignore` and custom `.raylocignore` files. Use standard `.gitignore` syntax to exclude test fixtures, mock data, or vendor directories:
+Directory/glob scans apply repository `.gitignore` patterns to untracked paths;
+tracked files and explicitly selected files remain eligible. `.raylocignore`
+applies in every mode, including staged scans. Hidden files such as `.env` are
+included. Staged scans use policy from the index, so unstaged policy edits do not
+change their scope. Use explicit exclusions for intentional mock data:
 
 ```gitignore
 # Ignore test fixtures containing intentional mock keys
 tests/fixtures/**
 *.mock.json
 
-# Ignore binary data
-*.png
-*.wasm
-
-# Ignore vendor lockfiles
-Cargo.lock
-pnpm-lock.yaml
+# Explicit dependency-directory exclusion
+vendor/
 ```
+
+Exclusions reduce coverage and are counted in reports. Lockfiles and
+binary-looking content are not automatically safe to skip; raw-byte scanning
+does not imply archive extraction or UTF-16 decoding.
 
 ---
 
@@ -157,20 +166,25 @@ When `rayloc` detects a secret, it reports the file, line number, and rule match
 ```text
 ⚡ rayloc v0.1.0 — Secret Strainer Report
 
-[FAIL] Found 2 sensitive items in 1 file (scanned 4 staged lines in 3ms)
+[FAIL] Found 2 sensitive items in 1 file (scanned 4 staged lines)
 
   ❌ config/services.py:12
      ├─ Rule: AWS Secret Access Key [High]
-     ├─ Context: aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCY...****"
+     ├─ Value: [REDACTED]
      └─ Suggestion: Remove key and move to an environment variable.
 
   ❌ config/services.py:18
      ├─ Rule: High Entropy String [Medium]
      ├─ Entropy: 5.82 (Threshold: 4.50)
-     └─ Context: JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6I...****"
+     └─ Value: [REDACTED]
 
-[BLOCKED] Commit aborted. Clean secrets or run `git commit --no-verify` to override.
+[FAIL] Remove exposed credentials and store them outside source code.
 ```
+
+Values are fully masked and source lines are omitted by default. Standalone scans
+report findings; when run as a pre-commit hook, a nonzero status blocks the commit.
+Exit codes are 0 for a completed clean scan, 1 for findings, and 2 for execution,
+configuration, or incomplete-scan errors (including errors alongside findings).
 
 ---
 

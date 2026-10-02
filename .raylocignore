@@ -2,11 +2,9 @@
 .git/
 target/
 
-# Dependency directories and lockfiles
+# Explicit dependency-directory exclusions (these reduce scan coverage)
 node_modules/
 vendor/
-*.lock
-*.sum
 
 # Intentional synthetic test data
 tests/fixtures/**
