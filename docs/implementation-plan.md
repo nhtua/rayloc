@@ -14,18 +14,18 @@ package's completion gate.
 ## Current progress — 2026-10-02
 
 P3 is complete at `ebc63d2` after implementation, required verification, and an
-independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is next. P0–P2
+independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is complete at `7a5185e`; P5 is next. P0–P2
 foundation gaps tied to full-scope evaluation remain tracked below rather than
 being silently closed by the explicit-file delivery.
 
 | Package | Status | Implemented evidence | Remaining to close the package |
 | --- | --- | --- | --- |
-| P0 | Partial | [Decision note](development-decisions.md); OS-native CLI parser; bounded YAML/regex policy and validated dependency graph; temporary-file helpers; coverage gate; local Rust-1.85 checks | Scope/global resource decisions; complete controlled Git helpers; calibration/held-out partitions; successful native CI run |
+| P0 | Partial | [Decision note](development-decisions.md); OS-native CLI parser; bounded YAML/regex policy and validated dependency graph; separate calibration/held-out corpus; temporary-file helpers; coverage gate; local Rust-1.85 checks | Scope/global resource decisions; complete controlled Git helpers; successful native CI run |
 | P1 | Partial | Private redaction marker; safe source IDs and fixed errors; byte locations; severity/confidence; scan counters; exit precedence; partial/clean terminal reports; output leak tests | Configuration error boundary; exclusion/suppression counters; final multi-source ordering and safe metadata contracts as policy/scope are added |
 | P2 | Partial | Bounded regular-file/byte engine; core provider/PEM rules; CRLF/invalid-byte/buffer-boundary tests; >10 MB streaming and limit tests; executable engine benchmark | Shared custom-regex registry and compiler budgets (deferred to P3); broader resource measurements and fixture evaluation |
 | P3 | Complete | Strict bounded configuration/merge, compiled custom captures/entropy, file exclusions and CLI; fail-closed discovery; 59 stable/MSRV tests; independent re-review approved | — |
-| P4 | In progress | Fresh implementing sub-agent dispatched after P3 approval | Context, generic/password detection, JOSE validation, suppressions, and accuracy baseline |
-| P5 | Not started | — | Directory/glob policy, bounded parallel scanning, and deterministic global collection |
+| P4 | Complete | Context/password/JOSE/suppression detection; review fixes at `7a5185e`; 88 Rust tests +2 evaluator; coverage gates; independent re-review approved | One non-blocking opaque-token span minor recorded for final review |
+| P5 | In progress | Bounded-scope architecture researched; fresh implementer dispatched | Directory/glob policy, bounded parallel scanning, deterministic global collection and measurements |
 | P6 | Not started | — | Strict unified-patch parser and adversarial tests |
 | P7 | Not started | — | Pinned staged acquisition/policy and staged CLI |
 | P8 | Not started | — | Pinned reference-to-working-tree diff CLI |
@@ -45,7 +45,7 @@ and regions 1718/1751 (98.12%). Formatting, strict Clippy, benchmark and diff
 checks pass. The independent reviewer approved both discovery failure handling
 and the portable Unix output-error fixture. Native CI/full v1 evaluation remain open.
 
-**Next implementation work:** complete P4–P10 through implement/test/review/fix
+**Next implementation work:** complete P5–P10 through implement/test/review/fix
 gates. The explicit-file CLI is available; directory, glob, Git scan, and hook
 modes remain unavailable pending their packages. Package sub-agent evidence is
 summarized in [the implementation report](implementation-report.md).
@@ -285,7 +285,7 @@ unsupported target modes remain unavailable until their packages pass.
 
 ### P4 — Add context, entropy, scoped suppression, and JOSE coverage
 
-**Status:** In progress — fresh sub-agent implementing detection completeness after P3 approval.
+**Status:** Complete — `cda4344` plus `7a5185e` fixes; independent re-review approved. 88 Rust tests and 2 evaluator tests pass, actual Rust1.85 and required checks pass; functions100%, lines98.9910%, regions98.0769%. One non-blocking span minor is recorded for final review.
 
 Depends on P3. Work in entropy/context/JOSE modules and the registry. Reuse the
 entropy primitive and add alphabet precedence and the design's provisional class
@@ -320,7 +320,7 @@ thresholds as provisional until those results justify changes.
 
 ### P5 — Implement reproducible directory/glob scope and parallel scanning
 
-**Status:** Not started.
+**Status:** In progress — scope preflight completed, fresh implementing sub-agent dispatched.
 
 Depends on P4. Work in `config/ignore.rs`, scanner engine/controller, and CLI.
 Implement recursive directory and repository-relative glob modes, brace
