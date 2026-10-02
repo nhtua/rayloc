@@ -13,18 +13,18 @@ package's completion gate.
 
 ## Current progress — 2026-10-02
 
-Implementation baseline: commit `923400b` (`feat: implement dependency-free scanner
-foundation`). **We are in the P1/P2 library foundation, with P0 partially resolved.**
-No full package completion gate has been closed yet. The first useful delivery
-(P0–P3, including the explicit-file CLI) is still pending.
+P3 is complete at `ebc63d2` after implementation, required verification, and an
+independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is next. P0–P2
+foundation gaps tied to full-scope evaluation remain tracked below rather than
+being silently closed by the explicit-file delivery.
 
 | Package | Status | Implemented evidence | Remaining to close the package |
 | --- | --- | --- | --- |
-| P0 | Partial | [Decision note](development-decisions.md); OS-native CLI parser retained; zero external crates; temporary-file helpers; stable/MSRV CI workflow; coverage gate | Bounded YAML/custom-regex feasibility and budgets; scope/global resource decisions; controlled Git helpers; calibration/held-out partitions; successful MSRV/CI run |
+| P0 | Partial | [Decision note](development-decisions.md); OS-native CLI parser; bounded YAML/regex policy and validated dependency graph; temporary-file helpers; coverage gate; local Rust-1.85 checks | Scope/global resource decisions; complete controlled Git helpers; calibration/held-out partitions; successful native CI run |
 | P1 | Partial | Private redaction marker; safe source IDs and fixed errors; byte locations; severity/confidence; scan counters; exit precedence; partial/clean terminal reports; output leak tests | Configuration error boundary; exclusion/suppression counters; final multi-source ordering and safe metadata contracts as policy/scope are added |
 | P2 | Partial | Bounded regular-file/byte engine; core provider/PEM rules; CRLF/invalid-byte/buffer-boundary tests; >10 MB streaming and limit tests; executable engine benchmark | Shared custom-regex registry and compiler budgets (deferred to P3); broader resource measurements and fixture evaluation |
-| P3 | Not started | — | Strict configuration, custom rules/entropy gates, explicit-file exclusions, and `scan <file>` CLI |
-| P4 | Not started | — | Context, generic/password detection, JOSE validation, suppressions, and accuracy baseline |
+| P3 | Complete | Strict bounded configuration/merge, compiled custom captures/entropy, file exclusions and CLI; fail-closed discovery; 59 stable/MSRV tests; independent re-review approved | — |
+| P4 | In progress | Fresh implementing sub-agent dispatched after P3 approval | Context, generic/password detection, JOSE validation, suppressions, and accuracy baseline |
 | P5 | Not started | — | Directory/glob policy, bounded parallel scanning, and deterministic global collection |
 | P6 | Not started | — | Strict unified-patch parser and adversarial tests |
 | P7 | Not started | — | Pinned staged acquisition/policy and staged CLI |
@@ -39,11 +39,17 @@ Format, strict Clippy, tests, benchmark, and the coverage gate passed on Rust
 on GitHub; Rust 1.85 is not installed locally. The small warm engine benchmark is
 a development baseline, not evidence for the complete v1 performance targets.
 
-**Next implementation work:** resolve the remaining P0 policy/parser contracts,
-then implement P3 configuration/custom rules/ignore handling and expose the
-explicit-file CLI, closing the associated P1/P2 gaps. CLI scan and hook commands
-currently return 2; low-level library scanning does not discover policy.
-Update this table and the package status lines whenever implementation advances.
+Verified P3 final checks at `ebc63d2`: 59 tests pass on local stable and Rust
+1.85; production function coverage is 99/99 (100%), lines 1065/1072 (99.35%),
+and regions 1718/1751 (98.12%). Formatting, strict Clippy, benchmark and diff
+checks pass. The independent reviewer approved both discovery failure handling
+and the portable Unix output-error fixture. Native CI/full v1 evaluation remain open.
+
+**Next implementation work:** complete P4–P10 through implement/test/review/fix
+gates. The explicit-file CLI is available; directory, glob, Git scan, and hook
+modes remain unavailable pending their packages. Package sub-agent evidence is
+summarized in [the implementation report](implementation-report.md).
+Update this table and package status lines whenever implementation advances.
 
 User policy decisions and the remaining confirmation questions are tracked in
 [development decisions](development-decisions.md#user-decisions--2026-10-02).
@@ -252,7 +258,7 @@ behind P3 so discovered policy cannot be silently ignored.
 
 ### P3 — Load strict policy and expose the explicit-file CLI
 
-**Status:** Not started.
+**Status:** Complete — `f0729c4` implementation plus `ebc63d2` review fixes. Required checks and actual Rust-1.85 tests pass; independent scoped re-review approved with no open findings.
 
 Depends on P2 and the P0 parser decision. Work in `config/mod.rs`, `rules/mod.rs`,
 `rules/entropy.rs`, CLI/report modules, and explicit-file scanner exclusions. Discover repository-root
@@ -279,7 +285,7 @@ unsupported target modes remain unavailable until their packages pass.
 
 ### P4 — Add context, entropy, scoped suppression, and JOSE coverage
 
-**Status:** Not started.
+**Status:** In progress — fresh sub-agent implementing detection completeness after P3 approval.
 
 Depends on P3. Work in entropy/context/JOSE modules and the registry. Reuse the
 entropy primitive and add alphabet precedence and the design's provisional class
