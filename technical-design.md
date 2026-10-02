@@ -127,7 +127,10 @@ end-to-end scanner.
 
 ### Stage 2: structural signatures and the rule registry
 
-Compile a byte `RegexSet` and individual byte regexes with identical flags.
+Short built-in signatures may use bounded byte-prefix recognizers with the same
+boundary, capture, and fixture contracts, avoiding a dependency for simple
+formats. The first library implementation uses this approach. When configurable
+regex rules are introduced, compile a byte `RegexSet` and individual byte regexes with identical flags.
 The set identifies matching rule indexes; matching individual regexes then
 extract spans/captures. Structural matching examines whole physical lines so
 quote/token boundaries cannot hide embedded provider credentials.
@@ -143,7 +146,8 @@ sizes, reject empty matches, and test adversarial patterns. A universal one-pass
 The regex engine already accelerates suitable literals. Add a separate
 Aho-Corasick router only with benchmark evidence. It must not exclude unanchored
 or custom rules. User keywords are hints unless their necessity is proven from
-the pattern. Built-ins use `LazyLock`; custom rules compile once into an immutable
+the pattern. Built-in regexes use `LazyLock` and literal tables are static;
+custom rules compile once into an immutable
 runtime registry, before workers start.
 
 Each built-in includes ID, severity, confidence, secret capture, boundary checks,
@@ -449,7 +453,8 @@ and buffers are reduced after scanning. Sequential iterator bridging can limit
 discovery throughput and does not preserve order; measure it.
 [Rayon bridge behavior](https://docs.rs/rayon/latest/rayon/iter/trait.ParallelBridge.html)
 
-Proposed production dependencies: `regex`, `rayon`, `ignore`, `globset`, `serde`,
+Prefer short, correct standard-library implementations before adding crates.
+Candidate production dependencies where justified: `regex`, `rayon`, `ignore`, `globset`, `serde`,
 a selected YAML parser, and minimal Base64/JSON support for JOSE. Evaluate Clap
 against extending the current CLI parser. `memmap2`/direct `aho-corasick` are
 optional optimizations. The scaffold currently has no external crates. Pin a
@@ -459,7 +464,8 @@ Build Linux standalone distributions using an appropriate static musl target;
 verify actual dynamic dependencies. macOS/Windows use required native system
 libraries without an extra interpreter/runtime package. Binaries remain specific
 to OS/architecture. Git CLI is the initial backend; `git2`/libgit2 requires its own
-build/packaging justification. Publish installation commands only once matching
+build/packaging justification. Every production function needs tests; enforce
+>98% line/region coverage and complete function coverage. Publish installation commands only once matching
 release artifacts or a Cargo package exist.
 [Rust linkage reference](https://doc.rust-lang.org/reference/linkage.html)
 

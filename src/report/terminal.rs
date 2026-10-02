@@ -1,1 +1,56 @@
-//! Terminal rendering that must never print raw secrets (not implemented yet).
+//! Reports contain full masks and fixed metadata, with no source excerpts.
+
+use std::io::{self, Write};
+
+use crate::scanner::ScanOutcome;
+
+/// Render an outcome without receiving raw source bytes, paths, or child errors.
+pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
+    let status = match outcome.exit_code() {
+        0 => "CLEAN",
+        1 => "FINDINGS",
+        _ => "INCOMPLETE",
+    };
+    writeln!(output, "rayloc — {status}")?;
+    writeln!(
+        output,
+        "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} byte(s) read",
+        outcome.stats.findings_detected,
+        outcome.findings.len(),
+        outcome.stats.files_completed,
+        outcome.stats.files_attempted,
+        outcome.stats.lines_scanned,
+        outcome.stats.bytes_read,
+    )?;
+    writeln!(
+        output,
+        "Elapsed: {:.3} ms",
+        outcome.elapsed.as_secs_f64() * 1000.0
+    )?;
+    for finding in &outcome.findings {
+        let metadata = finding.rule.metadata();
+        writeln!(
+            output,
+            "\nsource #{}:{}:{}\nRule: {} ({})\nSeverity: {}; {}\nValue: {}",
+            finding.source_id,
+            finding.line,
+            finding.start_column,
+            metadata.description,
+            metadata.id,
+            metadata.severity,
+            metadata.confidence,
+            finding.value,
+        )?;
+    }
+    for error in &outcome.errors {
+        writeln!(output, "Error: {error}")?;
+    }
+    if !outcome.findings.is_empty() {
+        writeln!(output, "Remove exposed credentials from source code.")?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "../../tests/unit/terminal.rs"]
+mod tests;

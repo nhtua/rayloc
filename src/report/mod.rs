@@ -1,3 +1,3 @@
-//! Reporting of findings using redacted values only (not implemented yet).
+//! Reporting of safe findings using fully redacted values only.
 
 pub mod terminal;

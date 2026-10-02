@@ -1,7 +1,7 @@
 //! Core modules for the rayloc secret scanner.
 //!
-//! This package currently provides the project scaffold. Detection, configuration
-//! loading, and reporting will be implemented in the modules below.
+//! The library provides a bounded byte scanner, core provider signatures, and
+//! safe findings/reports. CLI scanning awaits configuration and scope policy.
 
 pub mod cli;
 pub mod config;

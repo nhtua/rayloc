@@ -2,10 +2,12 @@
 
 > **X-ray speed for your commits. Fine-sieve filtering for your codebase.**
 
-**Development status:** This repository currently contains the Rust project
-scaffold. The CLI supports help and version output; scanning, configuration
-loading, reporting, and hook management are planned and are not implemented yet.
-The features and usage examples below describe the intended behavior.
+**Development status:** The library now provides bounded byte/file scanning,
+core AWS/GitHub/Stripe/Slack/private-key signatures, fully redacted findings,
+and terminal reports, with no external crate dependencies. The CLI supports
+help and version output. CLI scans await configuration and ignore policy;
+directory/Git modes, context/entropy/JOSE validation, and hooks remain planned.
+The CLI usage examples below describe the intended behavior.
 
 `rayloc` (derived from the Vietnamese *rây lọc* — a fine-mesh strainer) is a secret scanner being built in Rust for fast local scans. Designed to run as a git `pre-commit` hook or CI step, it aims to catch passwords, API keys, access tokens, and context-associated high-entropy strings **before** they land in your git history.
 
@@ -24,12 +26,14 @@ Unlike coarse filters, `rayloc` lets smooth code flow through while trapping mic
 Detection and performance contracts are described in the
 [technical design](technical-design.md), with evidence and experiments in the
 [design validation report](docs/research/technical-design-validation.md).
+The [implementation plan](docs/implementation-plan.md) maps those contracts to
+dependency-ordered work packages and acceptance checks.
 
 ---
 
 ## Installation
 
-Build the current scaffold from this checkout:
+Build the current development version from this checkout:
 
 ```bash
 cargo build --release
@@ -37,7 +41,7 @@ cargo build --release
 ```
 
 Standalone release downloads and registry installation are planned. The package
-currently has `publish = false`; scanning is not available in the built scaffold.
+currently has `publish = false`; CLI scanning is not available in this build.
 
 ---
 
@@ -191,7 +195,7 @@ configuration, or incomplete-scan errors (including errors alongside findings).
 ## Development
 
 Requires Rust 1.85 or newer with Rustfmt and Clippy installed.
-The initial scaffold has no external crate dependencies.
+The current implementation has no external crate dependencies.
 
 ```bash
 cargo build
@@ -213,8 +217,24 @@ cargo test --all
 cargo bench
 ```
 
-The scaffold has no tests or scanning benchmarks yet; add them with the
-corresponding implementation.
+Run the coverage gate with Python 3 and compatible LLVM tools:
+
+```bash
+python3 scripts/coverage.py
+```
+
+The script measures production Rust code, including the executable entry point,
+requires >98% line/region coverage and 100% function coverage, and stores its
+report in `target/coverage/coverage.json`. It uses Rust's `llvm-tools-preview`
+component when installed; `LLVM_COV` and `LLVM_PROFDATA` can select compatible
+installed tools. Tests and benchmark drivers are excluded from production counts.
+CI checks stable Rust and Rust 1.85 with the coverage gate.
+
+Tests use synthetic credentials and exercise buffer boundaries, large files,
+invalid bytes, redaction, error/limit handling, and CLI output. `cargo bench` now
+runs a small core-engine benchmark; it does not measure complete v1 detection or
+end-to-end staged latency. See [tests](tests/README.md) and
+[benchmark guidance](benches/README.md).
 
 ## License
 

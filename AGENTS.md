@@ -77,6 +77,17 @@ When editing or extending `rayloc`, strict adherence to the following rules is r
 * **Exit 1**: Secrets detected (intercepts Git commit or CI build).
 * **Exit 2**: Execution/Configuration error (e.g., malformed `.rayloc.yaml`, unreadable files).
 
+### Rule 5: Tests, Coverage & Dependencies
+
+* Every production function must be exercised by tests, including formatters,
+  error paths, and the executable entry point.
+* Production coverage must exceed 98%. Run `python3 scripts/coverage.py`; it
+  requires >98% line and region coverage and 100% function coverage. Test helpers
+  and benchmark drivers are excluded; production code must not be excluded.
+* Prefer the Rust standard library for short, bounded implementations. Add an
+  external dependency only when the capability cannot be implemented shortly
+  and correctly, and record the justification. Avoid redundant libraries.
+
 ---
 
 ## 4. Development Workflow & Commands
@@ -95,6 +106,9 @@ cargo test --all
 
 # 4. Benchmark secret scanning speed against test fixtures
 cargo bench
+
+# 5. Enforce production coverage (>98% lines/regions, all functions exercised)
+python3 scripts/coverage.py
 ```
 
 ---
