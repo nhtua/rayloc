@@ -115,9 +115,6 @@ version: "1"
 # Built-in alphabet thresholds are separate; provider rules bypass this gate.
 default_entropy_threshold: 4.5
 
-# Exclude common generated files by default
-exclude_defaults: true
-
 rules:
   - id: custom-api-key
     description: "Company Internal API Token"
@@ -144,7 +141,9 @@ default). Custom regexes match individual physical lines in the initial design.
 
 Directory/glob scans apply repository `.gitignore` patterns to untracked paths;
 tracked files and explicitly selected files remain eligible. `.raylocignore`
-applies in every mode, including staged scans. Hidden files such as `.env` are
+applies afterward with higher priority in every mode, including staged scans.
+Generated/dependency directories are excluded through these ignore files, without
+automatic directory defaults. Hidden files such as `.env` are
 included. Staged scans use policy from the index, so unstaged policy edits do not
 change their scope. Use explicit exclusions for intentional mock data:
 

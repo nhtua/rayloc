@@ -2,5 +2,4 @@
 version: "1"
 # Generic fallback in bits/byte; provider rules do not inherit this gate.
 default_entropy_threshold: 4.5
-exclude_defaults: true
 rules: []

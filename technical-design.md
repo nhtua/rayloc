@@ -330,9 +330,10 @@ body-only PEM/split-token detection; full-file scans supplement diff mode.
 ## 5. Configuration and ignores
 
 Discover root `.rayloc.yaml` in Git; outside Git use the selected directory or an
-explicit file's parent. Do not inherit global scanner config silently. Proposed
-`--config` overrides discovery. CLI values override config, which overrides
-built-in defaults.
+explicit file's parent. Do not inherit global scanner config silently. Explicit
+`--config` merges over discovered configuration while retaining repository
+`.raylocignore`. CLI values override merged config, which overrides built-in
+defaults. Specify and test scalar/list/rule-ID merge precedence during P3.
 
 Version `"1"` preserves README fields. Reject unknown fields, duplicate YAML keys
 or rule IDs, invalid regex/globs, non-finite/out-of-range thresholds, invalid
@@ -344,7 +345,6 @@ and category without source excerpts.
 | `version` | Required schema ID `"1"` |
 | `default_entropy_threshold` | Generic other-byte fallback in [0, 8]; never an unconditional provider/custom gate |
 | `entropy_thresholds` (proposed) | Optional hex/alphanumeric/Base64 overrides, validated against alphabet maxima; generic length caps still apply |
-| `exclude_defaults` | Named generated/dependency path defaults; no blanket `*.lock`/`*.sum` exclusion |
 | `rules` | Custom additions to enabled built-ins |
 | `disabled_rules` (proposed) | Explicit known IDs; unknown IDs fail |
 | `rules[].entropy` | Optional captured-value gate; omission disables entropy for that rule |
@@ -367,7 +367,6 @@ do not automatically choose unmaintained `serde_yaml`.
 | --- | --- | --- | --- |
 | Repository `.gitignore` | Apply to discovered untracked paths; tracked remain eligible | Explicit selection overrides | Does not suppress tracked/index content |
 | `.raylocignore` | Apply | Apply; explain excluded scope | Apply as scanner policy |
-| Generated-directory defaults | Apply when enabled | Explicit selection overrides | Do not suppress tracked additions |
 | Global Git ignores / `.git/info/exclude` | Disabled for reproducibility | Disabled | Disabled |
 
 Git directory scans discover tracked paths in bounded metadata batches so Git
@@ -375,14 +374,19 @@ ignores cannot hide tracked `.env` files. The default `ignore` walker alone does
 not implement this distinction. Outside Git, local Git ignore patterns act as
 scanner exclusions. V1 `.raylocignore` is root-scoped with Git anchoring, order,
 negation, and directory semantics. Nested `.gitignore` follows Git precedence.
+Apply `.gitignore` first and higher-priority `.raylocignore` afterward; no
+automatic generated/dependency-directory exclusion layer is added.
 Scanner exclusions override Git whitelist rules. Later `.raylocignore` negations
 follow standard semantics; pruned parents must be re-included before descendants.
 
 Configure walker filters explicitly: include hidden files, do not follow symlinks,
-disable global/parent-outside-root ignores and unrelated `.ignore` files. Named
-default directories may include `target/`, `node_modules/`, and `vendor/`; lockfiles
-and all test directories are not automatically safe. Glob inclusion intersects
-scanner exclusions. Count deliberate exclusions; traversal/read errors fail.
+disable global/parent-outside-root ignores and unrelated `.ignore` files.
+Directories such as `target/`, `node_modules/`, and `vendor/` are excluded only
+through applicable ignore files; lockfiles and test directories are not
+automatically safe. Glob inclusion intersects
+scanner exclusions. Count regular-file glob matches before policy: all excluded
+matches return 0 with an explicit excluded-scope report, while no regular-file
+matches returns 2. Count deliberate exclusions; traversal/read errors fail.
 An ignored explicit file returns 0 with zero scanned files and an exclusion
 reason, never described as scanned clean. An explicit symlink/non-regular file
 returns 2; recursive traversal records these as excluded scope.
@@ -461,9 +465,12 @@ optional optimizations. The scaffold currently has no external crates. Pin a
 reviewed lockfile, test MSRV 1.85 with intended features, and measure binary size.
 
 Build Linux standalone distributions using an appropriate static musl target;
-verify actual dynamic dependencies. macOS/Windows use required native system
+verify actual dynamic dependencies. macOS uses required native system
 libraries without an extra interpreter/runtime package. Binaries remain specific
-to OS/architecture. Git CLI is the initial backend; `git2`/libgit2 requires its own
+to OS/architecture. V1 release targets are Linux and macOS; Windows is deferred.
+Prepare both release archives/checksums and a validated crates.io package; actual
+publication is a separate release action. Git CLI is the initial backend;
+`git2`/libgit2 requires its own
 build/packaging justification. Every production function needs tests; enforce
 >98% line/region coverage and complete function coverage. Publish installation commands only once matching
 release artifacts or a Cargo package exist.
@@ -472,8 +479,9 @@ release artifacts or a Cargo package exist.
 ## 8. Hook management
 
 Resolve active hooks through Git, including `core.hooksPath`, linked worktrees,
-and relative paths; `.git` may be a file. Shared/custom hook directories affecting
-other repositories require explicit selection. Default managed hook:
+and relative paths; `.git` may be a file. Invoking `rayloc hook install` selects
+Git's active directory, including configured custom/shared destinations, without
+another opt-in. Preserve unmanaged hooks. Default managed hook:
 
 ```sh
 #!/bin/sh
@@ -487,6 +495,10 @@ An unmanaged existing hook returns 2 with manual integration instructions; do
 not overwrite, silently chain, or delete it. Any future removal may remove only
 verified managed content. A missing scanner fails the commit. Installation does
 not override Git hook policy or guarantee every future commit is scanned.
+Also prepare an optional Python pre-commit framework integration using a Rust
+hook repository manifest; see [integration research](docs/research/pre-commit-integration.md).
+Framework installation and rayloc's direct installer have separate destination
+behavior, including the framework's current `core.hooksPath` limitation.
 [Git hook execution](https://git-scm.com/docs/githooks),
 [Git path resolution](https://git-scm.com/docs/git-rev-parse).
 

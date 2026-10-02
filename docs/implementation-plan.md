@@ -8,17 +8,53 @@ Build the scanner in dependency order: safe reporting and bounded file detection
 configuration and detection completeness, directory/glob scope, staged Git
 enforcement, reference diffs, then hook installation and release validation.
 Each package below has a concrete completion gate and can become a focused PR.
-The work packages describe v1 contracts. The progress note below identifies the
-implemented slice; remaining packages are planned.
+The work packages describe v1 contracts; partial implementation does not close a
+package's completion gate.
 
-Implementation has started with the P1/P2 library foundation: safe outcomes and
-redaction, bounded regular-file/byte scanning, core provider signatures, terminal
-reports, unit/integration tests, an executable engine benchmark, and a coverage
-gate/CI workflow. The program still has zero external crate dependencies. The
-[development decisions](development-decisions.md) record the standard-library
-approach and the user's >98% coverage/every-function testing requirements.
-CLI scanning remains reserved for P3 policy handling; P0 parser/platform decisions
-and the remaining detection/scope/Git/hook packages are still open.
+## Current progress — 2026-10-02
+
+Implementation baseline: commit `923400b` (`feat: implement dependency-free scanner
+foundation`). **We are in the P1/P2 library foundation, with P0 partially resolved.**
+No full package completion gate has been closed yet. The first useful delivery
+(P0–P3, including the explicit-file CLI) is still pending.
+
+| Package | Status | Implemented evidence | Remaining to close the package |
+| --- | --- | --- | --- |
+| P0 | Partial | [Decision note](development-decisions.md); OS-native CLI parser retained; zero external crates; temporary-file helpers; stable/MSRV CI workflow; coverage gate | Bounded YAML/custom-regex feasibility and budgets; scope/global resource decisions; controlled Git helpers; calibration/held-out partitions; successful MSRV/CI run |
+| P1 | Partial | Private redaction marker; safe source IDs and fixed errors; byte locations; severity/confidence; scan counters; exit precedence; partial/clean terminal reports; output leak tests | Configuration error boundary; exclusion/suppression counters; final multi-source ordering and safe metadata contracts as policy/scope are added |
+| P2 | Partial | Bounded regular-file/byte engine; core provider/PEM rules; CRLF/invalid-byte/buffer-boundary tests; >10 MB streaming and limit tests; executable engine benchmark | Shared custom-regex registry and compiler budgets (deferred to P3); broader resource measurements and fixture evaluation |
+| P3 | Not started | — | Strict configuration, custom rules/entropy gates, explicit-file exclusions, and `scan <file>` CLI |
+| P4 | Not started | — | Context, generic/password detection, JOSE validation, suppressions, and accuracy baseline |
+| P5 | Not started | — | Directory/glob policy, bounded parallel scanning, and deterministic global collection |
+| P6 | Not started | — | Strict unified-patch parser and adversarial tests |
+| P7 | Not started | — | Pinned staged acquisition/policy and staged CLI |
+| P8 | Not started | — | Pinned reference-to-working-tree diff CLI |
+| P9 | Not started | — | Managed hook installation and commit enforcement |
+| P10 | Not started | — | Full evaluation, supported-platform artifacts, and release gates |
+
+Verified locally for `923400b`: all 26 tests pass; production function coverage
+40/40 (100%), line coverage 402/402 (100%), and region coverage 571/573 (99.65%).
+Format, strict Clippy, tests, benchmark, and the coverage gate passed on Rust
+1.88.0. The stable/Rust-1.85 CI workflow is configured but has not yet been verified
+on GitHub; Rust 1.85 is not installed locally. The small warm engine benchmark is
+a development baseline, not evidence for the complete v1 performance targets.
+
+**Next implementation work:** resolve the remaining P0 policy/parser contracts,
+then implement P3 configuration/custom rules/ignore handling and expose the
+explicit-file CLI, closing the associated P1/P2 gaps. CLI scan and hook commands
+currently return 2; low-level library scanning does not discover policy.
+Update this table and the package status lines whenever implementation advances.
+
+User policy decisions and the remaining confirmation questions are tracked in
+[development decisions](development-decisions.md#user-decisions--2026-10-02).
+Q1 (justified dependencies), Q2 (restricted YAML), Q3 (merge explicit configuration
+over discovery while retaining repository `.raylocignore`), and Q4 (safe numeric
+report metadata) are confirmed. Q6–Q10 are also confirmed: ignore-file priority
+without generated-directory defaults, excluded-glob success with scope reporting,
+installation in Git's active hooks directory plus pre-commit framework support,
+Linux/macOS targets, and preparation of archives plus crates.io. Q5 is confirmed:
+standalone entropy detection is deferred from v1;
+engineering validation gates remain open.
 
 ## 1. Repository discovery
 
@@ -86,9 +122,12 @@ reject the unsupported construct with a documented configuration error. Disable
 automatic includes, environment interpolation, and source-snippet diagnostics.
 The configuration language must not acquire implicit file/network access.
 
-Introduce dependencies only when their package needs them: `regex` for P2;
-the selected YAML parser, `ignore` for scanner path policy, and optionally `serde`
-for P3; minimal Base64/JSON support for P4; `globset` and `rayon` for P5.
+Prefer short standard-library implementations under the user's dependency rule.
+P2 core signatures use static byte recognizers rather than a regex dependency.
+Evaluate a justified regex dependency for P3 custom patterns and a bounded YAML
+implementation against the full grammar. Evaluate scanner path policy in P3,
+Base64/JSON support in P4, and glob support in P5 before adding crates. Rayon
+remains the planned P5 parallelism backend under the repository contract.
 Review features, licenses,
 transitive crates, binary size, and the lockfile. Use `std::process::Command`
 for Git. `memmap2`, a separate Aho-Corasick router, and `git2` are deferred pending
@@ -125,8 +164,9 @@ Any limit/read/traversal/process/parse failure makes the result incomplete and
 returns 2. Successful scope with findings returns 1; successful scope without
 findings returns 0. An ignored explicit file reports its exclusion and zero
 scanned files. An existing empty directory or empty valid diff succeeds; a glob
-with no matching regular-file targets returns 2. Document whether matched but
-policy-excluded glob targets contribute to the match count in P0.
+with no matching regular-file targets returns 2. Count regular-file glob matches
+before policy; matched but all-excluded targets return 0 with an excluded-scope
+report, as confirmed in Q7.
 
 ## 4. Implementation packages and completion gates
 
@@ -153,6 +193,8 @@ help/README status; unfinished modes continue to return 2.
 
 ### P0 — Resolve feasibility and establish the test environment
 
+**Status:** Partial — decision note, file-test helpers, and CI/coverage tooling exist; parser, scope, Git-test, and validation decisions remain open.
+
 Depends on repository discovery. Produce the decision note described above,
 reviewed dependency choices, and a CI workflow covering stable Rust and MSRV
 1.85. Create temporary repository/file helpers with synthetic data and controlled
@@ -165,6 +207,8 @@ test helpers are ready before provider/Git fixtures are added. Do not treat
 zero-test CI as detection validation.
 
 ### P1 — Establish redaction, typed failures, and report boundaries
+
+**Status:** Partial — the library redaction/error/report boundary is tested; policy errors, suppression/exclusion counters, and multi-source reporting remain open.
 
 Depends on P0. Work in `scanner/redaction.rs`, `scanner/mod.rs`, report modules,
 and the error/CLI boundary. Add private `RedactedString` with safe `Display` and
@@ -180,14 +224,18 @@ rendered. Mixed findings/errors return 2 and the report is labeled partial.
 
 ### P2 — Implement bounded file reading and core structural rules
 
+**Status:** Partial — the bounded core engine and provider rules are tested; custom regex compilation moves to P3 and broader evaluation remains open.
+
 Depends on P1. Work in the reader, `scanner/engine.rs`, and rule modules. Scan
 regular files as bytes with bounded physical-line assembly across read-buffer
 boundaries. Preserve CRLF, missing final newline, offsets, and line numbers.
 Use buffered reads for mutable workspace files, including those exceeding 10 MB.
 Reject oversized records/candidates without returning clean.
 
-Build the shared byte `RegexSet` and individual extractors with identical flags,
-compiled once. Reject empty-match rules and enforce compiler budgets. Add AWS
+Core built-ins now use static byte recognizers, as recorded in the decision note.
+The shared custom byte `RegexSet` and individual extractors, with identical flags
+and one-time compilation, are deferred to P3 policy loading. Reject empty-match
+custom rules and enforce compiler budgets there. Add AWS
 access key IDs, GitHub opaque prefixes, Stripe secret/restricted test/live keys,
 Slack/GovSlack webhooks, and the private-key marker variants. Each rule gets
 explicit boundaries, secret capture, severity/confidence, dated provider
@@ -204,6 +252,8 @@ behind P3 so discovered policy cannot be silently ignored.
 
 ### P3 — Load strict policy and expose the explicit-file CLI
 
+**Status:** Not started.
+
 Depends on P2 and the P0 parser decision. Work in `config/mod.rs`, `rules/mod.rs`,
 `rules/entropy.rs`, CLI/report modules, and explicit-file scanner exclusions. Discover repository-root
 policy through Git, or the selected path's directory outside Git. Implement
@@ -217,8 +267,9 @@ optional custom gates only to captured secret bytes.
 
 Resolve target conflicts using OS-native arguments without echoing raw input.
 Connect `rayloc scan <file>` to the complete safe outcome/report flow. Apply
-root `.raylocignore` to explicit files; Git ignores and generated defaults do not
-override explicit selection. Reject explicit symlinks/non-regular files.
+root `.raylocignore` to explicit files; Git ignores do not override explicit
+selection. Do not introduce generated-directory defaults. Reject explicit
+symlinks/non-regular files.
 
 **Completion:** the explicit-file command demonstrates exits 0/1/2, safe custom
 findings, entropy on the captured value only, and counted exclusions. Invalid or
@@ -227,6 +278,8 @@ configuration template loads successfully. Help/version behavior remains intact;
 unsupported target modes remain unavailable until their packages pass.
 
 ### P4 — Add context, entropy, scoped suppression, and JOSE coverage
+
+**Status:** Not started.
 
 Depends on P3. Work in entropy/context/JOSE modules and the registry. Reuse the
 entropy primitive and add alphabet precedence and the design's provisional class
@@ -261,19 +314,24 @@ thresholds as provisional until those results justify changes.
 
 ### P5 — Implement reproducible directory/glob scope and parallel scanning
 
+**Status:** Not started.
+
 Depends on P4. Work in `config/ignore.rs`, scanner engine/controller, and CLI.
 Implement recursive directory and repository-relative glob modes, brace
 alternatives, omitted-target current-directory scans, hidden-file inclusion,
 and scanner ignore anchoring/order/negation semantics. Exclude Git administration,
 do not follow symlinks, and count recursive non-regular exclusions.
 
-Tracked files remain eligible despite Git ignores and generated-directory
-defaults. Apply nested repository `.gitignore` only to discovered untracked
+Tracked files remain eligible despite Git ignores. Apply nested repository
+`.gitignore` only to discovered untracked
 paths; outside Git it acts as scanner exclusion policy. Disable global Git
 ignores, `.git/info/exclude`, unrelated `.ignore`, and outside-root parent policy.
 Use a bounded union/deduplication strategy for tracked metadata and discovery;
 do not collect all paths to recover this distinction. Scanner exclusions retain
-precedence in every mode. Document the exact generated-directory defaults.
+precedence in every mode: `.gitignore` first, then higher-priority `.raylocignore`.
+Do not automatically exclude generated/dependency directories; use ignore files.
+Count regular-file glob matches before policy; all-excluded matches return 0
+with excluded-scope reporting, while no regular-file matches returns 2.
 
 Use one bounded Rayon pool for discovery/scanning, bounded work batches,
 worker-local reusable buffers/counters, and a serial small-input path. Merge
@@ -282,13 +340,15 @@ output. Traversal/read failures produce an incomplete result even alongside
 findings.
 
 **Completion:** test hidden/tracked/explicit `.env`, forced tracked ignored paths,
-nested ignores, negation and pruned parents, generated defaults, lockfile coverage,
+nested ignores, negation and pruned parents, ignore-source priority, lockfile coverage,
 glob conflicts/no matches, symlinks, permission failures, and many tiny files.
 Serial and parallel findings/counters agree; ordering and capped findings do not
 depend on worker scheduling. Measure directory throughput/RSS and the serial
 crossover before selecting a default parallelism threshold.
 
 ### P6 — Build and validate the strict unified-patch parser
+
+**Status:** Not started.
 
 Depends on P2; can precede P5. Keep parsing independent of Git invocation in
 `scanner/diff.rs`. Accept bounded byte records and authoritative NUL-metadata
@@ -308,6 +368,8 @@ state/count failures; retained findings never originate from deleted/context
 lines. Parser tests run without Git so acquisition failures cannot hide bugs.
 
 ### P7 — Acquire an index snapshot and enable staged scanning
+
+**Status:** Not started.
 
 Depends on P3–P6. Add the Git process layer with argument arrays, bounded stdout
 records, concurrent bounded stderr draining/discard, successful-child checks,
@@ -335,6 +397,8 @@ secret found only in unstaged replacement content is never reported by this mode
 
 ### P8 — Enable tracked working-tree diffs against a pinned reference
 
+**Status:** Not started.
+
 Depends on P7. Resolve the supplied reference as a commit using
 `git rev-parse --verify --end-of-options <ref>^{commit}` with argument arrays;
 never interpret it as an option or shell program. Reuse acquisition/parser logic
@@ -349,10 +413,12 @@ semantics and cover empty diffs. No claim of an atomic future commit is made.
 
 ### P9 — Install a managed pre-commit hook safely
 
+**Status:** Not started.
+
 Depends on P7. Work in `hook.rs`, CLI, and documentation. Resolve the active Git
 hook directory, including relative `core.hooksPath` and linked worktrees.
-Define/document explicit selection for shared/custom hook destinations; default
-installation must not unexpectedly modify another repository's shared hook.
+The install command selects Git's active hooks directory, including custom/shared
+`core.hooksPath`, without a second opt-in; never write to an inactive destination.
 Check scanner discoverability, install atomically with executable permissions,
 and use the design's `exec rayloc scan --staged` script.
 
@@ -361,8 +427,15 @@ hooks remain intact and return 2 with safe manual-integration guidance. Tests
 cover executable permissions, custom/shared paths, missing scanner, and actual
 commit status propagation. Findings/errors block the commit. Do not add hook
 removal, silent chaining, or overwrite options without separate contracts.
+Provide a `.pre-commit-hooks.yaml` Rust-language staged hook and consumer setup
+instructions for Python's pre-commit framework. Validate actual installation,
+partial staging, empty staged scope, and nonzero-status propagation. Document
+the framework's `core.hooksPath` limitation and staged-only manual-run behavior;
+see [integration research](research/pre-commit-integration.md).
 
 ### P10 — Complete evaluation, packaging, and release readiness
+
+**Status:** Not started.
 
 Depends on P5, P8, and P9; builds on evaluation started in P2. Complete runnable
 benchmarks for engine throughput, end-to-end file/directory throughput, and staged
@@ -378,11 +451,14 @@ Mandatory supported fixtures require 100% detection and output leak tests requir
 zero complete detected values. Under-5-ms startup-inclusive latency and
 500 MB/s/core remain stretch goals until measured.
 
-Build/test the agreed Linux musl, macOS, and Windows artifacts, verifying actual
+Build/test Linux musl and macOS artifacts for the planned x86_64/aarch64 targets,
+verifying actual
 linkage, naming, CLI behavior, and Git prerequisites on advertised targets.
 Prepare checksums and release instructions; keep registry/download claims aligned
-with artifacts that actually exist. Revisit `publish = false` only as part of an
-explicit publishing decision. Update README, templates, test/bench guides, and
+with artifacts that actually exist. Prepare both release archives/checksums and
+crates.io packaging, including revising `publish = false` when package validation
+is ready; actual publication remains a separate release action. Defer Windows.
+Update README, templates, test/bench guides, and
 the design's remaining decisions to describe shipped behavior and known limits.
 
 **Completion:** all required checks and supported-platform jobs pass, measured
@@ -400,7 +476,9 @@ cargo test --all
 cargo bench
 ```
 
-Add a locked Rust-1.85 build/test job once dependencies are selected. Run relevant
+The CI workflow now includes locked stable and Rust-1.85 checks; successful CI
+execution remains to be verified. Enforce every-function tests and run
+`python3 scripts/coverage.py` (>98% line/region coverage, 100% function coverage). Run relevant
 fixture/Git/CLI tests within `cargo test --all`; once benchmark programs exist,
 keep routine datasets small enough for development and make extended gigabyte/RSS
 runs reproducible separately. A benchmark with no detection workload is not

@@ -1,4 +1,4 @@
-# Initial implementation decisions
+# Development decisions
 
 Recorded on 2026-10-01 for the first P1/P2 library slice. The user requires a test
 for every function, production coverage exceeding 98%, and short standard-library
@@ -70,3 +70,51 @@ configuration has not yet run on GitHub.
 The release benchmark measures the core byte engine over a small, warm synthetic
 corpus, including finding construction. It is a development baseline for this
 slice, not a performance claim about complete v1 detection or staged scans.
+
+## User decisions — 2026-10-02
+
+These decisions supplement the initial library implementation. Approved choices
+remain in force during implementation; pending questions are not approvals.
+
+| Question | User answer | Recorded decision |
+| --- | --- | --- |
+| Q1: dependencies for YAML, regex, and Git-style ignores | "follow recommendation, using library is ok as YAML lib only use for parsing config file, does not affect performance." | Allow narrowly justified parsing/matching dependencies; prefer the standard library for short, correct implementations. YAML parsing belongs to policy loading, not per-line detection. Measure startup/configuration costs; parsing outside the detection loop does not make those costs zero. Verify selected dependencies against Rust 1.85 and record their justification. |
+| Q2: YAML language | "follow recommendation" | Accept one document with ordinary mappings, sequences, and scalars. Reject anchors/aliases, merge keys, custom tags, duplicate/unknown fields, and multiple documents. Preserve schema version "1" and existing examples. |
+| Q3: explicit configuration policy | Initially "use alternative"; clarified as "Merge configuration; keep repository .raylocignore" | Merge explicit `--config` over discovered configuration. Retain repository `.raylocignore`; external configuration does not replace ignore policy. |
+| Q4: input-derived report metadata | "follow recommendation" | Initially use fixed categories and stable source/rule numbers for reports. Withhold raw custom IDs/descriptions and paths until safe rendering is implemented. Configuration failures use safe category/location numbers without snippets. |
+
+P3's Q1–Q4 user-policy choices are confirmed. Parser selection, numeric budgets,
+dependency graph/MSRV checks, and adversarial validation are engineering work,
+not further requests for approval. Fix and regression-test the P2 `ghs_`
+Base64url-hyphen span/candidate-limit defect before exposing CLI scanning.
+
+## Later-package decisions and remaining question
+
+Q5–Q10 were confirmed on 2026-10-02. Existing added-lines-only, redaction, error precedence,
+tracked-file, and hook-preservation contracts remain in force.
+
+| Question | Package | Status / user answer | Decision / pending recommendation |
+| --- | --- | --- | --- |
+| Q5: standalone entropy mode | P4 | "follow recommendation" after the entropy explanation | Use context-associated entropy detection for v1; standalone entropy detection is deferred. Provider signatures and strong password assignments remain independent branches. |
+| Q6: generated-directory defaults and ignore priority | P5 | "These directories are usually ignore by .gitignore, we should just follow ignore priority .gitignore -> .raylocignore" | No automatic `target/`, `node_modules/`, or `vendor/` exclusions. Apply applicable repository `.gitignore` first, then higher-priority `.raylocignore`. Preserve tracked/explicit-file eligibility and Git-administration exclusion. Remove the unimplemented `exclude_defaults` setting from planned schema/examples. |
+| Q7: glob matches all excluded by scanner policy | P5 | "follow recommendation" | Count regular-file matches before policy. If all are excluded, return 0 with zero scanned files and an explicit excluded-scope report. A glob matching no regular files returns 2. |
+| Q8: active hooks directory and framework integration | P9 | "Use alternative. also research to use python's pre-commit package command setting to install our tools as well." | `rayloc hook install` selects Git's active hooks directory, including configured custom/shared `core.hooksPath`, without another opt-in. Preserve unmanaged hooks and idempotence. Prepare a Python pre-commit framework integration; see the research note below. |
+| Q9: v1 platforms | P10 | "Linux and MacOS" | Prepare Linux musl and macOS artifacts; defer Windows. Retain the proposed x86_64/aarch64 architecture targets for those OSes, subject to matching validation. |
+| Q10: distribution channels | P10 | "prepare both channels" | Prepare release archives/checksums and crates.io package validation/documentation, including revising `publish = false` when packaging is ready. Actual publication remains a separate release action. |
+
+[Pre-commit integration research](research/pre-commit-integration.md) records the
+proposed Rust-language hook manifest, installation commands, staged-scan scope,
+and the framework's current `core.hooksPath` limitation. Integration remains P9
+work; no framework hook has been installed or advertised as available.
+
+For Q3, document and test field-level scalar/list/ID-conflict precedence during
+P3 implementation; merging must not silently discard discovered fields or allow
+duplicate rule IDs. No external ignore-policy replacement is selected. In staged
+mode, discovered base configuration and repository ignore policy must still come
+from the pinned index snapshot.
+
+Other open gates can be resolved through implementation and measurement:
+parser/regex/global memory budgets, bounded scope bookkeeping, deterministic
+overflow collection, Git fixture isolation and compatibility, held-out corpus
+partitions, calibrated thresholds, serial/parallel crossover, measured latency,
+RSS, and binary size. P6/P8 patch/reference semantics are already specified.
