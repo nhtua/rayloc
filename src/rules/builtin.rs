@@ -199,12 +199,25 @@ fn token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, ScanEr
     let Some(prefix) = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix)) else {
         return Ok(None);
     };
-    // Include the complete compact installation form instead of exposing a tail
-    // through an incomplete span. Structural JOSE checks are implemented later.
+    // Frame the complete compact installation form, including forbidden padding,
+    // so JOSE validation cannot accept a valid prefix of a malformed token.
     let allow_dot = *prefix == b"ghs_";
+    let allow_padding = allow_dot && {
+        let body = &bytes[prefix.len()..];
+        let id_length = body
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .take(MAX_CANDIDATE_BYTES + 1)
+            .count();
+        id_length != 0 && body.get(id_length) == Some(&b'_')
+    };
     let body_length = bytes[prefix.len()..]
         .iter()
-        .take_while(|&&byte| is_word(byte) || (allow_dot && matches!(byte, b'.' | b'-')))
+        .take_while(|&&byte| {
+            is_word(byte)
+                || (allow_dot && matches!(byte, b'.' | b'-'))
+                || (allow_padding && byte == b'=')
+        })
         .take(MAX_CANDIDATE_BYTES + 1)
         .count();
     let length = prefix.len() + body_length;

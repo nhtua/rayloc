@@ -58,7 +58,12 @@ Generic candidates matching a homogeneous value or a contiguous known ascending
 alphabet/hex sequence are filtered. These filters do not affect provider rules,
 JOSE, or the strong password branch. Checksum exclusions require an identifier
 word `checksum`, `digest`, `sha256`, `sha512`, `sha1`, or `md5`; hex-shaped
-`api_key` values remain eligible. Whole-line provider rules still examine reference
+`api_key` values remain eligible. Checksum words never suppress the independent
+concrete-password branch, including `checksum_password`. An enabled strong
+candidate is bounded before checksum or any other exclusion. Disabled branches
+skip candidate limits, entropy and their suppression filters; any enabled
+applicable branch still enforces its limit, including on inline-ignored lines.
+Whole-line provider rules still examine reference
 and comment text, independently of generic context exclusions.
 
 Exact trailing `# rayloc:ignore` and `// rayloc:ignore` comments outside supported
@@ -85,7 +90,9 @@ JWE does not establish JWT plaintext. No signatures, expiration, revocation or
 live activity are checked. Unencoded-payload JOSE extensions are deferred.
 
 Dotted `ghs_APPID_JOSE` forms require a nonempty decimal application ID and valid
-compact JOSE. Malformed dotted tokens cannot fall back to opaque `ghs_` matches.
+compact JOSE. Malformed dotted tokens cannot fall back to opaque `ghs_` matches. Numeric APPID
+framing includes forbidden `=` padding so each complete malformed segment is
+rejected rather than accepting an unpadded prefix.
 Opaque legacy GitHub signatures retain their previous detection heuristics. The
 complete provider token span is retained and fully masked. Old dotted synthetic
 fixtures were replaced with structurally valid fixtures; malformed ones are

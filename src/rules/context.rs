@@ -242,13 +242,15 @@ pub(super) fn detect(
         ]
         .iter()
         .any(|part| name.split(|b| *b == b'_').any(|v| v == *part));
-        if checksum {
-            if span.len() >= 16 {
+        let password_enabled = password && !registry.disabled.contains(&RuleId::PasswordAssignment);
+        let aws_enabled = aws && !registry.disabled.contains(&RuleId::AwsSecretAccessKey);
+        let generic_enabled = !registry.disabled.contains(&RuleId::ContextSecret);
+        // Disabled branches do not evaluate candidates. Digest metadata remains
+        // counted only while the generic branch is enabled.
+        if !(password_enabled || aws_enabled || (strong && generic_enabled)) {
+            if checksum && generic_enabled && span.len() >= 16 {
                 increment(&mut suppressions.checksum)?;
             }
-            continue;
-        }
-        if !strong {
             continue;
         }
         let value = &bytes[span.clone()];
@@ -271,17 +273,20 @@ pub(super) fn detect(
         {
             continue;
         }
-        let rule = if password && value.len() >= 8 {
+        let rule = if password_enabled && value.len() >= 8 {
             Some(RuleId::PasswordAssignment)
-        } else if aws
+        } else if aws_enabled
             && value.len() == 40
             && value
                 .iter()
                 .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/'))
         {
             Some(RuleId::AwsSecretAccessKey)
-        } else if value.len() >= 16 {
-            if sequential(value) {
+        } else if generic_enabled && value.len() >= 16 {
+            if checksum {
+                increment(&mut suppressions.checksum)?;
+                None
+            } else if sequential(value) {
                 increment(&mut suppressions.generic_filter)?;
                 None
             } else if super::entropy::generic_passes(value, registry, histogram) {
@@ -293,9 +298,7 @@ pub(super) fn detect(
             None
         };
         if let Some(rule) = rule {
-            if !registry.disabled.contains(&rule) {
-                emit(rule, span);
-            }
+            emit(rule, span);
         }
     }
     Ok(())

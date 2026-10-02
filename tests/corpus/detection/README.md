@@ -13,6 +13,10 @@ branch from an intentionally short password or documented public example.
 Inline-ignore records have clean labels under the default policy and therefore
 become intentional policy false positives with `--no-inline-ignores`.
 
+Generic family labels refer to the generator alphabet; actual class selection
+uses byte composition with hex/alphanumeric/Base64/other precedence. Generated
+Base64/other samples can contain only alphanumeric bytes.
+
 Coverage includes provider signatures, context/length/alphabet classes, weak
 passwords, escaped strings, checksum/reference/exact placeholder exclusions,
 malformed compact JOSE, directives and known limitations. Random generic values

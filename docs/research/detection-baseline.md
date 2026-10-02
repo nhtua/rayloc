@@ -34,8 +34,9 @@ The common false positive is a documented public random example under `api_key`:
 context and entropy cannot establish whether a literal is actually sensitive.
 Both partitions contain one false negative for a concrete password shorter than
 the supported eight-byte minimum. Calibration has one additional false negative
-for a supported 20-byte Base64-class generic value below the provisional empirical
-entropy threshold. Held-out supported positives all pass; this does not validate
+for a supported 20-byte value generated from the Base64 alphabet but containing
+only alphanumeric bytes, below the selected alphanumeric-class empirical entropy
+threshold. Held-out supported positives all pass; this does not validate
 that threshold statistically. The standalone entropy branch remains deferred.
 
 | Family | Calibration TP / FN | Held-out TP / FN |
@@ -48,10 +49,17 @@ that threshold statistically. The standalone entropy branch remains deferred.
 | JWS / unsecured / JWE | 3 / 0 | 3 / 0 |
 | Generic hex | 5 / 0 | 5 / 0 |
 | Generic alphanumeric | 5 / 0 | 5 / 0 |
-| Generic Base64 | 4 / 1 | 5 / 0 |
-| Generic other bytes | 5 / 0 | 5 / 0 |
+| Generic Base64 generator family | 4 / 1 | 5 / 0 |
+| Generic other-byte generator family | 5 / 0 | 5 / 0 |
 | Supported password assignments | 4 / 0 | 4 / 0 |
 | Short passwords, outside supported minimum | 0 / 1 | 0 / 1 |
+
+The generic family labels identify each generator's permitted alphabet. They do
+not identify the class selected for every sampled value: actual byte composition
+and hex/alphanumeric/Base64/other precedence control that choice. Several values
+from the Base64 generator and one from the other-byte generator contain only
+alphanumeric bytes. The calibration miss described above uses the alphanumeric
+class. No labels, values or thresholds changed during this correction.
 
 Each normal-policy partition records two inline suppressions, three placeholders,
 three references, three checksum contexts and two generic homogeneity/sequence
