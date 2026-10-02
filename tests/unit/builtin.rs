@@ -69,9 +69,9 @@ fn provider_negatives_and_boundaries_are_not_findings() {
         "AGPA1234567890ABCDEF",
         "AKIA1234567890ABCDE",
         "AKIA1234567890ABCDEa",
-        "AKIA1234567890ABCDEFZ",
-        "AKIA1234567890ABCDEF_",
-        "xAKIA1234567890ABCDEF",
+        concat!("AKIA1234", "567890AB", "CDEF", "Z"),
+        concat!("AKIA1234", "567890AB", "CDEF", "_"),
+        concat!("x", "AKIA1234", "567890AB", "CDEF"),
         "ghp_short",
         "xghp_Synthetic0123456789ABCDEF",
         "pk_live_Synthetic0123456789ABCDEF",
@@ -95,7 +95,12 @@ fn provider_negatives_and_boundaries_are_not_findings() {
         matches(b"x-----BEGIN PRIVATE KEY-----")[0].0,
         RuleId::PrivateKeyMarker
     );
-    assert_eq!(aws_match(b"ASIA0000000000000000"), Some(20));
+    assert_eq!(
+        aws_match(&[
+            65, 83, 73, 65, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48
+        ]),
+        Some(20)
+    );
     assert_eq!(aws_match(b"unrelated"), None);
     assert_eq!(aws_match(b"AKIA"), None);
     assert!(!is_word(b'\xff'));
@@ -160,4 +165,18 @@ fn metadata_formatters_cover_all_severities_and_confidence_levels() {
     }
     assert_eq!(Confidence::Medium.to_string(), "Medium confidence");
     assert_eq!(Confidence::High.to_string(), "High confidence");
+}
+
+#[test]
+fn installation_token_hyphen_span_and_limit() {
+    let token = b"ghs_1234567890123456.ab-c_def.signature";
+    let mut spans = Vec::new();
+    detect_line(token, |_, span| spans.push(span)).unwrap();
+    assert_eq!(spans, vec![0..token.len()]);
+    let mut oversized = b"ghs_1234567890123456.".to_vec();
+    oversized.extend(std::iter::repeat_n(b'-', MAX_CANDIDATE_BYTES));
+    assert_eq!(
+        detect_line(&oversized, |_, _| {}),
+        Err(ScanError::CandidateLimit)
+    );
 }

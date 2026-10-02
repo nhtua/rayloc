@@ -4,8 +4,7 @@ use std::{
     io::{Cursor, Read, Write},
 };
 
-#[path = "../support/mod.rs"]
-mod support;
+use crate::test_support as support;
 
 #[test]
 fn empty_readers_and_empty_files_are_successfully_completed() {
@@ -23,7 +22,11 @@ fn empty_readers_and_empty_files_are_successfully_completed() {
 
 #[test]
 fn locations_are_byte_based_across_small_buffers_crlf_and_no_final_newline() {
-    let input = b"clean\r\n\xff\0\"AKIA1234567890ABCDEF\"\r\n\n-----BEGIN PRIVATE KEY-----";
+    let input = &[
+        99, 108, 101, 97, 110, 13, 10, 255, 0, 34, 65, 75, 73, 65, 49, 50, 51, 52, 53, 54, 55, 56,
+        57, 48, 65, 66, 67, 68, 69, 70, 34, 13, 10, 10, 45, 45, 45, 45, 45, 66, 69, 71, 73, 78, 32,
+        80, 82, 73, 86, 65, 84, 69, 32, 75, 69, 89, 45, 45, 45, 45, 45,
+    ];
     for capacity in [1, 2, 7, 256] {
         let mut reader = BufReader::with_capacity(capacity, Cursor::new(input));
         let outcome = scan_reader(&mut reader, 19);
@@ -201,13 +204,27 @@ fn overflow_is_safe_for_every_scanner_counter() {
     let mut outcome = ScanOutcome::default();
     outcome.stats.lines_scanned = u64::MAX;
     assert_eq!(
-        scan_record(b"", 1, &mut outcome, LIMITS),
+        scan_record(
+            b"",
+            1,
+            &mut outcome,
+            LIMITS,
+            &BUILTINS,
+            &mut Histogram::new()
+        ),
         Err(ScanError::CounterOverflow)
     );
     outcome.stats.lines_scanned = 0;
     outcome.stats.findings_detected = u64::MAX;
     assert_eq!(
-        scan_record(b"-----BEGIN PRIVATE KEY-----", 1, &mut outcome, LIMITS),
+        scan_record(
+            b"-----BEGIN PRIVATE KEY-----",
+            1,
+            &mut outcome,
+            LIMITS,
+            &BUILTINS,
+            &mut Histogram::new()
+        ),
         Ok(())
     );
     assert_eq!(outcome.errors, [ScanError::CounterOverflow]);
@@ -217,14 +234,14 @@ fn overflow_is_safe_for_every_scanner_counter() {
         let mut outcome = ScanOutcome::default();
         outcome.stats.lines_scanned = u64::MAX;
         assert_eq!(
-            read_records(&mut Cursor::new(input), 1, &mut outcome, LIMITS),
+            read_records(&mut Cursor::new(input), 1, &mut outcome, LIMITS, &BUILTINS),
             Err(ScanError::CounterOverflow)
         );
     }
     let mut outcome = ScanOutcome::default();
     outcome.stats.bytes_read = u64::MAX;
     assert_eq!(
-        read_records(&mut Cursor::new(b"x\n"), 1, &mut outcome, LIMITS),
+        read_records(&mut Cursor::new(b"x\n"), 1, &mut outcome, LIMITS, &BUILTINS),
         Err(ScanError::CounterOverflow)
     );
 }
@@ -325,4 +342,27 @@ fn files_exceeding_ten_megabytes_are_streamed_and_scanned_through_the_end() {
     assert_eq!(outcome.exit_code(), 1);
     assert_eq!(outcome.stats.files_completed, 1);
     assert_eq!(outcome.findings[0].line, 1401);
+}
+#[test]
+fn registry_findings_are_sorted_by_location_across_builtin_and_custom_rules() {
+    let registry = Registry::compile(
+        crate::config::parse(
+            b"version: \"1\"\nrules: [{id: late, regex: late}, {id: early, regex: early}]",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let outcome = scan_reader_with_registry(
+        &mut Cursor::new(b"early ghp_abcdefghijklmnop late\nearly"),
+        4,
+        &registry,
+    );
+    assert_eq!(
+        outcome
+            .findings
+            .iter()
+            .map(|f| (f.line, f.start_column))
+            .collect::<Vec<_>>(),
+        [(1, 1), (1, 7), (1, 28), (2, 1)]
+    );
 }

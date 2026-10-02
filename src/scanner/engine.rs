@@ -7,7 +7,7 @@ use std::{
     time::Instant,
 };
 
-use crate::rules::builtin::detect_line;
+use crate::rules::{BUILTINS, Registry, entropy::Histogram};
 
 use super::{Finding, ScanError, ScanOutcome, redaction::RedactedString};
 
@@ -29,13 +29,19 @@ const LIMITS: Limits = Limits {
 /// Scan a regular file. Paths are never retained in findings or errors.
 ///
 /// This low-level engine does not discover configuration or ignore policy. CLI
-/// scanning remains unavailable until that policy layer is implemented.
+/// policy discovery and exclusions belong to the CLI/selection layer.
 pub fn scan_file(path: &Path, source_id: u32) -> ScanOutcome {
+    scan_file_with_registry(path, source_id, &BUILTINS)
+}
+
+/// Scan a file using a precompiled policy.
+pub fn scan_file_with_registry(path: &Path, source_id: u32, registry: &Registry) -> ScanOutcome {
     let started = Instant::now();
     let result = open_regular(path).map(|file| {
-        scan_reader(
+        scan_reader_with_registry(
             &mut BufReader::with_capacity(READ_BUFFER_BYTES, file),
             source_id,
+            registry,
         )
     });
     let mut outcome = match result {
@@ -86,6 +92,15 @@ pub fn scan_reader(reader: &mut impl BufRead, source_id: u32) -> ScanOutcome {
     scan_with_limits(reader, source_id, LIMITS)
 }
 
+/// Scan selected records with a precompiled registry.
+pub fn scan_reader_with_registry(
+    reader: &mut impl BufRead,
+    source_id: u32,
+    registry: &Registry,
+) -> ScanOutcome {
+    scan_with_policy(reader, source_id, LIMITS, registry)
+}
+
 fn add(counter: &mut u64, amount: usize) -> Result<(), ScanError> {
     *counter = counter
         .checked_add(amount as u64)
@@ -98,9 +113,11 @@ fn scan_record(
     source_id: u32,
     outcome: &mut ScanOutcome,
     limits: Limits,
+    registry: &Registry,
+    histogram: &mut Histogram,
 ) -> Result<(), ScanError> {
     add(&mut outcome.stats.lines_scanned, 1)?;
-    detect_line(line, |rule, span| {
+    registry.detect_line(line, histogram, |rule, span| {
         if let Err(error) = add(&mut outcome.stats.findings_detected, 1) {
             outcome.fail(error);
         }
@@ -120,15 +137,33 @@ fn scan_record(
 }
 
 fn scan_with_limits(reader: &mut dyn BufRead, source_id: u32, limits: Limits) -> ScanOutcome {
+    scan_with_policy(reader, source_id, limits, &BUILTINS)
+}
+
+fn scan_with_policy(
+    reader: &mut dyn BufRead,
+    source_id: u32,
+    limits: Limits,
+    registry: &Registry,
+) -> ScanOutcome {
     let started = Instant::now();
     let mut outcome = ScanOutcome::default();
     outcome.stats.files_attempted = 1;
-    let result = read_records(reader, source_id, &mut outcome, limits);
+    let result = read_records(reader, source_id, &mut outcome, limits, registry);
     match result {
         Ok(()) if outcome.errors.is_empty() => outcome.stats.files_completed = 1,
         Ok(()) => {}
         Err(error) => outcome.fail(error),
     }
+    outcome.findings.sort_by_key(|finding| {
+        (
+            finding.source_id,
+            finding.line,
+            finding.start_column,
+            finding.end_column,
+            finding.rule,
+        )
+    });
     outcome.elapsed = started.elapsed();
     outcome
 }
@@ -138,7 +173,9 @@ fn read_records(
     source_id: u32,
     outcome: &mut ScanOutcome,
     limits: Limits,
+    registry: &Registry,
 ) -> Result<(), ScanError> {
+    let mut histogram = Histogram::new();
     let mut line = Vec::with_capacity(limits.line_bytes.min(READ_BUFFER_BYTES));
     loop {
         let buffer = match reader.fill_buf() {
@@ -148,7 +185,7 @@ fn read_records(
         };
         if buffer.is_empty() {
             if !line.is_empty() {
-                scan_record(&line, source_id, outcome, limits)?;
+                scan_record(&line, source_id, outcome, limits, registry, &mut histogram)?;
             }
             return Ok(());
         }
@@ -171,7 +208,7 @@ fn read_records(
         add(&mut outcome.stats.bytes_read, consumed)?;
         reader.consume(consumed);
         if newline.is_some() {
-            scan_record(&line, source_id, outcome, limits)?;
+            scan_record(&line, source_id, outcome, limits, registry, &mut histogram)?;
             line.clear();
         }
     }

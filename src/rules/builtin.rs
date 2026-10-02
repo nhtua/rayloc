@@ -9,7 +9,7 @@ use crate::scanner::ScanError;
 
 pub const MAX_CANDIDATE_BYTES: usize = 64 * 1024;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Severity {
     Low,
     Medium,
@@ -51,6 +51,7 @@ pub enum RuleId {
     StripeRestrictedKey,
     SlackWebhook,
     PrivateKeyMarker,
+    Custom(u16, Severity),
 }
 
 pub struct RuleMetadata {
@@ -65,6 +66,13 @@ pub struct RuleMetadata {
 impl RuleId {
     pub fn metadata(self) -> RuleMetadata {
         let (id, description, severity, confidence, reference) = match self {
+            Self::Custom(_, severity) => (
+                "custom-rule",
+                "Custom rule",
+                severity,
+                Confidence::Medium,
+                "",
+            ),
             Self::AwsAccessKeyId => (
                 "aws-access-key-id",
                 "AWS access key ID (not a secret access key)",
@@ -164,7 +172,7 @@ fn token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, ScanEr
     let allow_dot = *prefix == b"ghs_";
     let body_length = bytes[prefix.len()..]
         .iter()
-        .take_while(|&&byte| is_word(byte) || (allow_dot && byte == b'.'))
+        .take_while(|&&byte| is_word(byte) || (allow_dot && matches!(byte, b'.' | b'-')))
         .take(MAX_CANDIDATE_BYTES + 1)
         .count();
     let length = prefix.len() + body_length;
@@ -207,8 +215,11 @@ fn slack_match(bytes: &[u8]) -> Result<Option<usize>, ScanError> {
     Ok((bytes.get(end) != Some(&b'/')).then_some(end))
 }
 
-fn match_at(bytes: &[u8]) -> Result<Option<(RuleId, usize)>, ScanError> {
-    if let Some(end) = aws_match(bytes) {
+fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>, ScanError> {
+    if let Some(end) = (!disabled.contains(&RuleId::AwsAccessKeyId))
+        .then(|| aws_match(bytes))
+        .flatten()
+    {
         return Ok(Some((RuleId::AwsAccessKeyId, end)));
     }
     for (rule, prefixes) in [
@@ -216,12 +227,20 @@ fn match_at(bytes: &[u8]) -> Result<Option<(RuleId, usize)>, ScanError> {
         (RuleId::StripeSecretKey, STRIPE_SECRET_PREFIXES),
         (RuleId::StripeRestrictedKey, STRIPE_RESTRICTED_PREFIXES),
     ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
         if let Some(end) = token_match(bytes, prefixes)? {
             return Ok(Some((rule, end)));
         }
     }
-    if let Some(end) = slack_match(bytes)? {
-        return Ok(Some((RuleId::SlackWebhook, end)));
+    if !disabled.contains(&RuleId::SlackWebhook) {
+        if let Some(end) = slack_match(bytes)? {
+            return Ok(Some((RuleId::SlackWebhook, end)));
+        }
+    }
+    if disabled.contains(&RuleId::PrivateKeyMarker) {
+        return Ok(None);
     }
     Ok(PRIVATE_KEY_MARKERS
         .iter()
@@ -231,8 +250,13 @@ fn match_at(bytes: &[u8]) -> Result<Option<(RuleId, usize)>, ScanError> {
 
 /// Visit matches in source order without allocating a candidate collection.
 /// Callback spans are zero-based and half-open; source bytes remain borrowed.
-pub fn detect_line(
+pub fn detect_line(bytes: &[u8], emit: impl FnMut(RuleId, Range<usize>)) -> Result<(), ScanError> {
+    detect_line_with_disabled(bytes, &[], emit)
+}
+
+pub(crate) fn detect_line_with_disabled(
     bytes: &[u8],
+    disabled: &[RuleId],
     mut emit: impl FnMut(RuleId, Range<usize>),
 ) -> Result<(), ScanError> {
     let mut covered_until = 0;
@@ -246,7 +270,7 @@ pub fn detect_line(
         if offset > 0 && is_word(bytes[offset - 1]) && byte != b'-' {
             continue;
         }
-        if let Some((rule, length)) = match_at(&bytes[offset..])? {
+        if let Some((rule, length)) = match_at(&bytes[offset..], disabled)? {
             emit(rule, offset..offset + length);
             covered_until = offset + length;
         }

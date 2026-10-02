@@ -9,6 +9,10 @@ repository = "https://github.com/nhtua/rayloc"
 publish = false
 
 [dependencies]
+yaml-rust2 = { version = "=0.13.0", default-features = false }
+regex = { version = "=1.13.1", default-features = false, features = ["std", "perf", "unicode"] }
+regex-syntax = "=0.8.11"
+ignore = "=0.4.29"
 
 [[bench]]
 name = "engine"

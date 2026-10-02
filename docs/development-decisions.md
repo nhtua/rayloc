@@ -118,3 +118,99 @@ parser/regex/global memory budgets, bounded scope bookkeeping, deterministic
 overflow collection, Git fixture isolation and compatibility, held-out corpus
 partitions, calibrated thresholds, serial/parallel crossover, measured latency,
 RSS, and binary size. P6/P8 patch/reference semantics are already specified.
+
+## P3 — strict policy and explicit-file scanning (2026-10-02)
+
+The explicit-file CLI now loads repository-root `.rayloc.yaml` through Git; outside
+Git it uses the canonical selected file's parent. Parent policy outside that root
+is never inherited. Explicit `--config` overlays present scalar values, merges
+entropy class keys, appends custom rules in document order, and unions disabled
+IDs. Duplicate IDs within/across rule lists, collisions with built-ins, duplicate
+keys and disables within a document fail. Disabled IDs are resolved against the
+final merged registry, allowing explicit policy to disable a discovered custom
+rule. Defaults apply after merging. The discovered root `.raylocignore` remains
+in force. Explicit selection overrides Git ignore patterns but scanner ignores
+and Git administration exclusions still apply; exclusions are counted and an
+all-excluded file scope is labelled `EXCLUDED`. Symlinks/nonregular scan targets
+and nonregular policy inputs are rejected.
+
+YAML accepts one ordinary document and rejects anchors, aliases, tags, merge
+keys, duplicate/unknown fields and unsupported schema IDs. YAML scalar types are
+enforced: `version` is the string `"1"` (plain numeric `1` fails), IDs/patterns/
+descriptions/severities are strings, entropy gates are unquoted numbers, and
+capture indexes are nonnegative integer scalars. YAML 1.2 boolean/null/numeric
+resolution is respected, including ordinary unquoted text strings. Every failure
+is a fixed category; raw paths, input arguments, custom labels, snippets and child
+stderr never enter diagnostics. Reports identify custom rules with stable numeric
+IDs, fully mask values, and sort retained findings by source, line, byte span and
+rule. Provider signatures bypass generic/custom entropy thresholds.
+
+Dependencies were selected from their official manifests and validated by an
+actual locked build/test on Rust 1.85.0, rather than trusting declarations alone:
+
+- [`yaml-rust2` 0.13.0](https://github.com/Ethiraric/yaml-rust2/blob/v0.13.0/Cargo.toml)
+  is the current release, declares Rust 1.85.0, and is used only for configuration
+  parsing. Default encoding support is disabled: configuration must be UTF-8.
+  Its event API allows resource accounting and forbidden-construct rejection
+  before tree construction; a handwritten YAML grammar would be substantially
+  larger and error-prone. The wrapper builds only bounded ordinary values.
+- [`regex` 1.13.1](https://github.com/rust-lang/regex/blob/1.13.1/Cargo.toml) and
+  [`regex-syntax` 0.8.11](https://docs.rs/crate/regex-syntax/0.8.11/source/Cargo.toml)
+  are current releases with Rust 1.65 requirements. Regex features are `std`,
+  `perf`, and `unicode`; byte matching retains ASCII secrets in non-UTF-8 sources.
+  The direct syntax dependency reuses regex's existing dependency, adding no
+  second syntax engine. HIR minimum lengths reject empty languages/matches;
+  captured HIR maximum lengths and conservative alphabet unions prove impossible
+  entropy gates without attempting arbitrary regex-language inference.
+- [`ignore` 0.4.29](https://docs.rs/crate/ignore/0.4.29/source/Cargo.toml) implements
+  the full Git ignore grammar, escaping, anchoring, negation and directory rules.
+  Ancestor exclusion is checked explicitly so an ignored parent must be
+  re-included before a descendant whitelist can take effect. Current 0.4.33
+  declares Rust 1.88; 0.4.30 lacks a rust-version declaration but its let chains
+  failed actual Rust 1.85 compilation. Version 0.4.29 passes. The lockfile also
+  retains compatible `globset` 0.4.19; 0.4.20 requires Rust 1.88. No walker or
+  parallel directory implementation is enabled through the CLI in P3.
+
+Budgets are explicit and adversarially exercised:
+
+| Resource | P3 limit |
+| --- | --- |
+| YAML/ignore read input | 1 MiB plus one overflow sentinel byte |
+| YAML events / nesting depth | 8,192 events / 16 nested containers |
+| Custom rule count / pattern size / aggregate pattern bytes | 256 / 16 KiB / 256 KiB |
+| Rule ID bytes | 128 ASCII alphanumeric, dash or underscore bytes |
+| Individual compiled regex / shared set | 256 KiB / 16 MiB |
+| Aggregate individual program budget | At most 256 × 256 KiB = 64 MiB |
+| Lazy DFA cache per regex or set | 256 KiB (at most 64.25 MiB across 256 rules plus set) |
+| Regex syntax nesting | Engine's bounded default of 250 |
+| Ignore lines / per-line size / aggregate text | 1,024 / 16 KiB / 256 KiB |
+| Git root discovery output | 1 MiB; overflow kills/reaps child and fails |
+| File read buffer / physical record / captured candidate | 256 KiB / 1 MiB / 64 KiB |
+| Retained findings | 10,000 globally within the explicit-file scan |
+
+Regex/ignore input and compiler budgets are bounds, not exact whole-process RSS
+claims. Parsing and compilation occur before any selected file reader starts.
+Custom rules match physical byte records only; they cannot match across lines.
+An absent optional capture and an empty captured value produce no finding.
+Optional entropy measures captured bytes with a reused 256-bin `usize` histogram
+and `f64` comparisons. Length/alphabet impossibility checks are conservative for
+Unicode: uncertain alphabets permit all 256 byte values rather than rejecting an
+attainable gate. Generic class overrides are validated/stored for P4's context
+branch, not applied to provider signatures. Both documents and programmatic
+numeric policy are validated before registry compilation.
+
+P3 preserves built-in-only `scan_reader`/`scan_file` and adds registry-aware reader
+and file entry points. P4 owns context, JOSE, inline exclusions and deduplication;
+P5 owns multi-source globally ordered overflow selection. P3 retains the bounded
+collector's first evaluated detections on overflow and returns exit 2, with
+retained output sorted by source location. Directory/glob/Git-target/hook modes
+remain unavailable. The P2 `ghs_` hyphen truncation and candidate-limit bypass are
+fixed and covered by a red/green regression.
+
+Local P3 release measurements (30 independent launches per scope, one clean
+physical line outside Git, includes Git root-discovery fallback and CLI startup):
+0 custom rules: median 0.967 ms; 32 custom rules: median 1.551 ms; 256 custom rules: median 4.125 ms.
+The stripped local release executable is 2,458,424 bytes. The required
+synthetic engine benchmark scanned 2.212 MB in 0.0028 s (800.89 MB/s, one
+thread); these local warm measurements are development evidence, not whole-v1
+acceptance or held-out detection-quality claims.

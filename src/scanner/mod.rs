@@ -52,6 +52,7 @@ pub struct Finding {
 pub struct ScanStats {
     pub files_attempted: u64,
     pub files_completed: u64,
+    pub files_excluded: u64,
     pub bytes_read: u64,
     pub lines_scanned: u64,
     pub findings_detected: u64,

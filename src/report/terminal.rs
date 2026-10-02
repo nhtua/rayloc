@@ -7,6 +7,7 @@ use crate::scanner::ScanOutcome;
 /// Render an outcome without receiving raw source bytes, paths, or child errors.
 pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
     let status = match outcome.exit_code() {
+        0 if outcome.stats.files_excluded != 0 && outcome.stats.files_attempted == 0 => "EXCLUDED",
         0 => "CLEAN",
         1 => "FINDINGS",
         _ => "INCOMPLETE",
@@ -22,6 +23,7 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
         outcome.stats.lines_scanned,
         outcome.stats.bytes_read,
     )?;
+    writeln!(output, "{} file(s) excluded", outcome.stats.files_excluded)?;
     writeln!(
         output,
         "Elapsed: {:.3} ms",
@@ -29,6 +31,9 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
     )?;
     for finding in &outcome.findings {
         let metadata = finding.rule.metadata();
+        if let crate::rules::builtin::RuleId::Custom(index, _) = finding.rule {
+            writeln!(output, "Custom rule #{index}")?;
+        }
         writeln!(
             output,
             "\nsource #{}:{}:{}\nRule: {} ({})\nSeverity: {}; {}\nValue: {}",
