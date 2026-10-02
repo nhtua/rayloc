@@ -233,3 +233,50 @@ fn wrong_container_types_missing_fields_and_yaml_numeric_forms_are_checked() {
     }
     assert_eq!(parse(b"version: '1'\ndefault_entropy_threshold: 0x4\nrules: [{id: a, regex: a, secret_group: 0o0}]").unwrap().default_entropy_threshold, Some(4.0));
 }
+#[test]
+fn nonrepository_classification_requires_complete_fixed_diagnostics() {
+    let ordinary = b"fatal: not a git repository (or any of the parent directories): .git\n";
+    assert!(outside_git(ordinary));
+    assert!(outside_git(b"fatal: not a git repository (or any parent up to mount point /mnt)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n"));
+    for diagnostic in [b"".as_slice(), b"not a git repository", b"fatal: not a git repository: private-git-path\n", b"fatal: not a git repository (or any parent up to mount point relative)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n"] { assert!(!outside_git(diagnostic)); }
+    for diagnostic in [
+        [b"warning: private-input\n".as_slice(), ordinary].concat(),
+        [ordinary.as_slice(), b"private-tail\n"].concat(),
+    ] {
+        assert!(!outside_git(&diagnostic));
+    }
+}
+struct DiagnosticReadError {
+    remaining: usize,
+}
+impl std::io::Read for DiagnosticReadError {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        if self.remaining == 0 {
+            return Err(std::io::Error::other("private-reader-diagnostic"));
+        }
+        let count = bytes.len().min(self.remaining);
+        bytes[..count].fill(b'x');
+        self.remaining -= count;
+        Ok(count)
+    }
+}
+#[test]
+fn child_diagnostics_are_bounded_drained_and_reader_errors_are_fixed() {
+    let exact = vec![b'x'; MAX_GIT_DIAGNOSTIC_BYTES];
+    assert_eq!(
+        read_git_diagnostic(exact.as_slice()).unwrap().len(),
+        MAX_GIT_DIAGNOSTIC_BYTES
+    );
+    let mut oversized = std::io::Cursor::new(vec![b'x'; MAX_GIT_DIAGNOSTIC_BYTES * 20]);
+    assert_eq!(
+        read_git_diagnostic(&mut oversized),
+        Err(ConfigError::Discovery)
+    );
+    assert_eq!(oversized.position(), (MAX_GIT_DIAGNOSTIC_BYTES * 20) as u64);
+    for remaining in [0, MAX_GIT_DIAGNOSTIC_BYTES + 1] {
+        assert_eq!(
+            read_git_diagnostic(DiagnosticReadError { remaining }),
+            Err(ConfigError::Discovery)
+        );
+    }
+}

@@ -348,6 +348,59 @@ pub fn read_policy(path: &Path) -> Result<Vec<u8>, ConfigError> {
         Ok(bytes)
     }
 }
+const MAX_GIT_DIAGNOSTIC_BYTES: usize = 8 * 1024;
+
+fn read_git_diagnostic(mut reader: impl Read) -> Result<Vec<u8>, ConfigError> {
+    let mut bytes = Vec::new();
+    reader
+        .by_ref()
+        .take((MAX_GIT_DIAGNOSTIC_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| ConfigError::Discovery)?;
+    // Drain concurrently even after the retained budget is reached, so a child
+    // writing diagnostics cannot block while its stdout is being consumed.
+    std::io::copy(&mut reader, &mut std::io::sink()).map_err(|_| ConfigError::Discovery)?;
+    if bytes.len() > MAX_GIT_DIAGNOSTIC_BYTES {
+        Err(ConfigError::Discovery)
+    } else {
+        Ok(bytes)
+    }
+}
+
+fn outside_git(diagnostic: &[u8]) -> bool {
+    if diagnostic == b"fatal: not a git repository (or any of the parent directories): .git\n" {
+        return true;
+    }
+    diagnostic
+        .strip_prefix(b"fatal: not a git repository (or any parent up to mount point ")
+        .and_then(|text| {
+            text.strip_suffix(
+                b")\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).\n",
+            )
+        })
+        .is_some_and(|path| path.starts_with(b"/"))
+}
+
+fn outside_without_git(directory: &Path) -> Result<PathBuf, ConfigError> {
+    if std::env::var_os("GIT_DIR").is_some() || std::env::var_os("GIT_WORK_TREE").is_some() {
+        return Err(ConfigError::Discovery);
+    }
+    for ancestor in directory.ancestors() {
+        match std::fs::symlink_metadata(ancestor.join(".git")) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Ok(metadata) if metadata.is_dir() => {
+                let mut entries =
+                    std::fs::read_dir(ancestor.join(".git")).map_err(|_| ConfigError::Discovery)?;
+                if entries.next().is_some() {
+                    return Err(ConfigError::Discovery);
+                }
+            }
+            _ => return Err(ConfigError::Discovery),
+        }
+    }
+    Ok(directory.to_path_buf())
+}
+
 /// Root discovery uses Git when available; no parent policy is inherited outside Git.
 pub fn discover_root(selected: &Path) -> Result<PathBuf, ConfigError> {
     let selected = if selected.is_absolute() {
@@ -368,32 +421,40 @@ pub fn discover_root(selected: &Path) -> Result<PathBuf, ConfigError> {
         .arg("-C")
         .arg(directory)
         .args(["rev-parse", "--show-toplevel"])
+        .env("LC_ALL", "C")
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
     {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(directory.to_path_buf());
+            return outside_without_git(directory);
         }
         Err(_) => return Err(ConfigError::Discovery),
     };
-    let mut bytes = Vec::new();
-    child
-        .stdout
-        .take()
-        .ok_or(ConfigError::Discovery)?
-        .take((MAX_CONFIG_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|_| ConfigError::Discovery)?;
-    if bytes.len() > MAX_CONFIG_BYTES {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(ConfigError::Discovery);
-    }
-    let status = child.wait().map_err(|_| ConfigError::Discovery)?;
+    let stdout = child.stdout.take().expect("Git stdout is piped");
+    let stderr = child.stderr.take().expect("Git stderr is piped");
+    let (mut bytes, diagnostic, status) = std::thread::scope(|scope| {
+        let diagnostic = scope.spawn(|| read_git_diagnostic(stderr));
+        let mut bytes = Vec::new();
+        let read = stdout
+            .take((MAX_CONFIG_BYTES + 1) as u64)
+            .read_to_end(&mut bytes);
+        if read.is_err() || bytes.len() > MAX_CONFIG_BYTES {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = diagnostic.join();
+            return Err(ConfigError::Discovery);
+        }
+        let status = child.wait().map_err(|_| ConfigError::Discovery)?;
+        let diagnostic = diagnostic.join().map_err(|_| ConfigError::Discovery)??;
+        Ok((bytes, diagnostic, status))
+    })?;
     if !status.success() {
-        return Ok(directory.to_path_buf());
+        if status.code() == Some(128) && bytes.is_empty() && outside_git(&diagnostic) {
+            return Ok(directory.to_path_buf());
+        }
+        return Err(ConfigError::Discovery);
     }
     if bytes.last() != Some(&b'\n') {
         return Err(ConfigError::Discovery);

@@ -244,14 +244,13 @@ fn executable_target_conflicts_help_and_nonregular_paths_are_checked() {
     {
         std::os::unix::fs::symlink(root.path().join("input"), root.path().join("link")).unwrap();
         assert_eq!(run(&root, &["scan", "link"]).status.code(), Some(2));
-        let full = fs::OpenOptions::new()
-            .write(true)
-            .open("/dev/full")
-            .unwrap();
+        let (output_socket, closed_peer) = std::os::unix::net::UnixStream::pair().unwrap();
+        drop(closed_peer);
+        let failing_output: std::os::fd::OwnedFd = output_socket.into();
         let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
             .current_dir(root.path())
             .args(["scan", "input"])
-            .stdout(full)
+            .stdout(failing_output)
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
@@ -286,6 +285,24 @@ fn git_unavailable_bad_executable_and_invalid_root_output_are_safe() {
         command
     };
     assert_eq!(command().output().unwrap().status.code(), Some(0));
+    assert_eq!(
+        command()
+            .env("GIT_DIR", "private-git-directory")
+            .output()
+            .unwrap()
+            .status
+            .code(),
+        Some(2)
+    );
+    assert_eq!(
+        command()
+            .env("GIT_WORK_TREE", "private-work-tree")
+            .output()
+            .unwrap()
+            .status
+            .code(),
+        Some(2)
+    );
     fs::write(root.path().join("git"), "not-executable").unwrap();
     assert_eq!(command().output().unwrap().status.code(), Some(2));
     fs::write(
@@ -301,4 +318,83 @@ fn git_unavailable_bad_executable_and_invalid_root_output_are_safe() {
             .unwrap()
             .contains("sensitive")
     );
+}
+#[test]
+fn genuine_git_discovery_failure_never_switches_nested_policy_scope() {
+    let root = TempDir::new();
+    assert!(
+        Command::new("git")
+            .args(["init", "--quiet"])
+            .arg(root.path())
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::create_dir(root.path().join("nested")).unwrap();
+    fs::write(root.path().join("nested/input"), "corp_abcdefghijklmnop").unwrap();
+    fs::write(
+        root.path().join(".rayloc.yaml"),
+        "version: \"1\"\nrules: [{id: corporate, regex: 'corp_[a-z]+'}]",
+    )
+    .unwrap();
+    assert_eq!(run(&root, &["scan", "nested/input"]).status.code(), Some(1));
+    for (key, value) in [
+        ("GIT_CONFIG_COUNT", "private-invalid-config-count"),
+        ("GIT_DIR", "private-missing-git-directory"),
+        ("PATH", "/private-missing-git-executable-directory"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+            .current_dir(root.path())
+            .args(["scan", "nested/input"])
+            .env(key, value)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let errors = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(errors, "rayloc: cannot discover policy root\n");
+        assert!(!errors.contains(value));
+    }
+}
+#[cfg(unix)]
+#[test]
+fn both_git_pipes_finish_without_deadlock_and_oversized_stderr_fails_safely() {
+    use std::{
+        os::unix::fs::PermissionsExt,
+        thread,
+        time::{Duration, Instant},
+    };
+    let root = TempDir::new();
+    fs::write(root.path().join("input"), "clean").unwrap();
+    let script = format!(
+        "#!/bin/sh\ni=0\nwhile [ \"$i\" -lt 1024 ]; do printf '%s' '{}' >&2; i=$((i + 1)); done\nprintf '%s\\n' \"$PWD\"\n",
+        "x".repeat(1024)
+    );
+    fs::write(root.path().join("git"), script).unwrap();
+    fs::set_permissions(root.path().join("git"), fs::Permissions::from_mode(0o755)).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(root.path())
+        .args(["scan", "input"])
+        .env("PATH", root.path())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            break;
+        }
+        if started.elapsed() > Duration::from_secs(2) {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("Git pipes failed to drain concurrently");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stderr, b"rayloc: cannot discover policy root\n");
 }
