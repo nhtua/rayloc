@@ -1,0 +1,5 @@
+# Configuration template; loading will be implemented in src/config.
+version: "1"
+default_entropy_threshold: 4.5
+exclude_defaults: true
+rules: []

@@ -1,0 +1,10 @@
+/target/
+
+# Local credentials and environment files
+.env
+.env.*
+!.env.example
+
+# Editor temporary files
+*.swp
+*.swo

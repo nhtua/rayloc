@@ -1,0 +1,12 @@
+# Git metadata and build artifacts
+.git/
+target/
+
+# Dependency directories and lockfiles
+node_modules/
+vendor/
+*.lock
+*.sum
+
+# Intentional synthetic test data
+tests/fixtures/**
