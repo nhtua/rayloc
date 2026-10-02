@@ -23,7 +23,7 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     }
     fixtures.push((
         RuleId::GithubToken,
-        b"ghs_1234_SyntheticHead.SyntheticPayload.SyntheticSignature".to_vec(),
+        b"ghs_1234_eyJhbGciOiJIUzI1NiJ9.e30.AAAA".to_vec(),
     ));
     for (rule, prefixes) in [
         (RuleId::StripeSecretKey, STRIPE_SECRET_PREFIXES),
@@ -127,7 +127,7 @@ fn multiple_values_preserve_source_order_and_occurrences() {
 
 #[test]
 fn long_compact_candidates_are_not_repeatedly_scanned_as_nested_tokens() {
-    let value = b"ghs_SyntheticMockToken0123456789.".repeat(1000);
+    let value = b"ghs_SyntheticMockToken0123456789".repeat(1000);
     assert!(value.len() < MAX_CANDIDATE_BYTES);
     assert_eq!(matches(&value), vec![(RuleId::GithubToken, 0..value.len())]);
 }
@@ -169,7 +169,7 @@ fn metadata_formatters_cover_all_severities_and_confidence_levels() {
 
 #[test]
 fn installation_token_hyphen_span_and_limit() {
-    let token = b"ghs_1234567890123456.ab-c_def.signature";
+    let token = b"ghs_1234567890123456_eyJhbGciOiJIUzI1NiJ9._-8.AAAA";
     let mut spans = Vec::new();
     detect_line(token, |_, span| spans.push(span)).unwrap();
     assert_eq!(spans, vec![0..token.len()]);
@@ -179,4 +179,17 @@ fn installation_token_hyphen_span_and_limit() {
         detect_line(&oversized, |_, _| {}),
         Err(ScanError::CandidateLimit)
     );
+}
+
+#[test]
+fn malformed_dotted_installation_tokens_do_not_fall_back_to_opaque_signatures() {
+    for token in [
+        b"ghs_1234_notjson.e30.AAAA".as_slice(),
+        b"ghs_1234_eyJhbGciOiJIUzI1NiJ9.e30.",
+        b"ghs_x_eyJhbGciOiJIUzI1NiJ9.e30.AAAA",
+        b"ghs__eyJhbGciOiJIUzI1NiJ9.e30.AAAA",
+        b"ghs_1234.abc.def",
+    ] {
+        assert!(matches(token).is_empty());
+    }
 }

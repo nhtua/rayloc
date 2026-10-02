@@ -56,6 +56,7 @@ pub struct ScanStats {
     pub bytes_read: u64,
     pub lines_scanned: u64,
     pub findings_detected: u64,
+    pub suppressions: crate::rules::context::Suppressions,
 }
 
 /// Safe to format: neither findings nor errors own raw source bytes or paths.

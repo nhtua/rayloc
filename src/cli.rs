@@ -17,7 +17,7 @@ Options:
   -V, --version    Print version
 
 Commands:
-  scan <file> [--config <file>]  Scan an explicit regular file
+  scan <file> [--config <file>] [--no-inline-ignores]  Scan an explicit regular file
 
 Directory, glob, Git diff, and hook modes are not available yet.";
 
@@ -72,9 +72,14 @@ fn scan(
     let mut path = None;
     let mut explicit = None;
     let mut positional = false;
+    let mut no_inline = false;
     while let Some(arg) = args.next() {
         if !positional && arg == "--" {
             positional = true;
+            continue;
+        }
+        if !positional && arg == "--no-inline-ignores" {
+            no_inline = true;
             continue;
         }
         if !positional && arg == "--config" {
@@ -112,7 +117,8 @@ fn scan(
     let policy = (|| {
         let root = crate::config::discover_root(path)?;
         let config = crate::config::load(&root, explicit.as_deref().map(Path::new))?;
-        let registry = crate::rules::Registry::compile(config)?;
+        let mut registry = crate::rules::Registry::compile(config)?;
+        registry.inline_ignores = !no_inline;
         let exclusions = crate::config::ignore::Exclusions::load(&root)?;
         let absolute = fs::canonicalize(path).map_err(|_| crate::config::ConfigError::Read)?;
         Ok::<_, crate::config::ConfigError>((

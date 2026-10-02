@@ -366,3 +366,19 @@ fn registry_findings_are_sorted_by_location_across_builtin_and_custom_rules() {
         [(1, 1), (1, 7), (1, 28), (2, 1)]
     );
 }
+#[test]
+fn suppression_counter_overflow_returns_execution_error() {
+    let mut outcome = ScanOutcome::default();
+    outcome.stats.suppressions.inline = usize::MAX;
+    assert_eq!(
+        scan_record(
+            b"password='aaaaaaaa' # rayloc:ignore",
+            1,
+            &mut outcome,
+            LIMITS,
+            &BUILTINS,
+            &mut Histogram::new()
+        ),
+        Err(ScanError::CounterOverflow)
+    );
+}

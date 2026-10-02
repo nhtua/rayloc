@@ -9,17 +9,23 @@ use regex::bytes::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 use regex_syntax::hir::{Class, Hir, HirKind};
 use std::{ops::Range, sync::LazyLock};
 pub mod builtin;
+pub mod context;
 pub mod entropy;
+mod jose;
 const PROGRAM_BYTES: usize = 256 * 1024;
 const SET_BYTES: usize = 16 * 1024 * 1024;
 const DFA_BYTES: usize = 256 * 1024;
-pub const BUILTIN_IDS: [RuleId; 6] = [
+pub const BUILTIN_IDS: [RuleId; 10] = [
     RuleId::AwsAccessKeyId,
     RuleId::GithubToken,
     RuleId::StripeSecretKey,
     RuleId::StripeRestrictedKey,
     RuleId::SlackWebhook,
     RuleId::PrivateKeyMarker,
+    RuleId::AwsSecretAccessKey,
+    RuleId::JoseToken,
+    RuleId::ContextSecret,
+    RuleId::PasswordAssignment,
 ];
 pub(crate) fn builtin_id(id: &str) -> Option<RuleId> {
     BUILTIN_IDS
@@ -37,6 +43,7 @@ pub struct Registry {
     set: RegexSet,
     custom: Vec<CompiledRule>,
     disabled: Vec<RuleId>,
+    pub inline_ignores: bool,
     pub default_entropy_threshold: f64,
     pub entropy_thresholds: std::collections::BTreeMap<String, f64>,
 }
@@ -144,6 +151,7 @@ impl Registry {
             .build()
             .map_err(|_| ConfigError::Pattern)?;
         Ok(Self {
+            inline_ignores: true,
             set,
             custom,
             disabled,
@@ -156,9 +164,48 @@ impl Registry {
         &self,
         bytes: &[u8],
         histogram: &mut Histogram,
+        emit: impl FnMut(RuleId, Range<usize>),
+    ) -> Result<(), ScanError> {
+        self.detect_line_with_suppressions(
+            bytes,
+            histogram,
+            &mut context::Suppressions::default(),
+            emit,
+        )
+    }
+    /// Counters describe dropped candidates without retaining their contents.
+    pub fn detect_line_with_suppressions(
+        &self,
+        bytes: &[u8],
+        histogram: &mut Histogram,
+        suppressions: &mut context::Suppressions,
         mut emit: impl FnMut(RuleId, Range<usize>),
     ) -> Result<(), ScanError> {
-        builtin::detect_line_with_disabled(bytes, &self.disabled, &mut emit)?;
+        let ignored = self.inline_ignores && context::directive(bytes);
+        if ignored {
+            context::increment(&mut suppressions.inline)?;
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let mut overflow = false;
+        let mut unique = |rule, span: Range<usize>| {
+            if ignored {
+                return;
+            }
+            if seen.contains(&(span.start, span.end)) {
+                return;
+            }
+            if seen.len() == crate::scanner::engine::MAX_FINDINGS {
+                overflow = true;
+                return;
+            }
+            seen.insert((span.start, span.end));
+            emit(rule, span);
+        };
+        builtin::detect_line_with_disabled(bytes, &self.disabled, &mut unique)?;
+        if !self.disabled.contains(&RuleId::JoseToken) {
+            jose::detect(bytes, &mut unique)?;
+        }
+        context::detect(bytes, self, histogram, suppressions, &mut unique)?;
         for index in self.set.matches(bytes) {
             let rule = &self.custom[index];
             if rule.disabled {
@@ -176,9 +223,12 @@ impl Registry {
                         .entropy
                         .is_none_or(|gate| histogram.measure(value.as_bytes()) >= gate)
                 {
-                    emit(rule.id, value.start()..value.end());
+                    unique(rule.id, value.start()..value.end());
                 }
             }
+        }
+        if overflow {
+            return Err(ScanError::FindingLimit);
         }
         Ok(())
     }

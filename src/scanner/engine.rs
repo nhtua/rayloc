@@ -117,23 +117,38 @@ fn scan_record(
     histogram: &mut Histogram,
 ) -> Result<(), ScanError> {
     add(&mut outcome.stats.lines_scanned, 1)?;
-    registry.detect_line(line, histogram, |rule, span| {
-        if let Err(error) = add(&mut outcome.stats.findings_detected, 1) {
-            outcome.fail(error);
-        }
-        if outcome.findings.len() == limits.findings {
-            outcome.fail(ScanError::FindingLimit);
-        } else {
-            outcome.findings.push(Finding {
-                source_id,
-                line: outcome.stats.lines_scanned,
-                start_column: span.start + 1,
-                end_column: span.end + 1,
-                rule,
-                value: RedactedString::new(&line[span]),
-            });
-        }
-    })
+    let mut suppressions = crate::rules::context::Suppressions::default();
+    let result =
+        registry.detect_line_with_suppressions(line, histogram, &mut suppressions, |rule, span| {
+            if let Err(error) = add(&mut outcome.stats.findings_detected, 1) {
+                outcome.fail(error);
+            }
+            if outcome.findings.len() == limits.findings {
+                outcome.fail(ScanError::FindingLimit);
+            } else {
+                outcome.findings.push(Finding {
+                    source_id,
+                    line: outcome.stats.lines_scanned,
+                    start_column: span.start + 1,
+                    end_column: span.end + 1,
+                    rule,
+                    value: RedactedString::new(&line[span]),
+                });
+            }
+        });
+    let accumulated = &mut outcome.stats.suppressions;
+    for (counter, amount) in [
+        (&mut accumulated.inline, suppressions.inline),
+        (&mut accumulated.placeholder, suppressions.placeholder),
+        (&mut accumulated.reference, suppressions.reference),
+        (&mut accumulated.checksum, suppressions.checksum),
+        (&mut accumulated.generic_filter, suppressions.generic_filter),
+    ] {
+        *counter = counter
+            .checked_add(amount)
+            .ok_or(ScanError::CounterOverflow)?;
+    }
+    result
 }
 
 fn scan_with_limits(reader: &mut dyn BufRead, source_id: u32, limits: Limits) -> ScanOutcome {

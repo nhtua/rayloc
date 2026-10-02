@@ -51,6 +51,10 @@ pub enum RuleId {
     StripeRestrictedKey,
     SlackWebhook,
     PrivateKeyMarker,
+    AwsSecretAccessKey,
+    JoseToken,
+    ContextSecret,
+    PasswordAssignment,
     Custom(u16, Severity),
 }
 
@@ -66,6 +70,34 @@ pub struct RuleMetadata {
 impl RuleId {
     pub fn metadata(self) -> RuleMetadata {
         let (id, description, severity, confidence, reference) = match self {
+            Self::AwsSecretAccessKey => (
+                "aws-secret-access-key",
+                "AWS secret access key assignment",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html",
+            ),
+            Self::JoseToken => (
+                "jose-token",
+                "Compact JOSE structure (not verified)",
+                Severity::High,
+                Confidence::Medium,
+                "https://www.rfc-editor.org/rfc/rfc7515.html",
+            ),
+            Self::ContextSecret => (
+                "context-secret",
+                "Context-associated secret",
+                Severity::High,
+                Confidence::Medium,
+                "",
+            ),
+            Self::PasswordAssignment => (
+                "password-assignment",
+                "Concrete password assignment",
+                Severity::High,
+                Confidence::Medium,
+                "",
+            ),
             Self::Custom(_, severity) => (
                 "custom-rule",
                 "Custom rule",
@@ -178,6 +210,18 @@ fn token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, ScanEr
     let length = prefix.len() + body_length;
     if length > MAX_CANDIDATE_BYTES {
         return Err(ScanError::CandidateLimit);
+    }
+    if allow_dot && bytes[..length].contains(&b'.') {
+        let body = &bytes[prefix.len()..length];
+        let Some(separator) = body.iter().position(|b| *b == b'_') else {
+            return Ok(None);
+        };
+        if separator == 0
+            || !body[..separator].iter().all(u8::is_ascii_digit)
+            || !super::jose::valid(&body[separator + 1..])?
+        {
+            return Ok(None);
+        }
     }
     Ok((body_length >= 16).then_some(length))
 }

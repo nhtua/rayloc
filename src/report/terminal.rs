@@ -24,6 +24,16 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
         outcome.stats.bytes_read,
     )?;
     writeln!(output, "{} file(s) excluded", outcome.stats.files_excluded)?;
+    let suppressed = &outcome.stats.suppressions;
+    writeln!(
+        output,
+        "Suppressed: inline={}; placeholder={}; reference={}; checksum={}; generic-filter={}",
+        suppressed.inline,
+        suppressed.placeholder,
+        suppressed.reference,
+        suppressed.checksum,
+        suppressed.generic_filter
+    )?;
     writeln!(
         output,
         "Elapsed: {:.3} ms",
