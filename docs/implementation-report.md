@@ -12,7 +12,7 @@ outside this implementation task.
 | P5 | Bounded directory/glob scope and deterministic parallel collector (`9a7012b`, `e31e715`) | Two Important scope defects fixed; re-review approved; two Minor observations retained | 139 tests on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.91%, regions 98.02%; required checks pass | Complete |
 | P6 | Strict bounded raw-binding and unified-patch parser (`94d0588`, `39d359f`) | Hunk-gap/empty-side finding fixed; re-review approved | 158 tests, locked Rust 1.85; functions 100%, lines 98.96%, regions 98.18%; required checks pass | Complete |
 | P7 | Pinned index snapshot, staged policy and added-line CLI (`f3e1c29`, `e301c0e`) | Nested-root policy false-clean fixed; re-review approved | 196 tests on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.93%, regions 98.07%; required checks pass | Complete |
-| P8 | Direct pinned-reference working-tree diff, independent identities and mutation checks (`5b5ebd6`) | Independent review pending | 225 tests current Git/Git 2.30/Rust 1.85; functions 100%, lines 98.9939%, regions 98.0313%; required checks pass | In review |
+| P8 | Direct pinned-reference working-tree diff, independent identities and mutation checks (`5b5ebd6`, `1808af7`) | Git unit-test isolation fixed; re-review approved | 226 tests current Git/Git 2.30/Rust 1.85; functions 100%, lines 98.9939%, regions 98.0313%; required checks pass | Complete |
 | P9 | Pending | Pending | Pending | Not started |
 | P10 | Release preflight research identifies native runners, linkage checks, Cargo package checks, and Git-floor tests | Pending implementation review | Native jobs and artifact smoke tests pending | Research only |
 
@@ -117,7 +117,12 @@ line numbers, scans symlink link text, and validates dirty gitlinks as excluded
 scope. [Working-tree research](research/p8-working-tree.md) records resource
 limits and non-atomic mutation limits.
 
-Implementation verification passed 225 tests on current Git, Git 2.30, and Rust
-1.85, plus formatting, strict Clippy, benchmarks, and coverage at 337/337
-functions, 98.9939% lines, and 98.0313% regions. Independent review is pending;
-the package is not yet complete.
+Independent review found that P8 unit fixtures could inherit `GIT_DIR` or an
+absolute `GIT_INDEX_FILE` and write outside their temporary repositories. All
+four Git-using fixtures now run in isolated child environments; a hostile-env
+regression confirms a disposable sentinel repository and index remain unchanged.
+The re-review approved the fix. Final verification passed 226 tests on current
+Git, Git 2.30, and Rust 1.85, plus formatting, strict Clippy, benchmarks, and
+coverage at 337/337 functions, 98.9939% lines, and 98.0313% regions. Concurrent
+full-suite runs exposed an existing temporary-directory collision; separate
+temporary roots passed and P10 will validate runner isolation.

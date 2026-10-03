@@ -16,8 +16,8 @@ package's completion gate.
 P3 is complete at `ebc63d2` after implementation, required verification, and an
 independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is complete at `7a5185e`;
 P5 is complete at `e31e715`; P6 is complete at `39d359f`; P7 is complete at
-`e301c0e`. P8 implementation is committed at `5b5ebd6` and awaits independent
-review. P0–P2
+`e301c0e`. P8 is complete at `1808af7` after independent review and a test
+isolation fix. P0–P2
 foundation gaps tied to full-scope evaluation remain tracked below rather than
 being silently closed by the explicit-file delivery.
 
@@ -31,7 +31,7 @@ being silently closed by the explicit-file delivery.
 | P5 | Complete | Directory/glob policy, bounded parallel scanning, deterministic global collection and measured crossover/RSS; 139 tests on current Git, Git 2.30 and Rust 1.85; independent review fixes approved | Two non-blocking minors recorded for final review |
 | P6 | Complete | Pure bounded raw-binding/unified-patch parser; adversarial byte/count tests; hunk-gap review fix at `39d359f`; 158 tests and coverage gates; independent re-review approved | P8 working-tree unknown-OID handoff recorded |
 | P7 | Complete | Pinned staged index acquisition/policy and added-line CLI; nested-root policy review fix at `e301c0e`; 196 tests current Git/Git 2.30/Rust 1.85; independent re-review approved | Staged latency and platform runs remain P10 gates |
-| P8 | In review | Pinned reference-to-working-tree diff CLI, independent working-tree identity checks and validated dirty-gitlink exclusion at `5b5ebd6`; 225 tests on current Git/Git 2.30/Rust 1.85; functions 100%, lines 98.9939%, regions 98.0313% | Independent task review, any required fixes and re-review |
+| P8 | Complete | Pinned reference-to-working-tree diff CLI, independent identities, dirty-gitlink exclusion and test-isolation review fix at `1808af7`; 226 tests on current Git/Git 2.30/Rust 1.85; independent re-review approved | Concurrent full-suite TempDir collision carried to P10 runner validation |
 | P9 | Not started | — | Managed hook installation and commit enforcement |
 | P10 | Not started | — | Full evaluation, supported-platform artifacts, and release gates |
 
@@ -48,9 +48,9 @@ and regions 1718/1751 (98.12%). Formatting, strict Clippy, benchmark and diff
 checks pass. The independent reviewer approved both discovery failure handling
 and the portable Unix output-error fixture. Native CI/full v1 evaluation remain open.
 
-**Next implementation work:** finish P8's review gate, then implement/review P9–P10.
-Explicit-file, directory, glob, staged, and reference-diff scans are implemented;
-the reference-diff mode is awaiting review and hook mode remains unavailable. Package sub-agent evidence is
+**Next implementation work:** implement and review P9–P10. Explicit-file,
+directory, glob, staged, and reference-diff scans are available; hook mode remains
+unavailable pending P9. Package sub-agent evidence is
 summarized in [the implementation report](implementation-report.md).
 Update this table and package status lines whenever implementation advances.
 
@@ -406,7 +406,7 @@ secret found only in unstaged replacement content is never reported by this mode
 
 ### P8 — Enable tracked working-tree diffs against a pinned reference
 
-**Status:** In review — implemented at `5b5ebd6` with 225 tests passing on current Git, Git 2.30, and Rust 1.85. Functions 100%, lines 98.9939%, regions 98.0313%; formatting, strict Clippy and benchmarks pass. Independent review and any fix/re-review cycle remain open.
+**Status:** Complete — `5b5ebd6` plus `1808af7` test-isolation review fix; independent re-review approved. 226 tests pass on current Git, Git 2.30, and Rust 1.85; functions 100%, lines 98.9939%, regions 98.0313%. Formatting, strict Clippy and benchmarks pass.
 
 Depends on P7. Resolve the supplied reference as a commit using
 `git rev-parse --verify --end-of-options <ref>^{commit}` with argument arrays;
