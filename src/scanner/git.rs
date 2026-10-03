@@ -4,7 +4,7 @@ use super::{
     engine::{MAX_LINE_BYTES, READ_BUFFER_BYTES},
 };
 use std::{
-    io::{self, BufRead, BufReader, Read},
+    io::{self, BufRead, BufReader, Read, Write},
     path::Path,
     process::{Child, ChildStdout, Command, ExitStatus, Stdio},
     thread::JoinHandle,
@@ -38,8 +38,11 @@ fn drain(mut input: impl Read) -> io::Result<()> {
 }
 impl Process {
     pub(super) fn start(command: &mut Command) -> Result<Self, ScanError> {
+        Self::start_input(command, Stdio::null())
+    }
+    pub(super) fn start_input(command: &mut Command, input: Stdio) -> Result<Self, ScanError> {
         let mut child = command
-            .stdin(Stdio::null())
+            .stdin(input)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -59,6 +62,14 @@ impl Process {
             diagnostic: Some(diagnostic),
             waited: false,
         })
+    }
+    pub(super) fn write_input(&mut self, bytes: &[u8]) -> Result<(), ScanError> {
+        self.child
+            .stdin
+            .take()
+            .expect("stdin is piped")
+            .write_all(bytes)
+            .map_err(|_| ScanError::GitMetadata)
     }
     pub(super) fn finish_success(&mut self) -> Result<(), ScanError> {
         if self.finish()?.success() {
@@ -109,7 +120,14 @@ pub(super) fn capture(
     command: &mut Command,
     cap: usize,
 ) -> Result<(ExitStatus, Vec<u8>), ScanError> {
-    let mut process = Process::start(command)?;
+    capture_input(command, cap, Stdio::null())
+}
+pub(super) fn capture_input(
+    command: &mut Command,
+    cap: usize,
+    input: Stdio,
+) -> Result<(ExitStatus, Vec<u8>), ScanError> {
+    let mut process = Process::start_input(command, input)?;
     let mut bytes = Vec::new();
     // Take bounds allocation even for hostile or malfunctioning child output.
     (&mut process.output)

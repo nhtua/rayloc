@@ -12,6 +12,7 @@ pub mod redaction;
 pub mod scope;
 pub mod staged;
 mod tracked;
+pub mod worktree;
 
 /// Errors contain fixed categories only, never paths, arguments, or source text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]

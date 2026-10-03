@@ -145,3 +145,44 @@ fn source_ids_fail_without_wrapping_or_reusing_an_identifier() {
     assert_eq!(next_source(&mut source), Err(ScanError::CounterOverflow));
     assert_eq!(source, u32::MAX);
 }
+#[test]
+fn resolved_worktree_consumer_validates_and_excludes_dirty_gitlink() {
+    let oid = "a".repeat(40);
+    let raw = format!(":160000 160000 {oid} {oid} M\0sub\0");
+    let patch = format!(
+        "diff --git a/sub b/sub\n--- a/sub\n+++ b/sub\n@@ -1 +1 @@\n-Subproject commit {oid}\n+Subproject commit {oid}-dirty\n"
+    );
+    let root = Path::new("/repo");
+    let exclusions =
+        Exclusions::from_bytes(root, None, PolicyUsage::default(), ACTIVE_POLICY).unwrap();
+    let mut outcome = ScanOutcome::default();
+    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+    consume_resolved(
+        &mut raw.as_bytes(),
+        &mut patch.as_bytes(),
+        root,
+        EMPTY,
+        &crate::rules::BUILTINS,
+        &exclusions,
+        &mut outcome,
+        &collector,
+        true,
+    )
+    .unwrap();
+    assert_eq!(outcome.stats.files_excluded, 1);
+    assert_eq!(outcome.stats.lines_scanned, 0);
+    assert!(
+        consume_resolved(
+            &mut b"bad\0entry\0".as_slice(),
+            &mut patch.as_bytes(),
+            root,
+            EMPTY,
+            &crate::rules::BUILTINS,
+            &exclusions,
+            &mut outcome,
+            &collector,
+            true
+        )
+        .is_err()
+    );
+}

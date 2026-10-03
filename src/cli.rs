@@ -17,10 +17,10 @@ Options:
   -V, --version    Print version
 
 Commands:
-  scan [<file|directory> | --glob <pattern> | --staged] [--config <file>] [--no-inline-ignores]
+  scan [<file|directory> | --glob <pattern> | --staged | --diff <ref>] [--config <file>] [--no-inline-ignores]
                   Scan files, a directory (default: current directory), or a glob
 
-Staged mode scans added index lines. Ref diff and hook modes are not available yet.";
+Staged mode scans added index lines; --diff scans tracked additions against a commit. Hook mode is not available yet.";
 
 /// Run the CLI, returning exit code 2 for unsupported operations.
 pub fn run() -> ExitCode {
@@ -76,13 +76,24 @@ fn scan(
     let mut no_inline = false;
     let mut glob = None;
     let mut staged = false;
+    let mut reference = None;
     while let Some(arg) = args.next() {
         if !positional && arg == "--" {
             positional = true;
             continue;
         }
+        if !positional && arg == "--diff" {
+            if reference.is_some() || staged || path.is_some() || glob.is_some() {
+                return scan_error(errors, "invalid scan arguments");
+            }
+            let Some(value) = args.next() else {
+                return scan_error(errors, "invalid scan arguments");
+            };
+            reference = Some(value);
+            continue;
+        }
         if !positional && arg == "--staged" {
-            if staged || path.is_some() || glob.is_some() {
+            if reference.is_some() || staged || path.is_some() || glob.is_some() {
                 return scan_error(errors, "invalid scan arguments");
             }
             staged = true;
@@ -103,7 +114,7 @@ fn scan(
             continue;
         }
         if !positional && arg == "--glob" {
-            if staged || glob.is_some() || path.is_some() {
+            if reference.is_some() || staged || glob.is_some() || path.is_some() {
                 return scan_error(errors, "invalid scan arguments");
             }
             let Some(pattern) = args.next() else {
@@ -115,6 +126,7 @@ fn scan(
         if !positional
             && matches!(arg.to_str(), Some("--help" | "-h"))
             && !staged
+            && reference.is_none()
             && path.is_none()
             && explicit.is_none()
             && glob.is_none()
@@ -124,6 +136,7 @@ fn scan(
         }
         if (!positional && arg.to_str().is_some_and(|s| s.starts_with('-')))
             || staged
+            || reference.is_some()
             || path.is_some()
             || glob.is_some()
         {
@@ -131,12 +144,21 @@ fn scan(
         }
         path = Some(arg);
     }
-    if staged {
-        let outcome = crate::scanner::staged::scan_staged(
-            Path::new("."),
-            explicit.as_deref().map(Path::new),
-            no_inline,
-        );
+    if staged || reference.is_some() {
+        let outcome = if let Some(reference) = reference {
+            crate::scanner::worktree::scan_diff(
+                Path::new("."),
+                &reference,
+                explicit.as_deref().map(Path::new),
+                no_inline,
+            )
+        } else {
+            crate::scanner::staged::scan_staged(
+                Path::new("."),
+                explicit.as_deref().map(Path::new),
+                no_inline,
+            )
+        };
         if crate::report::terminal::render(&outcome, output).is_err() {
             return scan_error(errors, "cannot write command output");
         }

@@ -23,7 +23,7 @@ use std::{
 const OID_CAP: usize = 65;
 // Everything except output format is shared. --unified=0 ALSO enables patches
 // with --raw on Git 2.30, so it belongs only to the patch command.
-const DIFF_FLAGS: &[&str] = &[
+pub(super) const DIFF_FLAGS: &[&str] = &[
     "--no-color",
     "--no-ext-diff",
     "--no-textconv",
@@ -32,6 +32,7 @@ const DIFF_FLAGS: &[&str] = &[
     "--inter-hunk-context=0",
     "--diff-algorithm=myers",
     "--no-indent-heuristic",
+    "--no-function-context",
     "--no-relative",
     "--src-prefix=a/",
     "--dst-prefix=b/",
@@ -42,11 +43,11 @@ const DIFF_FLAGS: &[&str] = &[
     "--ignore-submodules=none",
     "-O/dev/null",
 ];
-fn path(bytes: Vec<u8>) -> PathBuf {
+pub(super) fn path(bytes: Vec<u8>) -> PathBuf {
     use std::os::unix::ffi::OsStringExt;
     PathBuf::from(OsString::from_vec(bytes))
 }
-fn oid(bytes: Vec<u8>) -> Result<String, ScanError> {
+pub(super) fn oid(bytes: Vec<u8>) -> Result<String, ScanError> {
     let value = bytes.strip_suffix(b"\n").ok_or(ScanError::GitMetadata)?;
     if !matches!(value.len(), 40 | 64)
         || !value
@@ -58,15 +59,15 @@ fn oid(bytes: Vec<u8>) -> Result<String, ScanError> {
     }
     Ok(String::from_utf8(value.to_vec()).expect("validated ASCII object ID"))
 }
-fn git_oid(cwd: &Path, args: &[&str]) -> Result<String, ScanError> {
+pub(super) fn git_oid(cwd: &Path, args: &[&str]) -> Result<String, ScanError> {
     oid(git::successful(git::command(cwd).args(args), OID_CAP)?)
 }
 #[derive(PartialEq)]
-struct Head {
+pub(super) struct Head {
     symbolic: Vec<u8>,
     commit: Option<String>,
 }
-fn head(cwd: &Path) -> Result<Head, ScanError> {
+pub(super) fn head(cwd: &Path) -> Result<Head, ScanError> {
     let (status, symbolic) = git::capture(
         git::command(cwd).args(["symbolic-ref", "-q", "HEAD"]),
         MAX_LINE_BYTES,
@@ -108,7 +109,7 @@ fn head(cwd: &Path) -> Result<Head, ScanError> {
     Ok(Head { symbolic, commit })
 }
 #[derive(PartialEq)]
-struct IndexStamp {
+pub(super) struct IndexStamp {
     size: u64,
     dev: u64,
     ino: u64,
@@ -117,7 +118,7 @@ struct IndexStamp {
     ctime: i64,
     ctime_ns: i64,
 }
-fn index_stamp(file: &Path) -> Result<Option<IndexStamp>, ScanError> {
+pub(super) fn index_stamp(file: &Path) -> Result<Option<IndexStamp>, ScanError> {
     use std::os::unix::fs::MetadataExt;
     match fs::metadata(file) {
         Ok(m) => Ok(Some(IndexStamp {
@@ -133,7 +134,7 @@ fn index_stamp(file: &Path) -> Result<Option<IndexStamp>, ScanError> {
         Err(_) => Err(ScanError::GitMetadata),
     }
 }
-fn git_path(cwd: &Path, args: &[&str]) -> Result<PathBuf, ScanError> {
+pub(super) fn git_path(cwd: &Path, args: &[&str]) -> Result<PathBuf, ScanError> {
     let bytes = git::successful(git::command(cwd).args(args), MAX_LINE_BYTES)?;
     let value = bytes
         .strip_suffix(b"\n")
@@ -271,7 +272,7 @@ fn next_source(source: &mut u32) -> Result<(), ScanError> {
     Ok(())
 }
 #[allow(clippy::too_many_arguments)]
-fn consume(
+pub(super) fn consume(
     raw: &mut impl std::io::BufRead,
     patch: &mut impl std::io::BufRead,
     root: &Path,
@@ -280,6 +281,22 @@ fn consume(
     exclusions: &Exclusions,
     outcome: &mut ScanOutcome,
     collector: &Mutex<Collector>,
+) -> Result<(), ScanError> {
+    consume_resolved(
+        raw, patch, root, empty_blob, registry, exclusions, outcome, collector, false,
+    )
+}
+#[allow(clippy::too_many_arguments)]
+pub(super) fn consume_resolved(
+    raw: &mut impl std::io::BufRead,
+    patch: &mut impl std::io::BufRead,
+    root: &Path,
+    empty_blob: &str,
+    registry: &Registry,
+    exclusions: &Exclusions,
+    outcome: &mut ScanOutcome,
+    collector: &Mutex<Collector>,
+    worktree: bool,
 ) -> Result<(), ScanError> {
     let (mut header, mut pathname, mut previous, mut line) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
@@ -291,8 +308,12 @@ fn consume(
             return Err(ScanError::GitMetadata);
         }
         next_source(&mut source_id)?;
-        let binding = RawBinding::parse(source_id, &header, &pathname, empty_blob.len())
-            .map_err(|_| ScanError::GitMetadata)?;
+        let binding = if worktree {
+            RawBinding::parse_worktree_resolved(source_id, &header, &pathname, empty_blob.len())
+        } else {
+            RawBinding::parse(source_id, &header, &pathname, empty_blob.len())
+        }
+        .map_err(|_| ScanError::GitMetadata)?;
         if binding.path() <= previous.as_slice() {
             return Err(ScanError::GitMetadata);
         }

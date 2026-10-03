@@ -121,7 +121,9 @@ fn section(path: &str, om: &str, nm: &str, old: &str, new: &str, body: &str) -> 
 
 type Added = (u32, u64, Vec<u8>, bool);
 fn parse_patch(header: &[u8], path: &[u8], patch: &[u8]) -> Result<Vec<Added>, DiffError> {
-    let binding = RawBinding::parse(7, header, path, 40)?;
+    parse_binding(RawBinding::parse(7, header, path, 40)?, patch)
+}
+fn parse_binding(binding: RawBinding<'_>, patch: &[u8]) -> Result<Vec<Added>, DiffError> {
     let mut parser = Parser::new(binding, EMPTY.as_bytes())?;
     let mut added = vec![];
     for line in patch.split_inclusive(|&b| b == b'\n') {
@@ -917,5 +919,29 @@ fn equal_nonzero_gaps_and_exact_eof_anchors_preserve_valid_coordinates() {
             )
             .is_ok()
         );
+    }
+}
+
+#[test]
+fn dirty_worktree_gitlink_uses_bound_no_index_variant() {
+    let header = raw("160000", "160000", OLD, OLD, "M");
+    let valid = format!(
+        "diff --git a/sub b/sub\n--- a/sub\n+++ b/sub\n@@ -1 +1 @@\n-Subproject commit {OLD}\n+Subproject commit {OLD}-dirty\n"
+    );
+    for patch in [
+        valid.clone(),
+        valid.replace("a/sub", "a/wrong"),
+        valid.replace("+++ b/sub", "+++ b/wrong"),
+        valid.replace("@@ -1 +1 @@", "@@ -1 +1,2 @@"),
+        valid.replace("-dirty", "-other"),
+        valid.replace("-Subproject commit ", "-Incorrect "),
+        valid.clone() + "extra\n",
+    ] {
+        let binding = RawBinding::parse_worktree_resolved(7, &header, b"sub\0", 40).unwrap();
+        let result = parse_binding(binding, patch.as_bytes());
+        assert_eq!(result.is_ok(), patch == valid);
+        if let Ok(added) = result {
+            assert!(added.is_empty());
+        }
     }
 }

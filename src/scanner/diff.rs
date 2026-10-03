@@ -40,6 +40,35 @@ impl<'a> RawBinding<'a> {
         path: &'a [u8],
         oid_width: usize,
     ) -> Result<Self, DiffError> {
+        Self::parse_inner(source_id, header, path, oid_width, false, false)
+    }
+    /// Acquisition-only framing validation; the strict parser never receives this
+    /// unresolved binding. Present zero IDs must be independently resolved first.
+    pub(super) fn parse_worktree(
+        source_id: u32,
+        header: &'a [u8],
+        path: &'a [u8],
+        oid_width: usize,
+    ) -> Result<Self, DiffError> {
+        Self::parse_inner(source_id, header, path, oid_width, true, true)
+    }
+    /// Known independent IDs, including Git's metadata-only dirty gitlink form.
+    pub(super) fn parse_worktree_resolved(
+        source_id: u32,
+        header: &'a [u8],
+        path: &'a [u8],
+        oid_width: usize,
+    ) -> Result<Self, DiffError> {
+        Self::parse_inner(source_id, header, path, oid_width, false, true)
+    }
+    fn parse_inner(
+        source_id: u32,
+        header: &'a [u8],
+        path: &'a [u8],
+        oid_width: usize,
+        worktree: bool,
+        dirty_gitlinks: bool,
+    ) -> Result<Self, DiffError> {
         if header.len() > MAX_RECORD_BYTES || path.len() > MAX_RECORD_BYTES {
             return Err(DiffError::Limit);
         }
@@ -65,7 +94,8 @@ impl<'a> RawBinding<'a> {
             || !valid_oid(old_oid, oid_width)
             || !valid_oid(new_oid, oid_width)
             || (old_mode == 0) != is_zero(old_oid)
-            || (new_mode == 0) != is_zero(new_oid)
+            || ((new_mode == 0) != is_zero(new_oid)
+                && !(worktree && new_mode != 0 && is_zero(new_oid)))
         {
             return Err(DiffError::Invalid);
         }
@@ -76,7 +106,9 @@ impl<'a> RawBinding<'a> {
                 old_mode != 0
                     && new_mode != 0
                     && old_mode / 4096 == new_mode / 4096
-                    && (old_mode != new_mode || old_oid != new_oid)
+                    && (old_mode != new_mode
+                        || old_oid != new_oid
+                        || (dirty_gitlinks && new_mode == 0o160000))
             }
             b"T" => old_mode != 0 && new_mode != 0 && old_mode / 4096 != new_mode / 4096,
             _ => false,
@@ -93,6 +125,12 @@ impl<'a> RawBinding<'a> {
             new_oid,
             status: status[0],
         })
+    }
+    fn dirty_gitlink(&self) -> bool {
+        self.status == b'M'
+            && self.old_mode == 0o160000
+            && self.new_mode == 0o160000
+            && self.old_oid == self.new_oid
     }
     pub fn source_id(&self) -> u32 {
         self.source_id
@@ -289,6 +327,20 @@ impl<'a> Parser<'a> {
                 }
                 Phase::Hunk => self.hunk(line)?,
                 Phase::Body => {
+                    if self.binding.dirty_gitlink() {
+                        let (prefix, suffix) = if self.old_left == 1 {
+                            (b"-Subproject commit ".as_slice(), b"".as_slice())
+                        } else {
+                            (b"+Subproject commit ".as_slice(), b"-dirty".as_slice())
+                        };
+                        if line
+                            .strip_prefix(prefix)
+                            .and_then(|s| s.strip_prefix(self.old_oid))
+                            != Some(suffix)
+                        {
+                            return Err(DiffError::Invalid);
+                        }
+                    }
                     if line == b"\\ No newline at end of file" {
                         let previous = self.previous.take().ok_or(DiffError::Invalid)?;
                         self.old_eof |= previous != b'+';
@@ -362,6 +414,8 @@ impl<'a> Parser<'a> {
             Phase::DeletedMode
         } else if self.old_mode != self.new_mode {
             Phase::OldMode
+        } else if self.binding.dirty_gitlink() {
+            Phase::OldPath
         } else {
             Phase::Index
         };
@@ -385,6 +439,9 @@ impl<'a> Parser<'a> {
     }
 
     fn hunk(&mut self, line: &[u8]) -> Result<(), DiffError> {
+        if self.binding.dirty_gitlink() && line != b"@@ -1 +1 @@" {
+            return Err(DiffError::Invalid);
+        }
         let mut tail = line.strip_prefix(b"@@ -").ok_or(DiffError::Invalid)?;
         let (old_start, old_count) = range(&mut tail)?;
         tail = tail.strip_prefix(b" +").ok_or(DiffError::Invalid)?;
@@ -518,7 +575,7 @@ fn file_path(
     } else {
         path_token(value, prefix, path)?
     };
-    let expected_trailer = if !absent && !value.starts_with(b"\"") && path.contains(&b' ') {
+    let expected_trailer = if !absent && path.contains(&b' ') {
         b"\t".as_slice()
     } else {
         b""
