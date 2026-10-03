@@ -10,7 +10,7 @@ outside this implementation task.
 | P3 | Strict bounded YAML/merge, compiled custom rules/captured entropy, exclusions, explicit-file CLI (`f0729c4`) | Both findings fixed at `ebc63d2`; independent re-review approved | 59 tests on stable/1.85; functions 100%, lines 99.35%, regions 98.12%; required checks pass | Complete |
 | P4 | Context/password/JOSE/suppressions (`cda4344`, `7a5185e`) | Four Important findings fixed; re-review approved; one Minor retained for final triage | 88 Rust +2 evaluator tests; functions100%, lines98.99%, regions98.08%; stable/MSRV and required checks pass | Complete |
 | P5 | Bounded directory/glob scope and deterministic parallel collector (`9a7012b`, `e31e715`) | Two Important scope defects fixed; re-review approved; two Minor observations retained | 139 tests on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.91%, regions 98.02%; required checks pass | Complete |
-| P6 | Pending | Pending | Pending | Not started |
+| P6 | Strict bounded raw-binding and unified-patch parser (`94d0588`, `39d359f`) | Hunk-gap/empty-side finding fixed; re-review approved | 158 tests, locked Rust 1.85; functions 100%, lines 98.96%, regions 98.18%; required checks pass | Complete |
 | P7 | Pending | Pending | Pending | Not started |
 | P8 | Pending | Pending | Pending | Not started |
 | P9 | Pending | Pending | Pending | Not started |
@@ -73,3 +73,19 @@ a character-class brace can be rejected by the glob precheck, and the directory
 CLI path compiles root scanner policy twice. The final 139 tests pass on current
 Git, Git 2.30, and Rust 1.85; formatting, strict Clippy, benchmark, and coverage
 gates pass at 231/231 functions, 98.9103% lines, and 98.0193% regions.
+
+## P6
+
+The pure parser validates authoritative NUL raw metadata and unified patch
+framing before emitting only added bytes with new-side line numbers. Its tests
+exercise type changes, quoted and non-UTF-8 paths, no-newline markers, malformed
+records, exact size limits, and bounded adversarial hunk sequences. Independent
+review found that mismatched old/new hunk gaps could invent source lines;
+regressions now require equal omitted-context gaps and valid empty/EOF anchors.
+The scoped re-review approved the fix.
+
+All 158 tests, locked Rust 1.85, formatting, strict Clippy, benchmarks, and
+coverage pass: 273/273 functions, 98.9600% lines, 98.1840% regions. P7 owns
+Git process acquisition and binding the two streams. P8 must handle unknown
+working-tree new object IDs explicitly; the pure parser validates pinned-tree
+identities and does not claim working-tree acquisition support.

@@ -15,7 +15,7 @@ package's completion gate.
 
 P3 is complete at `ebc63d2` after implementation, required verification, and an
 independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is complete at `7a5185e`;
-P5 is complete at `e31e715`; P6 is next. P0–P2
+P5 is complete at `e31e715`; P6 is complete at `39d359f`; P7 is next. P0–P2
 foundation gaps tied to full-scope evaluation remain tracked below rather than
 being silently closed by the explicit-file delivery.
 
@@ -27,7 +27,7 @@ being silently closed by the explicit-file delivery.
 | P3 | Complete | Strict bounded configuration/merge, compiled custom captures/entropy, file exclusions and CLI; fail-closed discovery; 59 stable/MSRV tests; independent re-review approved | — |
 | P4 | Complete | Context/password/JOSE/suppression detection; review fixes at `7a5185e`; 88 Rust tests +2 evaluator; coverage gates; independent re-review approved | One non-blocking opaque-token span minor recorded for final review |
 | P5 | Complete | Directory/glob policy, bounded parallel scanning, deterministic global collection and measured crossover/RSS; 139 tests on current Git, Git 2.30 and Rust 1.85; independent review fixes approved | Two non-blocking minors recorded for final review |
-| P6 | Not started | — | Strict unified-patch parser and adversarial tests |
+| P6 | Complete | Pure bounded raw-binding/unified-patch parser; adversarial byte/count tests; hunk-gap review fix at `39d359f`; 158 tests and coverage gates; independent re-review approved | P8 working-tree unknown-OID handoff recorded |
 | P7 | Not started | — | Pinned staged acquisition/policy and staged CLI |
 | P8 | Not started | — | Pinned reference-to-working-tree diff CLI |
 | P9 | Not started | — | Managed hook installation and commit enforcement |
@@ -46,7 +46,7 @@ and regions 1718/1751 (98.12%). Formatting, strict Clippy, benchmark and diff
 checks pass. The independent reviewer approved both discovery failure handling
 and the portable Unix output-error fixture. Native CI/full v1 evaluation remain open.
 
-**Next implementation work:** complete P6–P10 through implement/test/review/fix
+**Next implementation work:** complete P7–P10 through implement/test/review/fix
 gates. Explicit-file, directory, and glob scans are available; Git scan and hook
 modes remain unavailable pending their packages. Package sub-agent evidence is
 summarized in [the implementation report](implementation-report.md).
@@ -355,7 +355,7 @@ crossover before selecting a default parallelism threshold.
 
 ### P6 — Build and validate the strict unified-patch parser
 
-**Status:** Not started.
+**Status:** Complete — `94d0588` plus `39d359f` review fix; independent re-review approved. 158 tests pass on Rust 1.85; functions 100%, lines 98.9600%, regions 98.1840%.
 
 Depends on P2; can precede P5. Keep parsing independent of Git invocation in
 `scanner/diff.rs`. Accept bounded byte records and authoritative NUL-metadata
