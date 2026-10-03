@@ -13,7 +13,7 @@ outside this implementation task.
 | P6 | Strict bounded raw-binding and unified-patch parser (`94d0588`, `39d359f`) | Hunk-gap/empty-side finding fixed; re-review approved | 158 tests, locked Rust 1.85; functions 100%, lines 98.96%, regions 98.18%; required checks pass | Complete |
 | P7 | Pinned index snapshot, staged policy and added-line CLI (`f3e1c29`, `e301c0e`) | Nested-root policy false-clean fixed; re-review approved | 196 tests on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.93%, regions 98.07%; required checks pass | Complete |
 | P8 | Direct pinned-reference working-tree diff, independent identities and mutation checks (`5b5ebd6`, `1808af7`) | Git unit-test isolation fixed; re-review approved | 226 tests current Git/Git 2.30/Rust 1.85; functions 100%, lines 98.9939%, regions 98.0313%; required checks pass | Complete |
-| P9 | Pending | Pending | Pending | Not started |
+| P9 | Uncommitted direct installer, framework manifest and consumer guide | Pending | Direct-hook integration tests reported green; framework and final checks pending | In progress; paused |
 | P10 | Release preflight research identifies native runners, linkage checks, Cargo package checks, and Git-floor tests | Pending implementation review | Native jobs and artifact smoke tests pending | Research only |
 
 ## P3

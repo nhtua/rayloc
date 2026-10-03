@@ -32,7 +32,7 @@ being silently closed by the explicit-file delivery.
 | P6 | Complete | Pure bounded raw-binding/unified-patch parser; adversarial byte/count tests; hunk-gap review fix at `39d359f`; 158 tests and coverage gates; independent re-review approved | P8 working-tree unknown-OID handoff recorded |
 | P7 | Complete | Pinned staged index acquisition/policy and added-line CLI; nested-root policy review fix at `e301c0e`; 196 tests current Git/Git 2.30/Rust 1.85; independent re-review approved | Staged latency and platform runs remain P10 gates |
 | P8 | Complete | Pinned reference-to-working-tree diff CLI, independent identities, dirty-gitlink exclusion and test-isolation review fix at `1808af7`; 226 tests on current Git/Git 2.30/Rust 1.85; independent re-review approved | Concurrent full-suite TempDir collision carried to P10 runner validation |
-| P9 | Not started | — | Managed hook installation and commit enforcement |
+| P9 | In progress; paused | Uncommitted installer, CLI tests, Rust-language pre-commit manifest and consumer guide; agent reported direct-hook integration tests green | Finish framework installation/commit tests, required checks, commit, independent review and any fixes |
 | P10 | Not started | — | Full evaluation, supported-platform artifacts, and release gates |
 
 Verified locally for `923400b`: all 26 tests pass; production function coverage
@@ -48,7 +48,8 @@ and regions 1718/1751 (98.12%). Formatting, strict Clippy, benchmark and diff
 checks pass. The independent reviewer approved both discovery failure handling
 and the portable Unix output-error fixture. Native CI/full v1 evaluation remain open.
 
-**Next implementation work:** implement and review P9–P10. Explicit-file,
+**Work paused at user request.** On resumption, finish and review P9, then P10.
+Explicit-file,
 directory, glob, staged, and reference-diff scans are available; hook mode remains
 unavailable pending P9. Package sub-agent evidence is
 summarized in [the implementation report](implementation-report.md).
@@ -422,7 +423,7 @@ semantics and cover empty diffs. No claim of an atomic future commit is made.
 
 ### P9 — Install a managed pre-commit hook safely
 
-**Status:** Not started.
+**Status:** In progress; paused at user request. The direct installer, CLI tests, framework manifest and consumer guide have uncommitted changes. Direct-hook integration tests were reported green; framework validation, final verification, commit and independent review remain open.
 
 Depends on P7. Work in `hook.rs`, CLI, and documentation. Resolve the active Git
 hook directory, including relative `core.hooksPath` and linked worktrees.
