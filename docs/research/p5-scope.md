@@ -2,6 +2,8 @@
 
 Measured 2026-10-02 on Linux x86_64, AMD Ryzen 9 9950X (32 logical CPUs),
 Rust 1.88.0, Git 2.55.0. Locked tests also pass on Rust 1.85.0 and Git 2.30.0.
+The original performance tables describe `9a7012b`; the fix-round measurements
+at the end supersede them for the additional administration discovery pass.
 
 ## Scope and policy
 
@@ -173,3 +175,51 @@ policy caps, malformed/truncated/decreasing Git records, duplicate stages,
 checked-counter overflow, child/drainer failures, permissions and disappearing
 sources. Serial/2/8-worker runs of 300 dense files compare identical findings,
 all counters and errors, retaining the lowest 10,000 of 12,000 detections.
+
+## Fix round 1: nested administration and selected symlink leaves
+
+Directory scope now performs a bounded metadata-only pass before admitting any
+scan work. Encountered regular `.git` pointer files resolve both their Git and
+common directories with the existing bounded Git path helper. Inherited
+`GIT_DIR`, `GIT_WORK_TREE` and `GIT_COMMON_DIR` are cleared only for these local
+queries; selected-root policy and tracked membership remain unchanged. This
+excludes separate administration that sorts before its nested working directory,
+as well as linked-worktree common administration. Ordinary nested `.git`
+directories remain excluded without scanning their contents.
+
+The pass uses the same private pool, depth/frontier/path budgets and iterative
+frames. It admits no files, counts no duplicate exclusions, loads no additional
+ignore policy, and retains only deduplicated administration boundaries. At most
+4,096 pointer resolutions and two paths per pointer are admitted; path payload
+is capped at 16 KiB each, charged against the existing 16-MiB live path budget,
+and vector capacities are charged against the existing 65,536-entry frontier.
+No repository-wide discovered-file list is retained. Invalid pointers/common
+queries and resource exhaustion fail closed before scanning. Directory metadata
+errors are incomplete even if the later pass can read other sources. The scan
+remains non-atomic; changed pointers or paths between passes are not a snapshot.
+
+CLI selection reconstructs path components before `symlink_metadata`, removing
+trailing separators without resolving ancestors. Thus `linked/` and `linked///`
+reject a selected directory symlink, while `linked/sub/` and `linked/sub/key`
+retain the supported ancestor-alias behavior.
+
+Fresh final-code `cargo bench` retains the tiny-file crossover at 256: 128 x
+266 bytes takes 0.382 ms serial versus 0.483 ms with eight workers; 256 files
+takes 0.759 versus 0.669 ms. 4,096 x 16,397 bytes takes 259.473 ms / 258.84 MB/s
+serial versus 49.073 ms / 1,368.63 MB/s with eight workers. The metadata pass's
+cost is included. The existing engine driver measures 271.42 MB/s here.
+
+Fresh `scope_measure.py` results with the same methodology and inherited-RSS
+floor caveat:
+
+| Workload | 1-worker MB/s / peak KiB | 8-worker MB/s / peak KiB |
+| --- | --- | --- |
+| 20,000 x 266-byte files | 77.29 / 16,128 | 196.87 / 16,384 |
+| 4,096 x 16,397-byte files | 256.91 / 16,384 | 1,440.41 / 16,384 |
+| 256 x 16,397, 256 complex ignores + 256 custom rules | 113.45 / 19,244 | 421.17 / 22,908 |
+| 256 x 2,100-byte files, 25,600 findings | 168.68 / 16,640 | 63.65 / 16,640 |
+
+Separate 20,000-entry Git metadata measurement: 16,640 KiB with the same floor.
+These workloads do not measure maximum nested-repository query latency or
+worst-case administrative-path storage; caps and malformed/query/counter error
+paths are separately exercised by real repositories and injected small budgets.

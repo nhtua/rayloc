@@ -357,3 +357,159 @@ fn repository_globs_are_root_relative_and_ignore_only_selected_policy_sources() 
     assert_eq!(out.status.code(), Some(1));
     assert!(text(&out).contains("1 finding(s)"));
 }
+
+#[test]
+fn review_nested_separate_administration_is_excluded_before_any_scan() {
+    for outer_git in [false, true] {
+        for administration in ["admin", "z-admin"] {
+            let root = TempDir::new();
+            if outer_git {
+                git(&root, &["init", "--quiet"]);
+            }
+            git(
+                &root,
+                &[
+                    "init",
+                    "--quiet",
+                    &format!("--separate-git-dir={administration}"),
+                    "nested",
+                ],
+            );
+            fs::write(
+                root.path().join(".rayloc.yaml"),
+                "version: '1'\nrules: [{id: corporate, regex: 'corp_[a-z]+'}]\n",
+            )
+            .unwrap();
+            fs::write(root.path().join("nested/.rayloc.yaml"), "invalid").unwrap();
+            fs::write(root.path().join("nested/key"), "corp_abcdefghijklmnop").unwrap();
+            fs::write(
+                root.path().join(administration).join("secret"),
+                "corp_abcdefghijklmnop",
+            )
+            .unwrap();
+            let output = run(&root, &["scan", "."]);
+            assert_eq!(output.status.code(), Some(1));
+            assert!(text(&output).contains("1 finding(s)"), "{}", text(&output));
+            assert!(!text(&output).contains("abcdefghijklmnop"));
+            if outer_git {
+                let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+                    .current_dir(root.path())
+                    .args(["scan", "."])
+                    .env("GIT_DIR", root.path().join(".git"))
+                    .env("GIT_WORK_TREE", root.path())
+                    .output()
+                    .unwrap();
+                assert_eq!(output.status.code(), Some(1));
+                assert!(text(&output).contains("1 finding(s)"));
+            }
+            let output = run(&root, &["scan", "--glob", "**/secret"]);
+            assert_eq!(output.status.code(), Some(2));
+            assert!(text(&output).contains("glob matches no regular files"));
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn review_trailing_separators_cannot_follow_a_selected_symlink_leaf() {
+    use std::os::unix::fs::symlink;
+    let root = TempDir::new();
+    let external = TempDir::new();
+    secret(&external, "sub/key");
+    symlink(external.path(), root.path().join("linked")).unwrap();
+    for target in ["linked", "linked/", "linked///", "./linked/"] {
+        let output = run(&root, &["scan", target]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(!String::from_utf8(output.stderr).unwrap().contains("linked"));
+    }
+    for target in ["linked/sub/", "linked/sub/key"] {
+        let output = run(&root, &["scan", target]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(text(&output).contains("1 finding(s)"));
+    }
+}
+
+#[test]
+fn review_nested_worktrees_exclude_both_git_and_common_administration() {
+    let root = TempDir::new();
+    git(
+        &root,
+        &["init", "--quiet", "--separate-git-dir=admin", "nested"],
+    );
+    git(
+        &root,
+        &[
+            "-C",
+            "nested",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "fixture",
+        ],
+    );
+    git(
+        &root,
+        &[
+            "-C",
+            "nested",
+            "worktree",
+            "add",
+            "--quiet",
+            "--detach",
+            "../linked",
+            "HEAD",
+        ],
+    );
+    fs::write(root.path().join("admin/secret"), "ghp_abcdefghijklmnop").unwrap();
+    secret(&root, "nested/key");
+    secret(&root, "linked/key");
+    let output = run(&root, &["scan", "."]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output).contains("2 finding(s)"), "{}", text(&output));
+    assert!(text(&output).contains("3 file(s) excluded"));
+}
+
+#[cfg(unix)]
+#[test]
+fn review_nested_common_directory_failure_is_safe_and_incomplete() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = TempDir::new();
+    git(
+        &root,
+        &["init", "--quiet", "--separate-git-dir=admin", "nested"],
+    );
+    secret(&root, "nested/key");
+    let real = Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .unwrap();
+    let real = String::from_utf8(real.stdout).unwrap();
+    let shim = TempDir::new();
+    let executable = shim.path().join("git");
+    fs::write(&executable, format!(
+        "#!/bin/sh\ncase \"$*\" in *--git-common-dir*) printf 'private-nested-stderr' >&2; exit 1;; *) exec {} \"$@\";; esac\n",
+        real.trim(),
+    )).unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(root.path())
+        .args(["scan", "."])
+        .env("PATH", shim.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(text(&output).contains("INCOMPLETE"));
+    assert!(!text(&output).contains("abcdefghijklmnop"));
+    assert!(!text(&output).contains("private-nested-stderr"));
+    assert!(
+        !String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("private-nested-stderr")
+    );
+}

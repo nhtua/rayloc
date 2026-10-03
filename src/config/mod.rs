@@ -495,7 +495,7 @@ pub fn discover_scope_root(selected: &Path) -> Result<ScopeRoot, ConfigError> {
     }
     let mut administration = Vec::new();
     for option in ["--git-dir", "--git-common-dir"] {
-        let output = git_path(&path, option)?;
+        let output = git_path(&path, option, false)?;
         if !administration.contains(&output) {
             administration.push(output);
         }
@@ -506,11 +506,22 @@ pub fn discover_scope_root(selected: &Path) -> Result<ScopeRoot, ConfigError> {
         administration,
     })
 }
-fn git_path(root: &Path, option: &str) -> Result<PathBuf, ConfigError> {
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["rev-parse", option])
+pub(crate) fn nested_administration(directory: &Path) -> Result<[PathBuf; 2], ConfigError> {
+    Ok([
+        git_path(directory, "--git-dir", true)?,
+        git_path(directory, "--git-common-dir", true)?,
+    ])
+}
+fn git_path(root: &Path, option: &str, nested: bool) -> Result<PathBuf, ConfigError> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(root).args(["rev-parse", option]);
+    if nested {
+        // Resolve the encountered repository, not an inherited selected-root override.
+        for variable in ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"] {
+            command.env_remove(variable);
+        }
+    }
+    let mut child = command
         .env("LC_ALL", "C")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

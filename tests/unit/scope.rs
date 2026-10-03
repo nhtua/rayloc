@@ -227,6 +227,9 @@ fn runner<'a>(root: &'a ScopeRoot) -> Runner<'a> {
         batch_bytes: 0,
         matched: 0,
         total_policy: PolicyUsage::default(),
+        administration: Vec::new(),
+        repositories: 0,
+        metadata_only: false,
     }
 }
 #[test]
@@ -447,4 +450,148 @@ fn a_discovered_path_above_the_path_cap_is_not_admitted() {
         policy: None,
     });
     assert_eq!(runner.walk(None, &mut None), Err(ScanError::ScopeLimit));
+}
+
+#[test]
+fn nested_administration_admission_checks_pointer_and_storage_budgets() {
+    let temp = TempDir::new();
+    assert!(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(temp.path())
+            .args(["init", "--quiet", "--separate-git-dir=admin", "nested"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let root = root(&temp);
+    let directory = temp.path().join("nested");
+    let mut limited = runner(&root);
+    limited.repositories = NESTED_REPOSITORIES;
+    assert_eq!(
+        limited.nested_administration(&directory),
+        Err(ScanError::ScopeLimit)
+    );
+    let mut entries = runner(&root);
+    entries.limits.frontier = 0;
+    assert_eq!(
+        entries.nested_administration(&directory),
+        Err(ScanError::ScopeLimit)
+    );
+    let mut paths = runner(&root);
+    paths.limits.paths = 0;
+    assert_eq!(
+        paths.nested_administration(&directory),
+        Err(ScanError::ScopeLimit)
+    );
+    let mut record = runner(&root);
+    record.limits.administration_path = 1;
+    assert_eq!(
+        record.nested_administration(&directory),
+        Err(ScanError::ScopeLimit)
+    );
+    assert!(record.administration.is_empty());
+    let mut admitted = runner(&root);
+    admitted.nested_administration(&directory).unwrap();
+    assert_eq!(admitted.administration.len(), 1);
+    let usage = (admitted.budget.entries, admitted.budget.paths);
+    admitted.nested_administration(&directory).unwrap();
+    assert_eq!(admitted.administration.len(), 1);
+    assert_eq!((admitted.budget.entries, admitted.budget.paths), usage);
+    let with_admin = ScopeRoot {
+        administration: vec![temp.path().join("admin")],
+        ..root
+    };
+    let mut known = runner(&with_admin);
+    known.nested_administration(&directory).unwrap();
+    assert!(known.administration.is_empty());
+    assert_eq!(known.budget.paths, 0);
+    let unknown = ScopeRoot {
+        root: temp.path().to_path_buf(),
+        git: false,
+        administration: Vec::new(),
+    };
+    let mut spare = runner(&unknown);
+    spare.administration = Vec::with_capacity(2);
+    spare.budget.entries = 2;
+    spare.nested_administration(&directory).unwrap();
+    assert_eq!(spare.administration.len(), 1);
+    assert_eq!(spare.budget.entries, 2);
+}
+
+#[test]
+fn discovered_administration_exclusion_counter_is_checked() {
+    let temp = TempDir::new();
+    fs::create_dir(temp.path().join("admin")).unwrap();
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    runner.administration.push(temp.path().join("admin").into());
+    runner.enter(temp.path().into(), true, true, true).unwrap();
+    runner.outcome.stats.files_excluded = u64::MAX;
+    assert_eq!(
+        runner.walk(None, &mut None),
+        Err(ScanError::CounterOverflow)
+    );
+}
+
+#[test]
+fn malformed_nested_pointer_fails_before_admitting_scan_work() {
+    let temp = TempDir::new();
+    fs::create_dir(temp.path().join("nested")).unwrap();
+    fs::write(temp.path().join("nested/.git"), "gitdir: absent\n").unwrap();
+    fs::write(temp.path().join("key"), "ghp_abcdefghijklmnop").unwrap();
+    let outcome = scan(&temp, LIMITS);
+    assert_eq!(outcome.errors, [ScanError::Discovery]);
+    assert_eq!(outcome.exit_code(), 2);
+    assert_eq!(outcome.stats.files_attempted, 0);
+    assert!(outcome.findings.is_empty());
+}
+
+#[test]
+fn pending_work_flushes_at_the_byte_limit_and_preserves_open_failures() {
+    let temp = TempDir::new();
+    fs::write(temp.path().join("key"), "clean").unwrap();
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    // 255 independently owned 4,112-byte paths leave 16 bytes of batch budget.
+    // Their sources are unavailable by scan time; admission must retain the errors.
+    let unavailable = temp
+        .path()
+        .join("x".repeat(4112 - temp.path().as_os_str().len() - 1));
+    for source_id in 1..=255 {
+        runner.batch.push(Work {
+            path: unavailable.clone().into_boxed_path(),
+            source_id,
+        });
+    }
+    runner.matched = 255;
+    runner.batch_bytes = 1_048_560;
+    runner.budget.paths = 1_048_560;
+    runner
+        .regular(temp.path().join("key").into(), true, true, None, &mut None)
+        .unwrap();
+    assert_eq!(runner.outcome.stats.files_attempted, 255);
+    assert_eq!(runner.outcome.errors, [ScanError::Open]);
+    assert_eq!(runner.batch.len(), 1);
+    runner.flush();
+    assert_eq!(runner.outcome.stats.files_attempted, 256);
+    assert_eq!(runner.outcome.stats.files_completed, 1);
+    assert_eq!(runner.outcome.exit_code(), 2);
+    assert_eq!(runner.budget.paths, 0);
+}
+
+#[test]
+fn directory_workers_preserve_prior_findings_on_app_header_budget_failure() {
+    let temp = TempDir::new();
+    fs::write(temp.path().join("a"), "ghp_abcdefghijklmnop").unwrap();
+    let app = format!("ghs_1234_{}.e30.c2ln", "A".repeat(11000));
+    fs::write(temp.path().join("z"), app).unwrap();
+    let result = scan(&temp, LIMITS);
+    assert_eq!(result.errors, [ScanError::CandidateLimit]);
+    assert_eq!(result.stats.files_attempted, 2);
+    assert_eq!(result.stats.files_completed, 1);
+    assert_eq!(result.findings.len(), 1);
+    assert_eq!(result.findings[0].source_id, 1);
+    assert_eq!(result.exit_code(), 2);
+    assert!(!format!("{result:?}").contains("abcdefghijklmnop"));
 }

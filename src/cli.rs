@@ -131,7 +131,9 @@ fn scan(
         }
     }
     let target = path.unwrap_or_else(|| OsString::from("."));
-    let path = Path::new(&target);
+    // Components remove trailing separators before lstat without resolving ancestors.
+    let selected: std::path::PathBuf = Path::new(&target).components().collect();
+    let path = selected.as_path();
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_file() || metadata.is_dir() => metadata,
         Ok(_) => return scan_error(errors, "selected path is not a regular file or directory"),

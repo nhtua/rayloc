@@ -28,6 +28,7 @@ const BATCH: usize = 256;
 const BATCH_BYTES: usize = 1024 * 1024;
 const POLICY_FILES: usize = 4096;
 const POLICY_BYTES: usize = 64 * 1024 * 1024;
+const NESTED_REPOSITORIES: usize = 4096;
 #[derive(Clone, Copy)]
 struct Limits {
     frontier: usize,
@@ -37,6 +38,7 @@ struct Limits {
     policy: PolicyUsage,
     policy_files: usize,
     policy_bytes: usize,
+    administration_path: usize,
 }
 const LIMITS: Limits = Limits {
     frontier: MAX_FRONTIER,
@@ -46,6 +48,7 @@ const LIMITS: Limits = Limits {
     policy: ACTIVE_POLICY,
     policy_files: POLICY_FILES,
     policy_bytes: POLICY_BYTES,
+    administration_path: MAX_PATH_BYTES,
 };
 /// Benchmark/test controls; hard worker/resource ceilings still apply.
 #[derive(Clone, Copy)]
@@ -122,6 +125,9 @@ struct Runner<'a> {
     batch_bytes: usize,
     matched: u32,
     total_policy: PolicyUsage,
+    administration: Vec<Box<Path>>,
+    repositories: usize,
+    metadata_only: bool,
 }
 /// Scan an existing directory, optionally intersecting a repository-relative glob.
 pub fn scan_directory(
@@ -178,10 +184,15 @@ fn scan_scope(
             batch: Vec::with_capacity(BATCH),
             batch_bytes: 0,
             matched: 0,
+            administration: Vec::new(),
+            repositories: 0,
+            metadata_only: false,
         };
         runner.budget.charge(runner.batch.capacity(), 0, limits)?;
         let selected = fs::canonicalize(selected).map_err(|_| ScanError::Discovery)?;
-        let execution = runner.discover(&selected, inclusion.as_ref());
+        let execution = runner
+            .discover_administration(&selected)
+            .and_then(|()| runner.discover(&selected, inclusion.as_ref()));
         if let Err(error) = execution {
             runner.outcome.fail(error);
         }
@@ -354,7 +365,11 @@ impl Runner<'_> {
         }
         self.budget
             .charge(0, directory.as_os_str().len(), self.limits)?;
-        let policy = self.policy(&directory, combined)?;
+        let policy = if self.metadata_only {
+            None
+        } else {
+            self.policy(&directory, combined)?
+        };
         let entries = if enumerate {
             self.entries(&directory)?
         } else {
@@ -541,6 +556,45 @@ impl Runner<'_> {
         }
         Ok(())
     }
+    fn discover_administration(&mut self, selected: &Path) -> Result<(), ScanError> {
+        // A pointer can identify administration that sorts before the worktree.
+        // Resolve all encountered pointers before admitting any scan work.
+        self.metadata_only = true;
+        self.enter(selected.into(), true, true, true)?;
+        self.walk(None, &mut None)?;
+        self.metadata_only = false;
+        Ok(())
+    }
+    fn nested_administration(&mut self, directory: &Path) -> Result<(), ScanError> {
+        if self.repositories == NESTED_REPOSITORIES {
+            return Err(ScanError::ScopeLimit);
+        }
+        self.repositories += 1;
+        for path in
+            crate::config::nested_administration(directory).map_err(|_| ScanError::Discovery)?
+        {
+            if path.as_os_str().len() > self.limits.administration_path {
+                return Err(ScanError::ScopeLimit);
+            }
+            if self.root.administration.contains(&path)
+                || self
+                    .administration
+                    .iter()
+                    .any(|known| known.as_ref() == path)
+            {
+                continue;
+            }
+            if self.administration.len() == self.administration.capacity() {
+                let old = self.administration.capacity();
+                self.administration.reserve_exact(1);
+                self.budget
+                    .charge(self.administration.capacity() - old, 0, self.limits)?;
+            }
+            self.budget.charge(0, path.as_os_str().len(), self.limits)?;
+            self.administration.push(path.into_boxed_path());
+        }
+        Ok(())
+    }
     fn walk(
         &mut self,
         inclusion: Option<&GlobSet>,
@@ -558,14 +612,28 @@ impl Runner<'_> {
             let path = join(&frame.directory, &entry.name)?;
             let parent_scanner = frame.scanner;
             let parent_combined = frame.combined;
-            if entry.name.as_ref() == OsStr::new(".git")
+            if entry.name.as_ref() == OsStr::new(".git") {
+                if self.metadata_only && matches!(entry.kind, Kind::Regular) {
+                    self.nested_administration(path.parent().expect("entry has a parent"))?;
+                }
+                if !self.metadata_only {
+                    self.excluded()?;
+                }
+                continue;
+            }
+            if self
+                .root
+                .administration
+                .iter()
+                .any(|admin| path.starts_with(admin))
                 || self
-                    .root
                     .administration
                     .iter()
                     .any(|admin| path.starts_with(admin))
             {
-                self.excluded()?;
+                if !self.metadata_only {
+                    self.excluded()?;
+                }
                 continue;
             }
             match entry.kind {
@@ -579,10 +647,11 @@ impl Runner<'_> {
                         self.outcome.fail(error);
                     }
                 }
-                Kind::Regular => {
+                Kind::Regular if !self.metadata_only => {
                     self.regular(path, parent_scanner, parent_combined, inclusion, tracked)?
                 }
-                Kind::Other => self.excluded()?,
+                Kind::Other if !self.metadata_only => self.excluded()?,
+                Kind::Regular | Kind::Other => {}
                 Kind::Error => self.outcome.fail(ScanError::Discovery),
             }
         }
