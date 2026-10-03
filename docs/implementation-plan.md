@@ -15,7 +15,8 @@ package's completion gate.
 
 P3 is complete at `ebc63d2` after implementation, required verification, and an
 independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is complete at `7a5185e`;
-P5 is complete at `e31e715`; P6 is complete at `39d359f`; P7 is next. P0–P2
+P5 is complete at `e31e715`; P6 is complete at `39d359f`; P7 is complete at
+`e301c0e`; P8 is next. P0–P2
 foundation gaps tied to full-scope evaluation remain tracked below rather than
 being silently closed by the explicit-file delivery.
 
@@ -28,7 +29,7 @@ being silently closed by the explicit-file delivery.
 | P4 | Complete | Context/password/JOSE/suppression detection; review fixes at `7a5185e`; 88 Rust tests +2 evaluator; coverage gates; independent re-review approved | One non-blocking opaque-token span minor recorded for final review |
 | P5 | Complete | Directory/glob policy, bounded parallel scanning, deterministic global collection and measured crossover/RSS; 139 tests on current Git, Git 2.30 and Rust 1.85; independent review fixes approved | Two non-blocking minors recorded for final review |
 | P6 | Complete | Pure bounded raw-binding/unified-patch parser; adversarial byte/count tests; hunk-gap review fix at `39d359f`; 158 tests and coverage gates; independent re-review approved | P8 working-tree unknown-OID handoff recorded |
-| P7 | Not started | — | Pinned staged acquisition/policy and staged CLI |
+| P7 | Complete | Pinned staged index acquisition/policy and added-line CLI; nested-root policy review fix at `e301c0e`; 196 tests current Git/Git 2.30/Rust 1.85; independent re-review approved | Staged latency and platform runs remain P10 gates |
 | P8 | Not started | — | Pinned reference-to-working-tree diff CLI |
 | P9 | Not started | — | Managed hook installation and commit enforcement |
 | P10 | Not started | — | Full evaluation, supported-platform artifacts, and release gates |
@@ -46,9 +47,9 @@ and regions 1718/1751 (98.12%). Formatting, strict Clippy, benchmark and diff
 checks pass. The independent reviewer approved both discovery failure handling
 and the portable Unix output-error fixture. Native CI/full v1 evaluation remain open.
 
-**Next implementation work:** complete P7–P10 through implement/test/review/fix
-gates. Explicit-file, directory, and glob scans are available; Git scan and hook
-modes remain unavailable pending their packages. Package sub-agent evidence is
+**Next implementation work:** complete P8–P10 through implement/test/review/fix
+gates. Explicit-file, directory, glob, and staged scans are available; reference
+diff and hook modes remain unavailable pending their packages. Package sub-agent evidence is
 summarized in [the implementation report](implementation-report.md).
 Update this table and package status lines whenever implementation advances.
 
@@ -376,7 +377,7 @@ lines. Parser tests run without Git so acquisition failures cannot hide bugs.
 
 ### P7 — Acquire an index snapshot and enable staged scanning
 
-**Status:** Not started.
+**Status:** Complete — `f3e1c29` plus `e301c0e` review fix; independent re-review approved. 196 tests pass on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.9253%, regions 98.0687%.
 
 Depends on P3–P6. Add the Git process layer with argument arrays, bounded stdout
 records, concurrent bounded stderr draining/discard, successful-child checks,

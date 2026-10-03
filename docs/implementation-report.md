@@ -11,7 +11,7 @@ outside this implementation task.
 | P4 | Context/password/JOSE/suppressions (`cda4344`, `7a5185e`) | Four Important findings fixed; re-review approved; one Minor retained for final triage | 88 Rust +2 evaluator tests; functions100%, lines98.99%, regions98.08%; stable/MSRV and required checks pass | Complete |
 | P5 | Bounded directory/glob scope and deterministic parallel collector (`9a7012b`, `e31e715`) | Two Important scope defects fixed; re-review approved; two Minor observations retained | 139 tests on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.91%, regions 98.02%; required checks pass | Complete |
 | P6 | Strict bounded raw-binding and unified-patch parser (`94d0588`, `39d359f`) | Hunk-gap/empty-side finding fixed; re-review approved | 158 tests, locked Rust 1.85; functions 100%, lines 98.96%, regions 98.18%; required checks pass | Complete |
-| P7 | Pending | Pending | Pending | Not started |
+| P7 | Pinned index snapshot, staged policy and added-line CLI (`f3e1c29`, `e301c0e`) | Nested-root policy false-clean fixed; re-review approved | 196 tests on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.93%, regions 98.07%; required checks pass | Complete |
 | P8 | Pending | Pending | Pending | Not started |
 | P9 | Pending | Pending | Pending | Not started |
 | P10 | Release preflight research identifies native runners, linkage checks, Cargo package checks, and Git-floor tests | Pending implementation review | Native jobs and artifact smoke tests pending | Research only |
@@ -89,3 +89,20 @@ coverage pass: 273/273 functions, 98.9600% lines, 98.1840% regions. P7 owns
 Git process acquisition and binding the two streams. P8 must handle unknown
 working-tree new object IDs explicitly; the pure parser validates pinned-tree
 identities and does not claim working-tree acquisition support.
+
+## P7
+
+`scan --staged` now pins the index tree, reads its configuration and scanner
+ignore policy, and joins bounded raw metadata with strict patch records. It scans
+only additions using index line numbers; Git children are reaped and their
+diagnostics withheld. Real repository tests cover partial staging, unborn HEAD,
+alternate indexes, linked worktrees, attributes, binary bytes, paths, gitlinks,
+mutations, and child failures. [Staged acquisition details](research/p7-staged.md)
+record limits and known diff-only detection boundaries.
+
+Independent review caught a false-clean nested invocation: root policy lookup
+was relative to the caller directory. Eight failing regressions now pass with
+full-tree lookup, while relative `GIT_INDEX_FILE` behavior remains intact. The
+scoped re-review approved the correction. All 196 tests pass on current Git,
+Git 2.30, and Rust 1.85; formatting, strict Clippy, benchmarks, and coverage
+pass at 311/311 functions, 98.9253% lines, and 98.0687% regions.
