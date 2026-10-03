@@ -263,7 +263,7 @@ fn hunks_validate_counts_ranges_and_no_newline_markers() {
     let header = raw("100644", "100644", OLD, NEW, "M");
     for body in [
         "@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+new\n\\ No newline at end of file\n",
-        "@@ -1,0 +2 @@\n+one\n@@ -2 +3,0 @@\n-two\n",
+        "@@ -1,0 +2 @@\n+one\n@@ -2 +2,0 @@\n-two\n",
         "@@ -1 +1 @@\n same\n\\ No newline at end of file\n",
     ] {
         assert!(
@@ -793,5 +793,129 @@ fn individual_header_field_and_quoted_token_truncations_fail() {
                 assert!(parse_patch(&header, b"x\0", bad.as_bytes()).is_err());
             }
         }
+    }
+}
+
+#[test]
+fn mismatched_hunk_gaps_cannot_invent_new_coordinates() {
+    let header = raw("100644", "100644", OLD, NEW, "M");
+    for body in [
+        "@@ -1 +10 @@\n-old\n+new\n",
+        "@@ -10 +1 @@\n-old\n+new\n",
+        "@@ -1 +1 @@\n-old\n+new\n@@ -3 +4 @@\n-old\n+new\n",
+        "@@ -1,0 +2 @@\n+one\n@@ -2 +3,0 @@\n-two\n",
+    ] {
+        assert!(
+            parse_patch(
+                &header,
+                b"x\0",
+                section("x", "100644", "100644", OLD, NEW, body).as_bytes()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn absent_and_empty_side_anchors_cannot_skip_missing_source() {
+    for (om, nm, old, new, status, body) in [
+        (
+            "000000",
+            "100644",
+            ZERO,
+            NEW,
+            "A",
+            "@@ -0,0 +9 @@\n+clean\n",
+        ),
+        (
+            "100644",
+            "000000",
+            OLD,
+            ZERO,
+            "D",
+            "@@ -9 +0,0 @@\n-clean\n",
+        ),
+        (
+            "100644",
+            "100644",
+            EMPTY,
+            NEW,
+            "M",
+            "@@ -9,0 +10 @@\n+clean\n",
+        ),
+        (
+            "100644",
+            "100644",
+            OLD,
+            EMPTY,
+            "M",
+            "@@ -10 +9,0 @@\n-clean\n",
+        ),
+    ] {
+        assert!(
+            parse_patch(
+                &raw(om, nm, old, new, status),
+                b"x\0",
+                section("x", om, nm, old, new, body).as_bytes()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn no_newline_eof_forbids_later_zero_count_anchor_gaps_and_failure_stays_sticky() {
+    let header = raw("100644", "100644", OLD, NEW, "M");
+    for body in [
+        "@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+new\n@@ -2,0 +3 @@\n+later\n",
+        "@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file\n@@ -3 +2,0 @@\n-later\n",
+    ] {
+        let patch = section("x", "100644", "100644", OLD, NEW, body);
+        let mut parser = Parser::new(
+            RawBinding::parse(7, &header, b"x\0", 40).unwrap(),
+            EMPTY.as_bytes(),
+        )
+        .unwrap();
+        let mut rejected = false;
+        for line in patch.as_bytes().split_inclusive(|&b| b == b'\n') {
+            if parser.record(line, |_| {}).is_err() {
+                rejected = true;
+                break;
+            }
+        }
+        assert!(rejected);
+        assert!(parser.record(b"+otherwise-valid\n", |_| {}).is_err());
+        assert!(parser.finish().is_err());
+    }
+}
+
+#[test]
+fn equal_nonzero_gaps_and_exact_eof_anchors_preserve_valid_coordinates() {
+    let header = raw("100644", "100644", OLD, NEW, "M");
+    let body = "@@ -10 +10 @@\n-old\n+first\n@@ -13 +13 @@\n-old\n+second\n";
+    assert_eq!(
+        parse_patch(
+            &header,
+            b"x\0",
+            section("x", "100644", "100644", OLD, NEW, body).as_bytes()
+        )
+        .unwrap(),
+        vec![
+            (7, 10, b"first".to_vec(), true),
+            (7, 13, b"second".to_vec(), true),
+        ]
+    );
+    for body in [
+        "@@ -1 +1 @@\n-old\n\\ No newline at end of file\n+first\n@@ -1,0 +2 @@\n+second\n",
+        "@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file\n@@ -2 +1,0 @@\n-later\n",
+    ] {
+        assert!(
+            parse_patch(
+                &header,
+                b"x\0",
+                section("x", "100644", "100644", OLD, NEW, body).as_bytes()
+            )
+            .is_ok()
+        );
     }
 }

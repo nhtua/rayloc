@@ -390,17 +390,22 @@ impl<'a> Parser<'a> {
         tail = tail.strip_prefix(b" +").ok_or(DiffError::Invalid)?;
         let (new_start, new_count) = range(&mut tail)?;
         tail = tail.strip_prefix(b" @@").ok_or(DiffError::Invalid)?;
+        let (old_end, old_gap) = range_position(old_start, old_count, self.old_end)?;
+        let (new_end, new_gap) = range_position(new_start, new_count, self.new_end)?;
+        // Omitted context is unchanged, so both sides must skip the same span.
+        // Absent, empty, and EOF-marked sides cannot contain even skipped lines.
         if (!tail.is_empty() && !tail.starts_with(b" "))
             || (old_count == 0 && new_count == 0)
-            || (self.old_mode == 0 && (old_start != 0 || old_count != 0))
-            || (self.new_mode == 0 && (new_start != 0 || new_count != 0))
-            || (old_count > 0 && (self.old_eof || self.old_oid == self.empty))
-            || (new_count > 0 && (self.new_eof || self.new_oid == self.empty))
+            || old_gap != new_gap
+            || ((self.old_mode == 0 || self.old_eof || self.old_oid == self.empty)
+                && (old_count != 0 || old_gap != 0))
+            || ((self.new_mode == 0 || self.new_eof || self.new_oid == self.empty)
+                && (new_count != 0 || new_gap != 0))
         {
             return Err(DiffError::Invalid);
         }
-        self.old_end = range_end(old_start, old_count, self.old_end)?;
-        self.new_end = range_end(new_start, new_count, self.new_end)?;
+        self.old_end = old_end;
+        self.new_end = new_end;
         self.old_line = old_start;
         self.new_line = new_start;
         self.old_left = old_count;
@@ -549,16 +554,15 @@ fn range(input: &mut &[u8]) -> Result<(u64, u64), DiffError> {
     };
     Ok((start, count))
 }
-fn range_end(start: u64, count: u64, previous_end: u64) -> Result<u64, DiffError> {
+fn range_position(start: u64, count: u64, previous_end: u64) -> Result<(u64, u64), DiffError> {
     let begin = if count == 0 {
         start
     } else {
         start.checked_sub(1).ok_or(DiffError::Invalid)?
     };
-    if begin < previous_end {
-        return Err(DiffError::Invalid);
-    }
-    begin.checked_add(count).ok_or(DiffError::Overflow)
+    let gap = begin.checked_sub(previous_end).ok_or(DiffError::Invalid)?;
+    let end = begin.checked_add(count).ok_or(DiffError::Overflow)?;
+    Ok((end, gap))
 }
 fn consume_side(left: &mut u64, line: &mut u64, eof: bool) -> Result<(), DiffError> {
     if *left == 0 || eof {
