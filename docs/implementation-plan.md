@@ -14,7 +14,8 @@ package's completion gate.
 ## Current progress — 2026-10-02
 
 P3 is complete at `ebc63d2` after implementation, required verification, and an
-independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is complete at `7a5185e`; P5 is next. P0–P2
+independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is complete at `7a5185e`;
+P5 is complete at `e31e715`; P6 is next. P0–P2
 foundation gaps tied to full-scope evaluation remain tracked below rather than
 being silently closed by the explicit-file delivery.
 
@@ -25,7 +26,7 @@ being silently closed by the explicit-file delivery.
 | P2 | Partial | Bounded regular-file/byte engine; core provider/PEM rules; CRLF/invalid-byte/buffer-boundary tests; >10 MB streaming and limit tests; executable engine benchmark | Shared custom-regex registry and compiler budgets (deferred to P3); broader resource measurements and fixture evaluation |
 | P3 | Complete | Strict bounded configuration/merge, compiled custom captures/entropy, file exclusions and CLI; fail-closed discovery; 59 stable/MSRV tests; independent re-review approved | — |
 | P4 | Complete | Context/password/JOSE/suppression detection; review fixes at `7a5185e`; 88 Rust tests +2 evaluator; coverage gates; independent re-review approved | One non-blocking opaque-token span minor recorded for final review |
-| P5 | In progress | Bounded-scope architecture researched; fresh implementer dispatched | Directory/glob policy, bounded parallel scanning, deterministic global collection and measurements |
+| P5 | Complete | Directory/glob policy, bounded parallel scanning, deterministic global collection and measured crossover/RSS; 139 tests on current Git, Git 2.30 and Rust 1.85; independent review fixes approved | Two non-blocking minors recorded for final review |
 | P6 | Not started | — | Strict unified-patch parser and adversarial tests |
 | P7 | Not started | — | Pinned staged acquisition/policy and staged CLI |
 | P8 | Not started | — | Pinned reference-to-working-tree diff CLI |
@@ -45,8 +46,8 @@ and regions 1718/1751 (98.12%). Formatting, strict Clippy, benchmark and diff
 checks pass. The independent reviewer approved both discovery failure handling
 and the portable Unix output-error fixture. Native CI/full v1 evaluation remain open.
 
-**Next implementation work:** complete P5–P10 through implement/test/review/fix
-gates. The explicit-file CLI is available; directory, glob, Git scan, and hook
+**Next implementation work:** complete P6–P10 through implement/test/review/fix
+gates. Explicit-file, directory, and glob scans are available; Git scan and hook
 modes remain unavailable pending their packages. Package sub-agent evidence is
 summarized in [the implementation report](implementation-report.md).
 Update this table and package status lines whenever implementation advances.
@@ -320,7 +321,7 @@ thresholds as provisional until those results justify changes.
 
 ### P5 — Implement reproducible directory/glob scope and parallel scanning
 
-**Status:** In progress — scope preflight completed, fresh implementing sub-agent dispatched.
+**Status:** Complete — `9a7012b` plus `e31e715` review fixes; independent re-review approved. 139 tests pass on current Git, Git 2.30, and Rust 1.85; functions 100%, lines 98.9103%, regions 98.0193%. Two non-blocking minors are recorded for final review.
 
 Depends on P4. Work in `config/ignore.rs`, scanner engine/controller, and CLI.
 Implement recursive directory and repository-relative glob modes, brace

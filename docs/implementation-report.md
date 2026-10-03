@@ -9,7 +9,7 @@ outside this implementation task.
 | --- | --- | --- | --- | --- |
 | P3 | Strict bounded YAML/merge, compiled custom rules/captured entropy, exclusions, explicit-file CLI (`f0729c4`) | Both findings fixed at `ebc63d2`; independent re-review approved | 59 tests on stable/1.85; functions 100%, lines 99.35%, regions 98.12%; required checks pass | Complete |
 | P4 | Context/password/JOSE/suppressions (`cda4344`, `7a5185e`) | Four Important findings fixed; re-review approved; one Minor retained for final triage | 88 Rust +2 evaluator tests; functions100%, lines98.99%, regions98.08%; stable/MSRV and required checks pass | Complete |
-| P5 | Bounded scope/parallel implementation dispatched | Pending | Pending | In progress |
+| P5 | Bounded directory/glob scope and deterministic parallel collector (`9a7012b`, `e31e715`) | Two Important scope defects fixed; re-review approved; two Minor observations retained | 139 tests on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.91%, regions 98.02%; required checks pass | Complete |
 | P6 | Pending | Pending | Pending | Not started |
 | P7 | Pending | Pending | Pending | Not started |
 | P8 | Pending | Pending | Pending | Not started |
@@ -55,3 +55,21 @@ small record-level evaluation does not establish real-repository accuracy. See
 [detailed results](research/detection-baseline.md). Final verification passed all
 required commands and actual Rust1.85 tests with 100% function, 98.9910% line,
 and 98.0769% region coverage.
+
+## P5
+
+Directory and glob scans now apply layered Git and scanner ignore policy while
+keeping tracked and explicitly selected files eligible. Bounded traversal and a
+streaming tracked-file cursor feed a deterministic global collector. A reusable
+Rayon pool starts for larger scopes; the measured tiny-file crossover selected
+256 entries. [Scope measurements](research/p5-scope.md) record throughput, RSS,
+resource limits, and slower dense-finding parallel scans.
+
+Independent review found two scope-boundary defects. Regression tests and fixes
+now exclude separate Git administration belonging to nested repositories before
+file admission and reject selected directory symlinks even with trailing slashes.
+The re-review approved both fixes. Two Minor observations remain for final triage:
+a character-class brace can be rejected by the glob precheck, and the directory
+CLI path compiles root scanner policy twice. The final 139 tests pass on current
+Git, Git 2.30, and Rust 1.85; formatting, strict Clippy, benchmark, and coverage
+gates pass at 231/231 functions, 98.9103% lines, and 98.0193% regions.
