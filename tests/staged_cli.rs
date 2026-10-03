@@ -595,3 +595,92 @@ fn index_path_becoming_unreadable_during_acquisition_is_incomplete() {
         0,
     );
 }
+fn nested_policy_repository(linked: bool) -> (TempDir, std::path::PathBuf) {
+    let dir = repo();
+    let root = if linked {
+        git(dir.path(), &["commit", "--allow-empty", "-qm", "base"]);
+        let root = dir.path().join("linked");
+        git(
+            dir.path(),
+            &["worktree", "add", "-qb", "linked", root.to_str().unwrap()],
+        );
+        root
+    } else {
+        dir.path().to_path_buf()
+    };
+    fs::create_dir(root.join("nested")).unwrap();
+    (dir, root)
+}
+fn assert_nested_root_policy(linked: bool, case: &str) {
+    let (_dir, root) = nested_policy_repository(linked);
+    let (status, findings) = match case {
+        "custom" | "conflicting" => {
+            fs::write(
+                root.join(".rayloc.yaml"),
+                "version: \"1\"\nrules: [{id: root-custom, regex: '^ROOT_CUSTOM_VALUE$'}]\n",
+            )
+            .unwrap();
+            fs::write(root.join("visible"), "ROOT_CUSTOM_VALUE\n").unwrap();
+            if case == "conflicting" {
+                fs::write(root.join(".raylocignore"), "excluded\n").unwrap();
+                fs::write(root.join("excluded"), SECRET).unwrap();
+                fs::write(
+                    root.join("nested/.rayloc.yaml"),
+                    "version: \"1\"\ndisabled_rules: [aws-access-key-id]\n",
+                )
+                .unwrap();
+                fs::write(root.join("nested/.raylocignore"), "visible\n").unwrap();
+            }
+            (1, 1)
+        }
+        "ignore" => {
+            fs::write(root.join(".raylocignore"), "excluded\n").unwrap();
+            fs::write(root.join("excluded"), SECRET).unwrap();
+            (0, 0)
+        }
+        "invalid" => {
+            fs::write(root.join(".rayloc.yaml"), "invalid root policy\n").unwrap();
+            fs::write(root.join("nested/.rayloc.yaml"), "version: \"1\"\n").unwrap();
+            (2, 0)
+        }
+        _ => unreachable!(),
+    };
+    git(&root, &["add", "."]);
+    check(scan(&root, &[]), status, findings);
+    let result = check(scan(&root.join("nested"), &[]), status, findings);
+    if findings != 0 {
+        assert!(result.contains("Custom rule #"), "{result}");
+    }
+}
+#[test]
+fn nested_ordinary_invocation_uses_root_custom_rule() {
+    assert_nested_root_policy(false, "custom");
+}
+#[test]
+fn nested_linked_invocation_uses_root_custom_rule() {
+    assert_nested_root_policy(true, "custom");
+}
+#[test]
+fn nested_ordinary_invocation_uses_root_ignore() {
+    assert_nested_root_policy(false, "ignore");
+}
+#[test]
+fn nested_linked_invocation_uses_root_ignore() {
+    assert_nested_root_policy(true, "ignore");
+}
+#[test]
+fn nested_ordinary_policy_cannot_replace_root_policy() {
+    assert_nested_root_policy(false, "conflicting");
+}
+#[test]
+fn nested_linked_policy_cannot_replace_root_policy() {
+    assert_nested_root_policy(true, "conflicting");
+}
+#[test]
+fn nested_ordinary_invocation_cannot_bypass_invalid_root_config() {
+    assert_nested_root_policy(false, "invalid");
+}
+#[test]
+fn nested_linked_invocation_cannot_bypass_invalid_root_config() {
+    assert_nested_root_policy(true, "invalid");
+}

@@ -143,7 +143,7 @@ fn git_path(cwd: &Path, args: &[&str]) -> Result<PathBuf, ScanError> {
 }
 fn policy_blob(cwd: &Path, tree: &str, name: &str) -> Result<Option<Vec<u8>>, ScanError> {
     let bytes = git::successful(
-        git::command(cwd).args(["ls-tree", "-z", tree, "--", name]),
+        git::command(cwd).args(["ls-tree", "--full-tree", "-z", tree, "--", name]),
         MAX_LINE_BYTES,
     )?;
     if bytes.is_empty() {
