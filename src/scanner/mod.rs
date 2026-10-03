@@ -8,9 +8,11 @@ use redaction::RedactedString;
 pub mod diff;
 pub mod engine;
 pub mod redaction;
+pub mod scope;
+mod tracked;
 
 /// Errors contain fixed categories only, never paths, arguments, or source text.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ScanError {
     Open,
     NotRegularFile,
@@ -19,6 +21,12 @@ pub enum ScanError {
     CandidateLimit,
     FindingLimit,
     CounterOverflow,
+    Discovery,
+    ScopeLimit,
+    GitMetadata,
+    Policy,
+    NoGlobMatches,
+    Pool,
 }
 
 impl fmt::Display for ScanError {
@@ -31,6 +39,12 @@ impl fmt::Display for ScanError {
             Self::CandidateLimit => "candidate exceeds scan limit",
             Self::FindingLimit => "finding count exceeds scan limit",
             Self::CounterOverflow => "scan counter exceeds supported range",
+            Self::Discovery => "cannot enumerate selected scope",
+            Self::ScopeLimit => "selected scope exceeds resource limit",
+            Self::GitMetadata => "cannot read tracked scope metadata",
+            Self::Policy => "cannot load scope ignore policy",
+            Self::NoGlobMatches => "glob matches no regular files",
+            Self::Pool => "cannot initialize scan workers",
         })
     }
 }

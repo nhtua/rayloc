@@ -1,4 +1,4 @@
-//! OS-native explicit-file CLI with safe configuration and reporting boundaries.
+//! OS-native scope selection with safe configuration and reporting boundaries.
 
 use std::{
     ffi::OsString,
@@ -17,9 +17,10 @@ Options:
   -V, --version    Print version
 
 Commands:
-  scan <file> [--config <file>] [--no-inline-ignores]  Scan an explicit regular file
+  scan [<file|directory> | --glob <pattern>] [--config <file>] [--no-inline-ignores]
+                  Scan files, a directory (default: current directory), or a glob
 
-Directory, glob, Git diff, and hook modes are not available yet.";
+Git diff and hook modes are not available yet.";
 
 /// Run the CLI, returning exit code 2 for unsupported operations.
 pub fn run() -> ExitCode {
@@ -73,6 +74,7 @@ fn scan(
     let mut explicit = None;
     let mut positional = false;
     let mut no_inline = false;
+    let mut glob = None;
     while let Some(arg) = args.next() {
         if !positional && arg == "--" {
             positional = true;
@@ -92,41 +94,70 @@ fn scan(
             explicit = Some(value);
             continue;
         }
+        if !positional && arg == "--glob" {
+            if glob.is_some() || path.is_some() {
+                return scan_error(errors, "invalid scan arguments");
+            }
+            let Some(pattern) = args.next() else {
+                return scan_error(errors, "invalid scan arguments");
+            };
+            glob = Some(pattern);
+            continue;
+        }
         if !positional
             && matches!(arg.to_str(), Some("--help" | "-h"))
             && path.is_none()
             && explicit.is_none()
+            && glob.is_none()
             && args.peek().is_none()
         {
             return print_help(output, errors);
         }
-        if (!positional && arg.to_str().is_some_and(|s| s.starts_with('-'))) || path.is_some() {
+        if (!positional && arg.to_str().is_some_and(|s| s.starts_with('-')))
+            || path.is_some()
+            || glob.is_some()
+        {
             return scan_error(errors, "invalid scan arguments");
         }
         path = Some(arg);
     }
-    let Some(path) = path else {
-        return scan_error(errors, "explicit file target required");
-    };
-    let path = Path::new(&path);
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_file() => {}
-        Ok(_) => return scan_error(errors, "selected path is not a regular file"),
-        Err(_) => return scan_error(errors, "cannot open selected file"),
+    if let Some(target) = &path {
+        if fs::symlink_metadata(target).is_err()
+            && target
+                .to_str()
+                .is_some_and(|s| s.contains(['*', '?', '[', '{']))
+        {
+            glob = path.take();
+        }
     }
+    let target = path.unwrap_or_else(|| OsString::from("."));
+    let path = Path::new(&target);
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() || metadata.is_dir() => metadata,
+        Ok(_) => return scan_error(errors, "selected path is not a regular file or directory"),
+        Err(_) => return scan_error(errors, "cannot open selected file"),
+    };
+    let pattern = match glob.as_ref().map(|pattern| pattern.to_str()) {
+        Some(None) => return scan_error(errors, "invalid scope pattern"),
+        Some(Some(pattern)) => Some(pattern),
+        None => None,
+    };
     let policy = (|| {
-        let root = crate::config::discover_root(path)?;
-        let config = crate::config::load(&root, explicit.as_deref().map(Path::new))?;
+        let root = crate::config::discover_scope_root(path)?;
+        let config = crate::config::load(&root.root, explicit.as_deref().map(Path::new))?;
         let mut registry = crate::rules::Registry::compile(config)?;
         registry.inline_ignores = !no_inline;
-        let exclusions = crate::config::ignore::Exclusions::load(&root)?;
+        let exclusions = crate::config::ignore::Exclusions::load(&root.root)?;
         let absolute = fs::canonicalize(path).map_err(|_| crate::config::ConfigError::Read)?;
-        Ok::<_, crate::config::ConfigError>((
-            registry,
-            exclusions.excludes(&absolute) || absolute.starts_with(root.join(".git")),
-        ))
+        let admin = absolute.starts_with(root.root.join(".git"))
+            || root
+                .administration
+                .iter()
+                .any(|path| absolute.starts_with(path));
+        let excluded = admin || (metadata.is_file() && exclusions.excludes(&absolute));
+        Ok::<_, crate::config::ConfigError>((registry, root, absolute, excluded))
     })();
-    let (registry, excluded) = match policy {
+    let (registry, root, absolute, excluded) = match policy {
         Ok(policy) => policy,
         Err(error) => return scan_error(errors, &error.to_string()),
     };
@@ -134,8 +165,15 @@ fn scan(
         let mut outcome = crate::scanner::ScanOutcome::default();
         outcome.stats.files_excluded = 1;
         outcome
+    } else if metadata.is_file() {
+        crate::scanner::engine::scan_file_with_registry(&absolute, 1, &registry)
     } else {
-        crate::scanner::engine::scan_file_with_registry(path, 1, &registry)
+        let selected = if pattern.is_some() {
+            root.root.as_path()
+        } else {
+            absolute.as_path()
+        };
+        crate::scanner::scope::scan_directory(&root, selected, pattern, &registry)
     };
     if crate::report::terminal::render(&outcome, output).is_err() {
         return scan_error(errors, "cannot write command output");

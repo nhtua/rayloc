@@ -49,7 +49,7 @@ fn help_and_version_are_successful_and_extra_arguments_are_errors() {
 
 #[test]
 fn unsupported_and_invalid_utf8_arguments_are_never_echoed() {
-    for command in ["scan", "hook", "unknown-sensitive-input"] {
+    for command in ["hook", "unknown-sensitive-input"] {
         let mut output = Vec::new();
         let mut errors = Vec::new();
         assert_eq!(
@@ -104,7 +104,7 @@ fn output_failures_return_safe_execution_errors() {
     assert_eq!(print_help(&mut FailingWriter, &mut FailingWriter), 2);
     assert_eq!(
         run_with_args(
-            [OsString::from("scan")],
+            [OsString::from("scan"), OsString::from("--invalid")],
             &mut Vec::new(),
             &mut FailingWriter
         ),
@@ -121,7 +121,7 @@ fn explicit_target_conflicts_symlinks_and_report_failure_are_safe() {
         vec!["--config", "one", "--config", "two"],
         vec!["--staged"],
         vec!["--diff", "main"],
-        vec!["--glob", "*"],
+        vec!["--glob"],
         vec!["first", "second"],
         vec!["--help", "file"],
     ] {
@@ -139,7 +139,7 @@ fn explicit_target_conflicts_symlinks_and_report_failure_are_safe() {
             0
         );
     }
-    for selected in [root.path().to_path_buf(), {
+    for selected in [root.path().join("missing"), {
         #[cfg(unix)]
         {
             let link = root.path().join("link");
@@ -185,4 +185,23 @@ fn explicit_target_conflicts_symlinks_and_report_failure_are_safe() {
         ),
         2
     );
+}
+#[cfg(unix)]
+#[test]
+fn invalid_utf8_glob_is_rejected_without_echoing() {
+    use std::os::unix::ffi::OsStringExt;
+    let mut errors = Vec::new();
+    assert_eq!(
+        run_with_args(
+            [
+                OsString::from("scan"),
+                OsString::from("--glob"),
+                OsString::from_vec(b"\xffprivate".to_vec())
+            ],
+            &mut Vec::new(),
+            &mut errors
+        ),
+        2
+    );
+    assert!(!String::from_utf8(errors).unwrap().contains("private"));
 }

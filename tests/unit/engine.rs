@@ -1,10 +1,63 @@
 use super::*;
 use std::{
     fs::OpenOptions,
-    io::{Cursor, Read, Write},
+    io::{BufReader, Cursor, Read, Write},
 };
 
 use crate::test_support as support;
+
+fn scan_record(
+    line: &[u8],
+    source_id: u32,
+    outcome: &mut ScanOutcome,
+    limits: Limits,
+    registry: &Registry,
+    histogram: &mut Histogram,
+) -> Result<(), ScanError> {
+    let collector = Mutex::new(Collector::new(limits.findings));
+    scan_record_into(
+        line, source_id, outcome, limits, registry, histogram, &collector,
+    )
+}
+fn read_records(
+    reader: &mut dyn BufRead,
+    source_id: u32,
+    outcome: &mut ScanOutcome,
+    limits: Limits,
+    registry: &Registry,
+) -> Result<(), ScanError> {
+    let collector = Mutex::new(Collector::new(limits.findings));
+    read_records_into(
+        reader,
+        source_id,
+        outcome,
+        limits,
+        registry,
+        &mut Vec::new(),
+        &mut Histogram::new(),
+        &collector,
+    )
+}
+
+#[test]
+fn capped_collector_retains_earlier_custom_spans_emitted_after_provider_matches() {
+    let registry = Registry::compile(
+        crate::config::parse(b"version: \"1\"\nrules: [{id: early, regex: early}]").unwrap(),
+    )
+    .unwrap();
+    let outcome = scan_with_policy(
+        &mut Cursor::new(b"early ghp_abcdefghijklmnop"),
+        1,
+        Limits {
+            line_bytes: 100,
+            findings: 1,
+        },
+        &registry,
+    );
+    assert_eq!(outcome.exit_code(), 2);
+    assert_eq!(outcome.stats.findings_detected, 2);
+    assert_eq!(outcome.findings[0].start_column, 1);
+}
 
 #[test]
 fn empty_readers_and_empty_files_are_successfully_completed() {
@@ -381,4 +434,76 @@ fn suppression_counter_overflow_returns_execution_error() {
         ),
         Err(ScanError::CounterOverflow)
     );
+}
+#[test]
+fn reusable_file_buffers_and_worker_failures_preserve_counts() {
+    let temp = support::TempDir::new();
+    let path = temp.path().join("input");
+    fs::write(&path, b"abcdef").unwrap();
+    let file = File::open(&path).unwrap();
+    let mut storage = [0; 3];
+    let mut reader = BufferedFile {
+        file,
+        storage: &mut storage,
+        start: 0,
+        end: 0,
+    };
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).unwrap();
+    assert_eq!(bytes, b"abcdef");
+    fs::write(&path, vec![b'x'; MAX_LINE_BYTES + 1]).unwrap();
+    assert_eq!(scan_file(&path, 1).errors, [ScanError::LineLimit]);
+    fs::write(&path, b"ghp_abcdefghijklmnop\n".repeat(MAX_FINDINGS + 1)).unwrap();
+    let result = scan_file(&path, 1);
+    assert_eq!(result.errors, [ScanError::FindingLimit]);
+    assert_eq!(result.stats.files_completed, 0);
+    let mut target = ScanOutcome::default();
+    target.stats.files_attempted = u64::MAX;
+    let mut source = ScanOutcome::default();
+    source.stats.files_attempted = 1;
+    source.fail(ScanError::Read);
+    merge(&mut target, source);
+    assert_eq!(target.errors, [ScanError::Read, ScanError::CounterOverflow]);
+    for index in 0..6 {
+        let mut target = ScanStats::default();
+        let mut source = ScanStats::default();
+        let set = |s: &mut ScanStats, v| match index {
+            0 => s.files_attempted = v,
+            1 => s.files_completed = v,
+            2 => s.files_excluded = v,
+            3 => s.bytes_read = v,
+            4 => s.lines_scanned = v,
+            _ => s.findings_detected = v,
+        };
+        set(&mut target, u64::MAX);
+        set(&mut source, 1);
+        assert_eq!(
+            merge_stats(&mut target, &source),
+            Err(ScanError::CounterOverflow)
+        );
+    }
+    let mut collector = Collector::new(0);
+    collector.offer(Finding {
+        source_id: 1,
+        line: 1,
+        start_column: 1,
+        end_column: 2,
+        rule: crate::rules::builtin::RuleId::GithubToken,
+        value: RedactedString::new(b"x"),
+    });
+    assert!(collector.entries.is_empty());
+}
+#[cfg(unix)]
+#[test]
+fn buffered_read_error_propagates_without_diagnostics() {
+    let temp = support::TempDir::new();
+    let file = File::open(temp.path()).unwrap();
+    let mut storage = [0; 8];
+    let mut reader = BufferedFile {
+        file,
+        storage: &mut storage,
+        start: 0,
+        end: 0,
+    };
+    assert!(reader.read(&mut [0; 8]).is_err());
 }

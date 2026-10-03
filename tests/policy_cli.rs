@@ -226,10 +226,9 @@ fn executable_target_conflicts_help_and_nonregular_paths_are_checked() {
         vec!["scan", "--config", "one", "--config", "two"],
         vec!["scan", "--staged"],
         vec!["scan", "--diff", "main"],
-        vec!["scan", "--glob", "*"],
+        vec!["scan", "--glob"],
         vec!["scan", "one", "two"],
         vec!["scan", "--help", "input"],
-        vec!["scan", "."],
     ] {
         assert_eq!(run(&root, &args).status.code(), Some(2));
     }
@@ -237,6 +236,8 @@ fn executable_target_conflicts_help_and_nonregular_paths_are_checked() {
         vec!["scan", "--help"],
         vec!["scan", "-h"],
         vec!["scan", "--", "input"],
+        vec!["scan", "."],
+        vec!["scan", "--glob", "*"],
     ] {
         assert_eq!(run(&root, &args).status.code(), Some(0));
     }
@@ -341,7 +342,8 @@ fn genuine_git_discovery_failure_never_switches_nested_policy_scope() {
     .unwrap();
     assert_eq!(run(&root, &["scan", "nested/input"]).status.code(), Some(1));
     for (key, value) in [
-        ("GIT_CONFIG_COUNT", "private-invalid-config-count"),
+        // PARAMETERS predates the Git 2.30 floor; COUNT is ignored there.
+        ("GIT_CONFIG_PARAMETERS", "private-invalid-config-parameters"),
         ("GIT_DIR", "private-missing-git-directory"),
         ("PATH", "/private-missing-git-executable-directory"),
     ] {

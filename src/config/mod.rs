@@ -403,6 +403,14 @@ fn outside_without_git(directory: &Path) -> Result<PathBuf, ConfigError> {
 
 /// Root discovery uses Git when available; no parent policy is inherited outside Git.
 pub fn discover_root(selected: &Path) -> Result<PathBuf, ConfigError> {
+    Ok(discover_scope_root(selected)?.root)
+}
+pub struct ScopeRoot {
+    pub root: PathBuf,
+    pub git: bool,
+    pub administration: Vec<PathBuf>,
+}
+pub fn discover_scope_root(selected: &Path) -> Result<ScopeRoot, ConfigError> {
     let selected = if selected.is_absolute() {
         selected.to_path_buf()
     } else {
@@ -410,8 +418,15 @@ pub fn discover_root(selected: &Path) -> Result<PathBuf, ConfigError> {
             .map_err(|_| ConfigError::Discovery)?
             .join(selected)
     };
-    let directory = std::fs::canonicalize(selected.parent().ok_or(ConfigError::Discovery)?)
-        .map_err(|_| ConfigError::Discovery)?;
+    let start = if std::fs::symlink_metadata(&selected)
+        .map_err(|_| ConfigError::Discovery)?
+        .is_dir()
+    {
+        selected.as_path()
+    } else {
+        selected.parent().ok_or(ConfigError::Discovery)?
+    };
+    let directory = std::fs::canonicalize(start).map_err(|_| ConfigError::Discovery)?;
     let directory = directory
         .ancestors()
         .find(|path| path.file_name().is_some_and(|name| name == ".git"))
@@ -428,7 +443,11 @@ pub fn discover_root(selected: &Path) -> Result<PathBuf, ConfigError> {
     {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return outside_without_git(directory);
+            return Ok(ScopeRoot {
+                root: outside_without_git(directory)?,
+                git: false,
+                administration: Vec::new(),
+            });
         }
         Err(_) => return Err(ConfigError::Discovery),
     };
@@ -452,7 +471,11 @@ pub fn discover_root(selected: &Path) -> Result<PathBuf, ConfigError> {
     })?;
     if !status.success() {
         if status.code() == Some(128) && bytes.is_empty() && outside_git(&diagnostic) {
-            return Ok(directory.to_path_buf());
+            return Ok(ScopeRoot {
+                root: directory.to_path_buf(),
+                git: false,
+                administration: Vec::new(),
+            });
         }
         return Err(ConfigError::Discovery);
     }
@@ -467,7 +490,61 @@ pub fn discover_root(selected: &Path) -> Result<PathBuf, ConfigError> {
     };
     #[cfg(not(unix))]
     let path = PathBuf::from(String::from_utf8(bytes).map_err(|_| ConfigError::Discovery)?);
-    Ok(path)
+    if !path.is_absolute() || !path.is_dir() {
+        return Err(ConfigError::Discovery);
+    }
+    let mut administration = Vec::new();
+    for option in ["--git-dir", "--git-common-dir"] {
+        let output = git_path(&path, option)?;
+        if !administration.contains(&output) {
+            administration.push(output);
+        }
+    }
+    Ok(ScopeRoot {
+        root: path,
+        git: true,
+        administration,
+    })
+}
+fn git_path(root: &Path, option: &str) -> Result<PathBuf, ConfigError> {
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", option])
+        .env("LC_ALL", "C")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|_| ConfigError::Discovery)?;
+    let stdout = child.stdout.take().expect("Git stdout is piped");
+    let stderr = child.stderr.take().expect("Git stderr is piped");
+    std::thread::scope(|scope| {
+        let drain = scope.spawn(|| read_git_diagnostic(stderr));
+        let mut bytes = Vec::new();
+        let read = stdout.take(16 * 1024 + 1).read_to_end(&mut bytes);
+        if read.is_err() || bytes.len() > 16 * 1024 {
+            let _ = child.kill();
+        }
+        let status = child.wait();
+        let diagnostic = drain.join();
+        if read.is_err()
+            || bytes.len() > 16 * 1024
+            || !status.map_err(|_| ConfigError::Discovery)?.success()
+            || diagnostic.map_err(|_| ConfigError::Discovery)?.is_err()
+            || bytes.last() != Some(&b'\n')
+        {
+            return Err(ConfigError::Discovery);
+        }
+        bytes.pop();
+        #[cfg(unix)]
+        let path = {
+            use std::os::unix::ffi::OsStringExt;
+            PathBuf::from(std::ffi::OsString::from_vec(bytes))
+        };
+        #[cfg(not(unix))]
+        let path = PathBuf::from(String::from_utf8(bytes).map_err(|_| ConfigError::Discovery)?);
+        std::fs::canonicalize(root.join(path)).map_err(|_| ConfigError::Discovery)
+    })
 }
 pub fn load(root: &Path, explicit: Option<&Path>) -> Result<Config, ConfigError> {
     let base_path = root.join(".rayloc.yaml");
