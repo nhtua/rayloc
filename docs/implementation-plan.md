@@ -475,6 +475,59 @@ the design's remaining decisions to describe shipped behavior and known limits.
 results are reproducible, accuracy/leak/resource gates pass, and artifact smoke
 tests succeed. Publishing is a separate release action after review.
 
+### Remaining work to finish P9 and P10
+
+Resume in the existing `feat/rayloc-v1` worktree. Preserve the uncommitted P9
+installer, tests, manifest, guide, and framework test script. Direct-hook tests
+were reported green before the pause, but P9 has no final verification or review.
+
+**P9 — hook installation and framework integration**
+
+- [ ] Finish the direct installer and test active hook resolution for default,
+  relative and absolute `core.hooksPath`, linked worktrees, idempotent executable
+  installation, unmanaged-hook preservation, missing scanner, and real commit
+  propagation of clean/finding/error statuses on current Git and Git 2.30.
+- [ ] Validate `.pre-commit-hooks.yaml` with Python pre-commit and install the
+  Rust-language hook from a committed local revision into isolated consumer
+  repositories and `PRE_COMMIT_HOME`. Test clean, finding and configuration-error
+  commits, partial staging, empty staged scope, index policy, and repeated cached
+  execution. Check `pass_filenames: false`, `always_run: true`, and the documented
+  `core.hooksPath` and manual `--all-files` limitations.
+- [ ] Verify the framework's fresh Cargo installation path on stable Rust and
+  Rust 1.85, including dependency resolution without `--locked`. Keep Python a
+  developer-side integration, not a rayloc runtime dependency. Run formatting,
+  strict Clippy, all tests, benchmarks, and `scripts/coverage.py` with 100%
+  function and >98% line/region coverage; commit P9, then independently review
+  and fix/re-review any blocking findings.
+
+**P10 — evaluation and release preparation**
+
+- [ ] Measure reproducible end-to-end file, directory, and staged workloads:
+  empty and 10/100/1,000 added-line diffs, different file counts, >10 MB files,
+  giant lines, and many tiny files. Record hardware, OS/CPU/Rust/Git, rules,
+  threads/cache state, corpus sizes, median/p95/p99, throughput, RSS, startup
+  latency, and binary size. Treat the 5 ms and 500 MB/s/core targets as stretch
+  goals until measured.
+- [ ] Extend held-out accuracy and leak evaluation by provider, value length and
+  context; report precision/recall, false positives per clean MB, and suppression
+  effects. Require detection of every mandatory supported fixture, no complete
+  detected value in output, and measured resource limits. Set regression gates
+  from these results rather than assumed thresholds.
+- [ ] Build and run native artifact/test jobs for Linux x86_64/aarch64 musl and
+  macOS x86_64/aarch64. Verify Git prerequisites, actual ELF/Mach-O linkage,
+  architecture, executable behavior and extracted-artifact smoke tests. Resolve
+  the existing concurrent-suite temporary-directory collision through runner
+  isolation or a fixture fix, then verify stable and Rust 1.85 jobs on the exact
+  branch commit.
+- [ ] Produce versioned archives and a checked SHA-256 manifest. Validate the
+  crates.io source package, its contents, locked Rust 1.85 build, dry-run publish,
+  and installation from the unpacked package before enabling future publishing.
+  Prepare both distribution channels without creating a release or publishing.
+- [ ] Update README, templates, development/test guides and remaining design
+  decisions to match shipped behavior and measured limits. Run all repository
+  checks, review the whole branch and deferred P4/P5 minor findings, fix any
+  release-blocking issues, and record passing supported-platform CI evidence.
+
 ## 5. Verification and feature traceability
 
 Each implementation package runs the mandatory repository commands:
