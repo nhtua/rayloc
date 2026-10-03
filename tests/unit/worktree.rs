@@ -78,6 +78,7 @@ fn hash_output_rejects_failed_and_malformed_children() {
 }
 fn repository() -> TempDir {
     use std::process::Command;
+    assert_isolated_git_environment();
     let dir = TempDir::new();
     for args in [
         vec!["init", "-q"],
@@ -120,6 +121,11 @@ fn repository() -> TempDir {
 }
 #[test]
 fn snapshot_budget_and_recheck_detect_missing_corrupted_and_changed_bindings() {
+    if !in_isolated_git_child(
+        "snapshot_budget_and_recheck_detect_missing_corrupted_and_changed_bindings",
+    ) {
+        return;
+    }
     let dir = repository();
     let root = dir.path();
     let (original, resolved) = snapshot(root, root, "HEAD", 40, METADATA_CAP).unwrap();
@@ -161,6 +167,11 @@ fn snapshot_budget_and_recheck_detect_missing_corrupted_and_changed_bindings() {
 }
 #[test]
 fn dirty_gitlink_variant_requires_exact_paths_identity_and_single_line_change() {
+    if !in_isolated_git_child(
+        "dirty_gitlink_variant_requires_exact_paths_identity_and_single_line_change",
+    ) {
+        return;
+    }
     use crate::scanner::diff::{Event, Parser};
     let oid = "a".repeat(40);
     let empty = "b".repeat(40);
@@ -209,6 +220,11 @@ fn dirty_gitlink_variant_requires_exact_paths_identity_and_single_line_change() 
 }
 #[test]
 fn link_and_submodule_identities_are_literal_and_policy_reads_are_bounded() {
+    if !in_isolated_git_child(
+        "link_and_submodule_identities_are_literal_and_policy_reads_are_bounded",
+    ) {
+        return;
+    }
     use std::os::unix::fs::symlink;
     let dir = repository();
     let root = dir.path();
@@ -257,6 +273,9 @@ fn link_and_submodule_identities_are_literal_and_policy_reads_are_bounded() {
 }
 #[test]
 fn acquisition_and_hash_process_failures_cannot_complete_snapshots() {
+    if !in_isolated_git_child("acquisition_and_hash_process_failures_cannot_complete_snapshots") {
+        return;
+    }
     use std::os::unix::fs::symlink;
     let dir = repository();
     let root = dir.path();
@@ -277,4 +296,166 @@ fn acquisition_and_hash_process_failures_cannot_complete_snapshots() {
             .success()
     );
     assert!(identity(root, root, b"sub", 0o160000).is_err());
+}
+
+fn isolated_environment(command: &mut std::process::Command) -> &mut std::process::Command {
+    for (key, _) in std::env::vars_os() {
+        if key.as_bytes().starts_with(b"GIT_") {
+            command.env_remove(key);
+        }
+    }
+    command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_ATTR_NOSYSTEM", "1")
+        .env("GIT_CONFIG_COUNT", "4")
+        .env("GIT_CONFIG_KEY_0", "core.hooksPath")
+        .env("GIT_CONFIG_VALUE_0", "/dev/null")
+        .env("GIT_CONFIG_KEY_1", "core.attributesFile")
+        .env("GIT_CONFIG_VALUE_1", "/dev/null")
+        .env("GIT_CONFIG_KEY_2", "core.excludesFile")
+        .env("GIT_CONFIG_VALUE_2", "/dev/null")
+        .env("GIT_CONFIG_KEY_3", "commit.gpgSign")
+        .env("GIT_CONFIG_VALUE_3", "false")
+        .env("LC_ALL", "C")
+}
+fn tree_bytes(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    let mut result = std::collections::BTreeMap::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                pending.push(entry.path());
+            } else {
+                result.insert(
+                    entry.path().strip_prefix(root).unwrap().to_path_buf(),
+                    fs::read(entry.path()).unwrap(),
+                );
+            }
+        }
+    }
+    result
+}
+#[test]
+fn inherited_git_routing_and_config_cannot_mutate_external_fixture_state() {
+    use std::process::Command;
+    let dir = TempDir::new();
+    let root = dir.path();
+    for args in [
+        vec!["init", "-q"],
+        vec![
+            "-c",
+            "user.name=Sentinel",
+            "-c",
+            "user.email=sentinel@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "sentinel",
+        ],
+    ] {
+        assert!(
+            isolated_environment(Command::new("git").current_dir(root))
+                .args(args)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    // Keep a separate real index with bytes that hostile GIT_INDEX_FILE can target.
+    fs::write(root.join("sentinel"), "unchanged sentinel payload\n").unwrap();
+    assert!(
+        isolated_environment(Command::new("git").current_dir(root))
+            .args(["add", "sentinel"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    fs::copy(root.join(".git/index"), root.join("external-index")).unwrap();
+    fs::write(root.join("hostile.config"),"[commit]\n gpgSign = true\n[gpg]\n program = /nonexistent/rayloc-hostile-signing\n[core]\n hooksPath = /nonexistent/rayloc-hostile-hooks\n attributesFile = /nonexistent/rayloc-hostile-attributes\n excludesFile = /nonexistent/rayloc-hostile-excludes\n").unwrap();
+    let before = tree_bytes(root);
+    for name in [
+        "snapshot_budget_and_recheck_detect_missing_corrupted_and_changed_bindings",
+        "dirty_gitlink_variant_requires_exact_paths_identity_and_single_line_change",
+        "link_and_submodule_identities_are_literal_and_policy_reads_are_bounded",
+        "acquisition_and_hash_process_failures_cannot_complete_snapshots",
+    ] {
+        let target = format!("{}::{name}", module_path!().split_once("::").unwrap().1);
+        let child = isolated_environment(&mut Command::new(std::env::current_exe().unwrap()))
+            .env("GIT_DIR", root.join(".git"))
+            .env("GIT_WORK_TREE", root)
+            .env("GIT_INDEX_FILE", root.join("external-index"))
+            .env("GIT_CONFIG_GLOBAL", root.join("hostile.config"))
+            .env("GIT_CONFIG_SYSTEM", root.join("hostile.config"))
+            .env("GIT_CONFIG_NOSYSTEM", "0")
+            .env("GIT_ATTR_NOSYSTEM", "0")
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "commit.gpgSign")
+            .env("GIT_CONFIG_VALUE_0", "true")
+            .args(["--exact", &target, "--nocapture"])
+            .output()
+            .unwrap();
+        assert!(
+            before == tree_bytes(root),
+            "unit fixture modified external sentinel repository or index"
+        );
+        assert!(
+            child.status.success(),
+            "isolated unit fixture failed: {}",
+            String::from_utf8_lossy(&child.stdout)
+        );
+        assert!(
+            String::from_utf8_lossy(&child.stdout).contains("test result: ok. 1 passed;"),
+            "hostile fixture selector must execute exactly one test"
+        );
+    }
+}
+
+// Production deliberately inherits Git environment. Isolate the entire unit-test
+// process, including direct production calls, instead of modifying shared env in
+// parallel test threads or changing the production command builder.
+fn in_isolated_git_child(name: &str) -> bool {
+    use std::process::Command;
+    let target = format!("{}::{name}", module_path!().split_once("::").unwrap().1);
+    if std::env::var("RAYLOC_ISOLATED_GIT_UNIT").as_deref() == Ok(target.as_str()) {
+        assert_isolated_git_environment();
+        return true;
+    }
+    let child = isolated_environment(&mut Command::new(std::env::current_exe().unwrap()))
+        .env("RAYLOC_ISOLATED_GIT_UNIT", &target)
+        .args(["--exact", &target, "--nocapture"])
+        .output()
+        .unwrap();
+    assert!(
+        child.status.success(),
+        "isolated unit fixture failed: {} {}",
+        String::from_utf8_lossy(&child.stdout),
+        String::from_utf8_lossy(&child.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&child.stdout).contains("test result: ok. 1 passed;"),
+        "isolated fixture selector must execute exactly one test"
+    );
+    false
+}
+
+fn assert_isolated_git_environment() {
+    use std::process::Command;
+    let mut command = Command::new("git");
+    let expected: std::collections::BTreeMap<_, _> = isolated_environment(&mut command)
+        .get_envs()
+        .filter_map(|(key, value)| {
+            value
+                .filter(|_| key.as_bytes().starts_with(b"GIT_"))
+                .map(|value| (key.to_os_string(), value.to_os_string()))
+        })
+        .collect();
+    let actual: std::collections::BTreeMap<_, _> = std::env::vars_os()
+        .filter(|(key, _)| key.as_bytes().starts_with(b"GIT_"))
+        .collect();
+    assert!(
+        actual == expected,
+        "isolated unit child inherited unsafe Git environment"
+    );
 }
