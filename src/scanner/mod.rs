@@ -7,8 +7,10 @@ use redaction::RedactedString;
 
 pub mod diff;
 pub mod engine;
+mod git;
 pub mod redaction;
 pub mod scope;
+pub mod staged;
 mod tracked;
 
 /// Errors contain fixed categories only, never paths, arguments, or source text.

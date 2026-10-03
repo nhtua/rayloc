@@ -71,48 +71,56 @@ impl Exclusions {
         cap: PolicyUsage,
     ) -> Result<Self, ConfigError> {
         let path = root.join(name);
-        let mut builder = GitignoreBuilder::new(root);
-        let mut usage = PolicyUsage::default();
-        match std::fs::symlink_metadata(&path) {
+        let bytes = match std::fs::symlink_metadata(&path) {
             Ok(metadata) => {
                 if !metadata.is_file() {
                     return Err(ConfigError::Read);
                 }
-                let bytes = read_policy(&path)?;
-                usage.bytes = bytes.capacity();
-                usage.files = 1;
-                let text = std::str::from_utf8(&bytes).map_err(|_| ConfigError::Ignore)?;
-                for line in text.lines() {
-                    usage.lines = usage.lines.checked_add(1).ok_or(ConfigError::Limit)?;
-                    if line.len() > super::MAX_PATTERN_BYTES {
-                        return Err(ConfigError::Limit);
-                    }
-                    if !line.trim_end().is_empty() && !line.starts_with('#') {
-                        usage.patterns = usage.patterns.checked_add(1).ok_or(ConfigError::Limit)?;
-                        usage.complexity = usage
-                            .complexity
-                            .checked_add(
-                                line.bytes()
-                                    .filter(|b| {
-                                        matches!(b, b'*' | b'?' | b'[' | b'{' | b',' | b'\\')
-                                    })
-                                    .count(),
-                            )
-                            .ok_or(ConfigError::Limit)?;
-                    }
-                    if !active.add(usage)?.fits(cap) {
-                        return Err(ConfigError::Limit);
-                    }
-                    builder
-                        .add_line(None, line)
-                        .map_err(|_| ConfigError::Ignore)?;
+                Some(read_policy(&path)?)
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => return Err(ConfigError::Read),
+        };
+        Self::from_bytes(root, bytes, active, cap)
+    }
+    pub(crate) fn from_bytes(
+        root: &Path,
+        bytes: Option<Vec<u8>>,
+        active: PolicyUsage,
+        cap: PolicyUsage,
+    ) -> Result<Self, ConfigError> {
+        let mut builder = GitignoreBuilder::new(root);
+        let mut usage = PolicyUsage::default();
+        if let Some(bytes) = bytes {
+            usage.bytes = bytes.capacity();
+            usage.files = 1;
+            let text = std::str::from_utf8(&bytes).map_err(|_| ConfigError::Ignore)?;
+            for line in text.lines() {
+                usage.lines = usage.lines.checked_add(1).ok_or(ConfigError::Limit)?;
+                if line.len() > super::MAX_PATTERN_BYTES {
+                    return Err(ConfigError::Limit);
+                }
+                if !line.trim_end().is_empty() && !line.starts_with('#') {
+                    usage.patterns = usage.patterns.checked_add(1).ok_or(ConfigError::Limit)?;
+                    usage.complexity = usage
+                        .complexity
+                        .checked_add(
+                            line.bytes()
+                                .filter(|b| matches!(b, b'*' | b'?' | b'[' | b'{' | b',' | b'\\'))
+                                .count(),
+                        )
+                        .ok_or(ConfigError::Limit)?;
                 }
                 if !active.add(usage)?.fits(cap) {
                     return Err(ConfigError::Limit);
                 }
+                builder
+                    .add_line(None, line)
+                    .map_err(|_| ConfigError::Ignore)?;
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(ConfigError::Read),
+            if !active.add(usage)?.fits(cap) {
+                return Err(ConfigError::Limit);
+            }
         }
         Ok(Self {
             matcher: builder.build().map_err(|_| ConfigError::Ignore)?,

@@ -13,11 +13,11 @@ pub const READ_BUFFER_BYTES: usize = 256 * 1024;
 pub const MAX_LINE_BYTES: usize = 1024 * 1024;
 pub const MAX_FINDINGS: usize = 10_000;
 #[derive(Clone, Copy)]
-struct Limits {
+pub(super) struct Limits {
     line_bytes: usize,
     findings: usize,
 }
-const LIMITS: Limits = Limits {
+pub(super) const LIMITS: Limits = Limits {
     line_bytes: MAX_LINE_BYTES,
     findings: MAX_FINDINGS,
 };
@@ -205,6 +205,28 @@ fn scan_record_into(
     collector: &Mutex<Collector>,
 ) -> Result<(), ScanError> {
     add(&mut outcome.stats.lines_scanned, 1)?;
+    detect_record(
+        line,
+        source_id,
+        outcome.stats.lines_scanned,
+        outcome,
+        limits,
+        registry,
+        histogram,
+        collector,
+    )
+}
+#[allow(clippy::too_many_arguments)]
+pub(super) fn detect_record(
+    line: &[u8],
+    source_id: u32,
+    line_number: u64,
+    outcome: &mut ScanOutcome,
+    limits: Limits,
+    registry: &Registry,
+    histogram: &mut Histogram,
+    collector: &Mutex<Collector>,
+) -> Result<(), ScanError> {
     let mut suppressions = crate::rules::context::Suppressions::default();
     let result =
         registry.detect_line_with_suppressions(line, histogram, &mut suppressions, |rule, span| {
@@ -220,7 +242,7 @@ fn scan_record_into(
                 .expect("collector lock is not poisoned")
                 .offer(Finding {
                     source_id,
-                    line: outcome.stats.lines_scanned,
+                    line: line_number,
                     start_column: span.start + 1,
                     end_column: span.end + 1,
                     rule,

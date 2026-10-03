@@ -119,7 +119,7 @@ fn explicit_target_conflicts_symlinks_and_report_failure_are_safe() {
     for options in [
         vec!["--config"],
         vec!["--config", "one", "--config", "two"],
-        vec!["--staged"],
+        vec!["--staged", "--staged"],
         vec!["--diff", "main"],
         vec!["--glob"],
         vec!["first", "second"],
@@ -204,4 +204,17 @@ fn invalid_utf8_glob_is_rejected_without_echoing() {
         2
     );
     assert!(!String::from_utf8(errors).unwrap().contains("private"));
+}
+#[test]
+fn staged_report_write_failure_is_safe() {
+    let mut errors = Vec::new();
+    assert_eq!(
+        run_with_args(
+            ["scan", "--staged"].map(OsString::from),
+            &mut FailingWriter,
+            &mut errors
+        ),
+        2
+    );
+    assert_eq!(errors, b"rayloc: cannot write command output\n");
 }
