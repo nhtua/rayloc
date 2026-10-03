@@ -12,7 +12,7 @@ outside this implementation task.
 | P5 | Bounded directory/glob scope and deterministic parallel collector (`9a7012b`, `e31e715`) | Two Important scope defects fixed; re-review approved; two Minor observations retained | 139 tests on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.91%, regions 98.02%; required checks pass | Complete |
 | P6 | Strict bounded raw-binding and unified-patch parser (`94d0588`, `39d359f`) | Hunk-gap/empty-side finding fixed; re-review approved | 158 tests, locked Rust 1.85; functions 100%, lines 98.96%, regions 98.18%; required checks pass | Complete |
 | P7 | Pinned index snapshot, staged policy and added-line CLI (`f3e1c29`, `e301c0e`) | Nested-root policy false-clean fixed; re-review approved | 196 tests on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.93%, regions 98.07%; required checks pass | Complete |
-| P8 | Pending | Pending | Pending | Not started |
+| P8 | Direct pinned-reference working-tree diff, independent identities and mutation checks (`5b5ebd6`) | Independent review pending | 225 tests current Git/Git 2.30/Rust 1.85; functions 100%, lines 98.9939%, regions 98.0313%; required checks pass | In review |
 | P9 | Pending | Pending | Pending | Not started |
 | P10 | Release preflight research identifies native runners, linkage checks, Cargo package checks, and Git-floor tests | Pending implementation review | Native jobs and artifact smoke tests pending | Research only |
 
@@ -106,3 +106,18 @@ full-tree lookup, while relative `GIT_INDEX_FILE` behavior remains intact. The
 scoped re-review approved the correction. All 196 tests pass on current Git,
 Git 2.30, and Rust 1.85; formatting, strict Clippy, benchmarks, and coverage
 pass at 311/311 functions, 98.9253% lines, and 98.0687% regions.
+
+## P8
+
+`scan --diff <ref>` is implemented to compare a pinned commit directly with the
+tracked working tree, including staged and unstaged additions. It independently
+resolves working-tree blob identities before strict patch parsing and rechecks
+metadata and identities for detectable mutation. It uses working-tree policy and
+line numbers, scans symlink link text, and validates dirty gitlinks as excluded
+scope. [Working-tree research](research/p8-working-tree.md) records resource
+limits and non-atomic mutation limits.
+
+Implementation verification passed 225 tests on current Git, Git 2.30, and Rust
+1.85, plus formatting, strict Clippy, benchmarks, and coverage at 337/337
+functions, 98.9939% lines, and 98.0313% regions. Independent review is pending;
+the package is not yet complete.
