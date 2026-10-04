@@ -120,7 +120,7 @@ fn explicit_target_conflicts_symlinks_and_report_failure_are_safe() {
         vec!["--config"],
         vec!["--config", "one", "--config", "two"],
         vec!["--staged", "--staged"],
-        vec!["--diff", "main"],
+        vec!["--diff", "HEAD", "--staged"],
         vec!["--glob"],
         vec!["first", "second"],
         vec!["--help", "file"],
