@@ -74,7 +74,7 @@ def measure(binary, arguments, directory, samples, findings, size, code=None):
             assert SECRET not in report + diagnostics, 'benchmark fixture leaked'
             assert returncode == code, 'unexpected benchmark scan exit'
             assert not diagnostics, 'unexpected scanner diagnostic'
-            assert report.count(b'[REDACTED]') == findings, 'benchmark omitted/added finding'
+            assert report.count(b'\nValue: ') == findings, 'benchmark omitted/added finding'
             if code != 2:
                 parsed = re.search(rb'; (\d+) byte\(s\) read', report)
                 assert parsed and int(parsed[1]) == size, 'benchmark omitted scope bytes'
