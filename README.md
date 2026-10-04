@@ -5,8 +5,11 @@
 
 **A fast, offline secret scanner that stops credentials before they reach your Git remote.**
 
-`rayloc` comes from the Vietnamese *rây lọc*, a fine-mesh sieve: clean code passes
-through, while API keys, private keys and tokens get caught.
+**rayloc** is pronounced *RAY-lock*: /ˈreɪ.lɒk/ (UK), /ˈreɪ.lɑːk/ (US).
+
+The name comes from the Vietnamese *rây lọc*, a fine-mesh sieve used in the kitchen
+to strain out the bits you don't want. rayloc does the same for your code: clean
+code passes through, while API keys, private keys and tokens get caught.
 
 - **Fast**: parallel scanning with regexes compiled once.
 - **Built for Git**: scans staged changes, diffs against a ref, or whole directories.
