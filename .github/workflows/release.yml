@@ -1,0 +1,62 @@
+name: Release
+
+# Manual: Actions > Release > Run workflow (on main). Publishes v<YYYY.M.D>,
+# at most one release per UTC day.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases are published from main"
+          exit 1
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(date -u +%Y.%-m.%-d)
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$version" >/dev/null 2>&1; then
+            echo "::error::v$version already exists; releases are limited to one per day"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  validate:
+    needs: version
+    uses: ./.github/workflows/release-validation.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  publish:
+    needs: [version, validate]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: rayloc-release-validation
+          path: dist
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        working-directory: dist
+        run: |
+          sha256sum --check SHA256SUMS
+          gh release create "v$VERSION" rayloc-*.tar.gz SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "v$VERSION" --generate-notes

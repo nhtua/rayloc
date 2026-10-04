@@ -5,6 +5,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The Release workflow reuses this matrix with a date version stamped into builds.
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -35,6 +42,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Stamp release version
+        if: inputs.version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python3 scripts/release.py stamp --version "$VERSION"
       - name: Install native Linux musl linker
         if: runner.os == 'Linux'
         run: |
@@ -71,12 +83,12 @@ jobs:
           name: rayloc-native-${{ matrix.platform.target }}
           path: dist/*.tar.gz
           if-no-files-found: error
-      - name: Real remote Rust pre-commit installation
+      - name: Real remote pre-commit installation
         if: matrix.toolchain == '1.85.0'
         run: |
           python3 -m venv "$RUNNER_TEMP/framework"
           "$RUNNER_TEMP/framework/bin/pip" install pre-commit==4.6.2
-          python3 scripts/test_pre_commit.py --repo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --rev "$GITHUB_SHA" --pre-commit "$RUNNER_TEMP/framework/bin/pre-commit" --language-version 1.85.0
+          python3 scripts/test_pre_commit.py --repo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --rev "$GITHUB_SHA" --pre-commit "$RUNNER_TEMP/framework/bin/pre-commit" --binary extracted/rayloc-*/rayloc
 
   checksums:
     needs: native
@@ -85,6 +97,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Stamp release version
+        if: inputs.version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python3 scripts/release.py stamp --version "$VERSION"
       - uses: actions/download-artifact@v7
         with:
           pattern: rayloc-native-*

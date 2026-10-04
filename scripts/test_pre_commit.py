@@ -10,11 +10,14 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--repo', required=True)
 parser.add_argument('--rev', required=True)
 parser.add_argument('--pre-commit', default='pre-commit')
-parser.add_argument('--language-version', default='system')
+parser.add_argument('--binary', required=True, help='installed rayloc executable the system hook runs')
 args = parser.parse_args()
+scanner = str(Path(args.binary).resolve())
 secret = ('AKIA0123' + '456789AB' + 'CDEF')
 env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
 env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null', GIT_ATTR_NOSYSTEM='1', LC_ALL='C')
+# The manifest uses the system language: the hook runs whichever rayloc is on PATH.
+env['PATH'] = str(Path(scanner).parent) + os.pathsep + env['PATH']
 
 with tempfile.TemporaryDirectory(prefix='rayloc-framework-') as temporary:
     base = Path(temporary)
@@ -42,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='rayloc-framework-') as temporary:
     git('init', '-q', '--template=')
     for key, value in [('user.name', 'Fixture'), ('user.email', 'fixture@example.invalid'), ('core.attributesFile', '/dev/null'), ('core.excludesFile', '/dev/null')]:
         git('config', key, value)
-    config = f"repos:\n  - repo: {args.repo!r}\n    rev: {args.rev!r}\n    hooks:\n      - id: rayloc-staged\n        language_version: {args.language_version!r}\n"
+    config = f"repos:\n  - repo: {args.repo!r}\n    rev: {args.rev!r}\n    hooks:\n      - id: rayloc-staged\n"
     stage('.pre-commit-config.yaml', config)
     # The framework owns migration; prove a pre-existing hook still executes.
     hooks = root / '.git' / 'hooks'
@@ -55,10 +58,8 @@ with tempfile.TemporaryDirectory(prefix='rayloc-framework-') as temporary:
     manifests = list((base / 'cache').glob('repo*/.pre-commit-hooks.yaml'))
     assert len(manifests) == 1
     run(args.pre_commit, 'validate-manifest', str(manifests[0]))
-    binaries = list((base / 'cache').glob('repo*/rustenv-*/bin/rayloc'))
-    assert len(binaries) == 1
-    scanner = str(binaries[0])
-    binary_stat = binaries[0].stat()
+    # A system hook builds and downloads nothing.
+    assert not list((base / 'cache').glob('repo*/*env-*')), 'hook environment was built'
     run(scanner, 'scan', '--staged')
     commit('clean setup')
     assert (root / '.git/legacy-hook-runs').read_text() == 'invoked'
@@ -83,9 +84,7 @@ with tempfile.TemporaryDirectory(prefix='rayloc-framework-') as temporary:
     stage('arbitrary.unusual-extension', 'safe again\n')
     git('add', '.rayloc.yaml')
     commit('recovered')
-    assert binaries[0].stat().st_mtime_ns == binary_stat.st_mtime_ns, 'cached binary rebuilt'
     # Direct installer preserves the framework-managed script and legacy hook.
-    env['PATH'] = str(binaries[0].parent) + os.pathsep + env['PATH']
     before = hook.read_bytes()
     assert 'manually integrate' in run(scanner, 'hook', 'install', code=2)
     assert hook.read_bytes() == before
@@ -96,4 +95,4 @@ with tempfile.TemporaryDirectory(prefix='rayloc-framework-') as temporary:
     commit('custom hook clean')
     stage('arbitrary.unusual-extension', secret + '\n')
     commit('custom hook blocked', code=1)
-    print(f'PASS pre-commit 4.6.2; language={args.language_version}; clean/cache/empty/partial/findings/error/policy/coexistence/hooksPath')
+    print(f'PASS pre-commit 4.6.2; language=system; clean/cache/empty/partial/findings/error/policy/coexistence/hooksPath')

@@ -26,8 +26,20 @@ artifact harness against `ISOLATED_ROOT/bin/rayloc`. CI also tests an unlocked
 installation with Rust 1.85, matching the pre-commit Rust backend. Keep Cargo.lock
 in the package. Inspect the archive for unexpected/internal material.
 
-After review and all four native jobs pass, publication is a separate authorized
-release action. Publish source only after rechecking crates.io name/version
-availability. Upload only the four verified archives and SHA256SUMS to a reviewed
-release; download/install commands can then reference artifacts that exist.
-Until then use `cargo install --locked --path .` or the locally built binary.
+## Publishing a GitHub release
+
+Releases use date versions, `vYYYY.M.D` in UTC (for example `v2026.10.4`; Cargo
+requires semver, so there are no leading zeros). At most one release is published
+per day. To publish, run Actions > Release > Run workflow on `main`. The workflow:
+
+1. computes today's version and stops if its tag already exists;
+2. runs this validation matrix with the version stamped into `Cargo.toml` and
+   `Cargo.lock` (`python3 scripts/release.py stamp --version VERSION`), so the
+   archives and `rayloc --version` carry it;
+3. creates tag `vVERSION` on the validated commit and a GitHub release with the
+   four archives and `SHA256SUMS`.
+
+The stamp exists only in the release build; the repository keeps its development
+version. `install.sh` installs the latest release (or `RAYLOC_VERSION`) after
+verifying `SHA256SUMS`. crates.io publication remains a separate manual step;
+recheck name/version availability first.
