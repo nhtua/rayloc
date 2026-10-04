@@ -38,6 +38,58 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.run_tool('archive', '--binary', ROOT / 'target/release/rayloc', '--target', 'unsupported', '--output', directory, code=2)
 
+    def test_stamp_sets_manifest_and_lock_versions_and_rejects_invalid_versions(self):
+        import shutil
+        import sys
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        from release import stamp
+        with tempfile.TemporaryDirectory() as directory:
+            copy = Path(directory)
+            for name in ('Cargo.toml', 'Cargo.lock'):
+                shutil.copyfile(ROOT / name, copy / name)
+            stamp('2026.10.4', copy)
+            self.assertIn('name = "rayloc"\nversion = "2026.10.4"', (copy / 'Cargo.toml').read_text())
+            self.assertIn('name = "rayloc"\nversion = "2026.10.4"', (copy / 'Cargo.lock').read_text())
+            for invalid in ('2026.10.04', 'v2026.10.4', '2026.10', '', None):
+                with self.assertRaises(ValueError):
+                    stamp(invalid, copy)
+        self.run_tool('stamp', '--version', '2026.10.04', code=2)
+
+    def test_install_script_verifies_checksum_and_installs_host_binary(self):
+        import json
+        import os
+        import platform
+        machine = {'x86_64': 'x86_64', 'amd64': 'x86_64', 'arm64': 'aarch64', 'aarch64': 'aarch64'}[platform.machine().lower()]
+        system = {'Linux': 'unknown-linux-musl', 'Darwin': 'apple-darwin'}[platform.system()]
+        target = f'{machine}-{system}'
+        metadata = json.loads(subprocess.check_output(['cargo', 'metadata', '--no-deps', '--format-version', '1'], cwd=ROOT))
+        version = next(package['version'] for package in metadata['packages'] if package['name'] == 'rayloc')
+        with tempfile.TemporaryDirectory() as directory:
+            releases = Path(directory) / 'releases'
+            download = releases / 'download' / f'v{version}'
+            self.run_tool('archive', '--binary', ROOT / 'target/release/rayloc', '--target', target, '--output', download)
+            self.run_tool('checksums', '--output', download)
+            destination = Path(directory) / 'bin'
+            environment = dict(os.environ, RAYLOC_RELEASES_URL=releases.as_uri(), RAYLOC_VERSION=version,
+                               RAYLOC_INSTALL_DIR=str(destination))
+
+            def install():
+                return subprocess.run(['sh', str(ROOT / 'install.sh')], env=environment, capture_output=True, text=True)
+
+            result = install()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f'rayloc {version}', result.stdout)
+            self.assertTrue(os.access(destination / 'rayloc', os.X_OK))
+            self.assertEqual(sorted(p.name for p in destination.iterdir()), ['rayloc'])
+            (destination / 'rayloc').unlink()
+            (download / 'SHA256SUMS').write_text('0' * 64 + f'  rayloc-{version}-{target}.tar.gz\n')
+            result = install()
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('checksum mismatch', result.stderr)
+            self.assertFalse((destination / 'rayloc').exists())
+            environment['RAYLOC_VERSION'] = '1.0.0;rm'
+            self.assertIn('invalid release version', install().stderr)
+
     def test_real_release_binary_passes_artifact_smoke(self):
         result = subprocess.run(['python3', str(ROOT / 'scripts/artifact_smoke.py'), str(ROOT / 'target/release/rayloc')], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)

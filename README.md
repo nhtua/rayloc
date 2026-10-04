@@ -7,22 +7,60 @@ execution or incomplete-scan errors. Errors take precedence over findings.
 
 The v1 implementation supports files, directories, repository-relative globs,
 staged snapshots, direct reference diffs, YAML policy, Git-style scanner ignores,
-and a managed pre-commit hook. Release artifacts and crates.io publication are
-being validated; no published download or registry installation is advertised.
+and a managed pre-commit hook.
 
-Build with Rust 1.85 or newer:
+## Install
+
+Prebuilt binaries are published on
+[GitHub Releases](https://github.com/nhtua/rayloc/releases) for Linux (static
+musl) and macOS, x86_64 and aarch64. The installer picks your platform, verifies
+the archive against `SHA256SUMS`, and copies `rayloc` to `~/.local/bin`:
 
 ```sh
-cargo build --locked --release
-cargo install --locked --path .
-rayloc --help
+curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | sh
 ```
 
+Set `RAYLOC_VERSION=2026.10.4` to pin a release or `RAYLOC_INSTALL_DIR` to choose
+the directory. To install by hand, replace `VERSION` and `TARGET`
+(`x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`
+or `aarch64-apple-darwin`):
+
+```sh
+curl -fsSLO https://github.com/nhtua/rayloc/releases/download/vVERSION/rayloc-VERSION-TARGET.tar.gz
+curl -fsSLO https://github.com/nhtua/rayloc/releases/download/vVERSION/SHA256SUMS
+grep rayloc-VERSION-TARGET.tar.gz SHA256SUMS | shasum -a 256 -c -
+tar -xzf rayloc-VERSION-TARGET.tar.gz
+mkdir -p ~/.local/bin && install -m 755 rayloc-VERSION-TARGET/rayloc ~/.local/bin/rayloc
+```
+
+Or build from source with Rust 1.85 or newer:
+
+```sh
+cargo install --locked --path .
+```
+
+Then enable the commit check in each repository, either directly:
+
+```sh
+rayloc hook install
+```
+
+or with the [pre-commit](https://pre-commit.com) framework, which runs the
+installed `rayloc` (see [hook instructions](docs/hooks.md)):
+
+```yaml
+repos:
+  - repo: https://github.com/nhtua/rayloc
+    rev: v2026.10.4
+    hooks:
+      - id: rayloc-staged
+```
+
+## Usage
+
 Git is required for policy discovery, Git scopes and hook installation. Linux
-integration tests pass with Git 2.30 and current Git. Native CI prepares Linux
-musl and macOS binaries for x86_64/aarch64; successful jobs on the release commit
-are required before platform support is advertised. Windows is deferred. See
-[release preparation](docs/release.md) for archive, linkage and source-package gates.
+integration tests pass with Git 2.30 and current Git. Windows is deferred. See
+[releases](docs/release.md) for versioning, archive, linkage and source-package gates.
 
 ```sh
 rayloc scan .env.production

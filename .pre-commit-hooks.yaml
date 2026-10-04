@@ -1,7 +1,8 @@
+# Runs the rayloc binary on PATH; install it first (see README).
 - id: rayloc-staged
   name: rayloc staged secret scan
   entry: rayloc scan --staged
-  language: rust
+  language: system
   pass_filenames: false
   always_run: true
   require_serial: true

@@ -36,13 +36,15 @@ guarantee, as with other rayloc filesystem operations.
 ## Python pre-commit framework
 
 Python's pre-commit package is an optional hook manager. The repository manifest
-uses its Rust backend to build and cache the binary; Python is not a rayloc
-runtime dependency. In a consumer repository, add `.pre-commit-config.yaml`:
+uses its `system` language: the hook runs the `rayloc` already installed on
+`PATH` (see the README installation section) and builds or downloads nothing.
+Python is not a rayloc runtime dependency. In a consumer repository, add
+`.pre-commit-config.yaml`:
 
 ```yaml
 repos:
   - repo: https://github.com/nhtua/rayloc
-    rev: <tested-commit-SHA-or-release-tag>
+    rev: v2026.10.4  # a release tag or commit SHA
     hooks:
       - id: rayloc-staged
 ```
@@ -55,10 +57,9 @@ pre-commit validate-config
 pre-commit install --install-hooks
 ```
 
-First installation needs Cargo/Rust and may download dependencies/toolchains.
-Subsequent commits use the cached executable. The Rust backend installs source
-without Cargo's `--locked`, so compatibility also depends on fresh dependency
-resolution. For a framework hook already installed, `pre-commit install-hooks`
+A missing `rayloc` on `PATH` fails the hook and blocks the commit. Keep the
+installed binary at least as new as the manifest revision. For a framework hook
+already installed, `pre-commit install-hooks`
 initializes its missing language environments without reinstalling its Git hook.
 The framework controls migration of existing hooks; inspect its migration output.
 Rayloc's direct installer treats a framework-managed hook as unmanaged and
@@ -78,8 +79,8 @@ The framework may temporarily stash unstaged changes during a commit.
 
 The reproducible Linux integration harness is
 `scripts/test_pre_commit.py --repo <repository-path-or-URL> --rev <commit-SHA>`.
-It requires pre-commit 4.6.2 and supports `--language-version 1.85.0` for a fresh
-Rust backend installation on the minimum supported compiler. It operates only
+It requires pre-commit 4.6.2 and `--binary <path-to-rayloc>`, which it places on
+`PATH` for the system hook. It operates only
 in disposable consumer repositories with an isolated `PRE_COMMIT_HOME`.
 Local validation does not establish macOS behavior; native platform verification
 belongs to the release matrix. Hook execution also remains subject to Git's hook

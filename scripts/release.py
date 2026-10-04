@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tarfile
@@ -75,15 +76,33 @@ def checksums(output, verify=False):
         manifest.write_text(contents)
 
 
+def stamp(version, root=ROOT):
+    """Write a release version into the package manifest and its lock entry."""
+    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version or ''):
+        raise ValueError('release version must be MAJOR.MINOR.PATCH without leading zeros')
+    edits = (('Cargo.toml', r'(\[package\]\nname = "rayloc"\nversion = ")[^"]*(")'),
+             ('Cargo.lock', r'(\[\[package\]\]\nname = "rayloc"\nversion = ")[^"]*(")'))
+    for name, pattern in edits:
+        path = root / name
+        text, count = re.subn(pattern, lambda match: match[1] + version + match[2], path.read_text())
+        if count != 1:
+            raise ValueError(f'cannot locate rayloc version in {name}')
+        path.write_text(text)
+    print(f'stamped rayloc {version}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('archive', 'linkage', 'checksums', 'verify'))
+    parser.add_argument('action', choices=('archive', 'linkage', 'checksums', 'verify', 'stamp'))
     parser.add_argument('--binary', type=Path)
     parser.add_argument('--target', choices=TARGETS)
     parser.add_argument('--output', type=Path, default=ROOT / 'dist')
+    parser.add_argument('--version')
     args = parser.parse_args()
     try:
-        if args.action in ('archive', 'linkage'):
+        if args.action == 'stamp':
+            stamp(args.version)
+        elif args.action in ('archive', 'linkage'):
             if args.binary is None or args.target is None:
                 parser.error('--binary and --target required')
             (archive(args.binary, args.target, args.output) if args.action == 'archive'
