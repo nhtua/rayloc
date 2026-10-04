@@ -74,6 +74,9 @@ fn failed_publication_never_claims_installation_or_changes_unmanaged_content() {
         Err(WRITE)
     );
     assert_eq!(fs::read(&path).unwrap(), b"unmanaged hook");
+    fs::write(&path, SCRIPT).unwrap();
+    assert_eq!(installed(exists(), &path), Ok(()));
+    assert_eq!(fs::read(&path).unwrap(), SCRIPT);
 }
 
 #[test]
