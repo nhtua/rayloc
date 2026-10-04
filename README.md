@@ -1,29 +1,88 @@
 # rayloc
 
-`rayloc` (Vietnamese *rây lọc*, a fine-mesh sieve) scans files and added Git lines
-for potential credentials. It runs offline, masks every finding completely, and
-returns 0 for a completed clean scan, 1 for findings, or 2 for configuration,
-execution or incomplete-scan errors. Errors take precedence over findings.
+[![Rust checks](https://github.com/nhtua/rayloc/actions/workflows/ci.yml/badge.svg)](https://github.com/nhtua/rayloc/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The v1 implementation supports files, directories, repository-relative globs,
-staged snapshots, direct reference diffs, YAML policy, Git-style scanner ignores,
-and a managed pre-commit hook.
+**A fast, offline secret scanner that stops credentials before they reach your Git remote.**
 
-## Install
+**rayloc** is pronounced *RAY-lock*: /ˈreɪ.lɒk/ (UK), /ˈreɪ.lɑːk/ (US).
 
-Prebuilt binaries are published on
-[GitHub Releases](https://github.com/nhtua/rayloc/releases) for Linux (static
-musl) and macOS, x86_64 and aarch64. The installer picks your platform, verifies
-the archive against `SHA256SUMS`, and copies `rayloc` to `~/.local/bin`:
+The name comes from the Vietnamese *rây lọc*, a fine-mesh sieve used in the kitchen
+to strain out the bits you don't want. rayloc does the same for your code: clean
+code passes through, while API keys, private keys and tokens get caught.
+
+- **Fast**: parallel scanning with regexes compiled once.
+- **Built for Git**: scans staged changes, diffs against a ref, or whole directories.
+- **Never leaks what it finds**: values are always masked in the output.
+- **Single static binary**: no runtime and no network access.
+
+```text
+$ rayloc scan .
+rayloc — FINDINGS
+1 finding(s); 1 retained; 1 of 1 file(s) completed; 2 line(s); 51 byte(s) read
+0 file(s) excluded
+Suppressed: inline=0; placeholder=0; reference=0; checksum=0; generic-filter=0
+Elapsed: 0.692 ms
+
+src/app.py:2:8
+Rule: GitHub token signature (github-token)
+Severity: High; Medium confidence
+Value: ghp_********
+Remove exposed credentials from source code.
+```
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Installation](#installation)
+- [Usage](#usage)
+- [What it detects](#what-it-detects)
+- [Configuration](#configuration)
+- [Ignoring files and lines](#ignoring-files-and-lines)
+- [Reports and exit codes](#reports-and-exit-codes)
+- [Performance](#performance)
+- [Contributing](#contributing)
+
+## Quick start
+
+```sh
+# 1. Install
+curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | sh
+
+# 2. Block commits that contain secrets
+cd your-repo
+rayloc hook install
+
+# 3. Or scan on demand
+rayloc scan .
+```
+
+## Installation
+
+### Install script (recommended)
+
+The script detects your platform, verifies the archive against `SHA256SUMS`, and
+copies `rayloc` to `~/.local/bin`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | sh
 ```
 
-Set `RAYLOC_VERSION=2026.10.4` to pin a release or `RAYLOC_INSTALL_DIR` to choose
-the directory. To install by hand, replace `VERSION` and `TARGET`
-(`x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`
-or `aarch64-apple-darwin`):
+| Variable             | Purpose                                  |
+| -------------------- | ---------------------------------------- |
+| `RAYLOC_VERSION`     | Pin a release, e.g. `2026.10.4`          |
+| `RAYLOC_INSTALL_DIR` | Install somewhere other than `~/.local/bin` |
+
+### Prebuilt binaries
+
+[GitHub Releases](https://github.com/nhtua/rayloc/releases) has binaries for Linux
+(static musl) and macOS, on x86_64 and aarch64.
+
+<details>
+<summary>Manual install steps</summary>
+
+Replace `VERSION`, and replace `TARGET` with one of `x86_64-unknown-linux-musl`,
+`aarch64-unknown-linux-musl`, `x86_64-apple-darwin` or `aarch64-apple-darwin`:
 
 ```sh
 curl -fsSLO https://github.com/nhtua/rayloc/releases/download/vVERSION/rayloc-VERSION-TARGET.tar.gz
@@ -33,20 +92,65 @@ tar -xzf rayloc-VERSION-TARGET.tar.gz
 mkdir -p ~/.local/bin && install -m 755 rayloc-VERSION-TARGET/rayloc ~/.local/bin/rayloc
 ```
 
-Or build from source with Rust 1.85 or newer:
+</details>
+
+### From source
+
+Requires Rust 1.85 or newer:
 
 ```sh
 cargo install --locked --path .
 ```
 
-Then enable the commit check in each repository, either directly:
+### Requirements
+
+- Git is required for policy discovery, Git scopes and hook installation. It is
+  tested with Git 2.30 and current Git on Linux.
+- Windows is not supported yet.
+
+## Usage
+
+```sh
+rayloc scan                                  # current directory
+rayloc scan ./src                            # a directory
+rayloc scan .env.production                  # a single file
+rayloc scan --glob '**/*.{pem,key,yaml}'     # a repository-relative glob
+rayloc scan --staged                         # lines added to the index
+rayloc scan --diff main                      # tracked changes against a commit
+```
+
+| Option                | Description                                         |
+| --------------------- | --------------------------------------------------- |
+| `--config <file>`     | Merge an extra policy file over the repository one  |
+| `--no-inline-ignores` | Disable `rayloc:ignore` comments (useful in CI)     |
+
+### Staged and diff modes
+
+- **`--staged`** scans only lines added to the index, including partially staged
+  files. Configuration and ignore files are also read from the index.
+- **`--diff <ref>`** compares the final content of tracked files with that commit,
+  covering both staged and unstaged changes. It skips untracked files, does not
+  scan history and does not use a merge base.
+
+> [!NOTE]
+> If staged edits are completely reversed in the working tree, Git may rewrite its
+> index cache while rayloc reads the diff. rayloc then reports an incomplete scan
+> (exit 2) rather than risk missing a change.
+
+### Pre-commit hook
+
+Install a managed hook directly:
 
 ```sh
 rayloc hook install
 ```
 
-or with the [pre-commit](https://pre-commit.com) framework, which runs the
-installed `rayloc` (see [hook instructions](docs/hooks.md)):
+This respects `core.hooksPath` and linked worktrees, keeps any existing unmanaged
+hook, and can be re-run safely. The hook runs `rayloc scan --staged`, and a
+non-zero exit blocks the commit.
+
+Or use the [pre-commit](https://pre-commit.com) framework, which runs your
+installed `rayloc`. Add this to `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
@@ -56,82 +160,117 @@ repos:
       - id: rayloc-staged
 ```
 
-## Usage
-
-Git is required for policy discovery, Git scopes and hook installation. Linux
-integration tests pass with Git 2.30 and current Git. Windows is deferred. See
-[releases](docs/release.md) for versioning, archive, linkage and source-package gates.
+Then install pre-commit and the hook:
 
 ```sh
-rayloc scan .env.production
-rayloc scan ./src
-rayloc scan --glob '**/*.{pem,key,yaml}'
-rayloc scan --staged
-rayloc scan --diff main
-rayloc hook install
+python3 -m pip install pre-commit==4.6.2
+pre-commit validate-config
+pre-commit install --install-hooks
 ```
 
-An omitted target scans the current directory. `--staged` scans added index lines,
-including partially staged files; configuration and ignores also come from the
-index. `--diff main` compares tracked final working-tree content directly with
-that commit, including staged and unstaged changes. It excludes untracked files
-and does not scan history or use a merge base. A known conservative limitation:
-when staged edits are completely reversed in the workspace, Git may rewrite its
-index cache during diff acquisition; rayloc returns incomplete-scan exit 2.
+See the [hook instructions](docs/hooks.md) for details, including the optional
+pre-commit Rust backend.
 
-Provider signatures cover AWS IDs/secret assignments, GitHub opaque and app
-forms, Stripe secret/restricted keys, Slack/GovSlack webhooks and private-key
-markers. Compact JOSE candidates receive structural checks. Generic entropy
-requires assignment context; strong password literals of at least eight bytes
-have a separate branch. Findings identify potential exposure, without claiming
-credential activity. Shorter passwords, archive extraction, UTF-16 decoding,
-obfuscated values and arbitrary multiline rules are outside the v1 contract.
+## What it detects
 
-Repository `.rayloc.yaml` custom regexes add to built-ins and compile once. Each
-rule matches one physical byte line. Optional entropy measures the configured
-secret capture (default: the complete match):
+| Category          | Coverage                                                          |
+| ----------------- | ----------------------------------------------------------------- |
+| AWS               | Access key IDs and secret key assignments                         |
+| GitHub            | Opaque tokens (`ghp_`, `gho_`, `github_pat_`, …) and app forms    |
+| Stripe            | Secret and restricted keys                                        |
+| Slack             | Slack and GovSlack webhooks                                       |
+| Private keys      | PEM private-key markers                                           |
+| JWT / JOSE        | Compact tokens, checked for valid structure                       |
+| Generic secrets   | High-entropy values in assignments, and strong password literals of 8+ bytes |
+| Custom            | Your own regexes in [`.rayloc.yaml`](#configuration)              |
+
+A finding means a credential **may** be exposed. rayloc does not check whether it
+is still active.
+
+**Out of scope for v1:** passwords shorter than 8 bytes, archive contents, UTF-16
+files, obfuscated values and multi-line rules.
+
+## Configuration
+
+Add a `.rayloc.yaml` to your repository root. Custom rules are added to the
+built-in rules:
 
 ```yaml
 version: "1"
 default_entropy_threshold: 4.5
+disabled_rules: [github-token]
 rules:
   - id: company-token
     regex: 'corp_([A-Za-z0-9]{32})'
-    secret_group: 1
-    entropy: 3.8
+    secret_group: 1      # capture group to check and report (default: whole match)
+    entropy: 3.8         # optional minimum entropy for the captured value
     severity: "High"
 ```
 
-`--config PATH` merges present scalar settings over discovered policy, merges
-entropy class keys, appends rules with unique IDs, and unions disabled rules.
-Unknown fields, duplicate keys/IDs, aliases, tags and multiple YAML documents
-fail safely. `--no-inline-ignores` disables `rayloc:ignore` comment directives.
+- Each rule matches against a single line.
+- `--config <file>` merges on top of the repository policy: settings override,
+  rules are appended and disabled rules are combined.
+- The parser is strict. Unknown fields, duplicate keys or IDs, YAML aliases or
+  tags, and multiple documents are rejected with exit 2.
 
-Directory/glob scopes use repository `.gitignore` for untracked paths, then
-higher-priority `.raylocignore`. Tracked and explicitly selected files remain
-eligible for scanner exclusions. Hidden files are included. There are no implicit
-`vendor/` or generated-directory exclusions, no global/parent ignore policy and no
-symlink traversal. All-excluded scopes are labeled `EXCLUDED`; zero regular glob
-matches return 2. Raw-byte scanning includes binary-looking files.
+## Ignoring files and lines
 
-Reports show numeric source IDs and fixed rule metadata, locations in 1-based
-byte columns, suppression/exclusion counters and `[REDACTED]` values. Paths,
-custom labels, source snippets, CLI arguments and child stderr are withheld.
-Input limits are 256-KiB reads, 1-MiB physical records/configuration, 64-KiB
-candidates and 10,000 retained findings; exceeded limits return 2.
+**Files.** Directory and glob scans skip untracked files matched by `.gitignore`,
+then apply `.raylocignore` (same syntax), which takes priority:
 
-`hook install` resolves Git's active hook directory including `core.hooksPath`
-and linked worktrees, preserves unmanaged hooks, and installs an executable,
-idempotent `rayloc scan --staged` hook. A nonzero hook status blocks commits.
-[Hook instructions](docs/hooks.md) also describe the optional tested Python
-pre-commit 4.6.2 Rust backend and its staged-only scope.
+```gitignore
+# .raylocignore
+fixtures/
+*.snap
+```
 
-Performance results and limitations are in [the measured release baseline](docs/research/release-baseline.md).
-Under-5-ms staged latency and 500 MB/s/core remain stretch goals. The fixed
-held-out synthetic corpus achieves 98% record precision and recall; its small
-clean denominator cannot establish a real-world false-positive rate.
+- Hidden files are scanned. There are no built-in exclusions for `vendor/` or
+  generated directories.
+- Symlinks are not followed. Binary-looking files are still scanned.
+- Tracked files and explicitly named files can still be excluded by `.raylocignore`.
 
-Run the required checks:
+**Lines.** Add a trailing comment to suppress a single line:
+
+```python
+API_KEY = "example-not-a-real-key"  # rayloc:ignore
+```
+
+`// rayloc:ignore` also works. Use `--no-inline-ignores` to enforce scanning in CI.
+
+## Reports and exit codes
+
+| Exit code | Meaning                                                       |
+| --------- | ------------------------------------------------------------- |
+| `0`       | Scan completed, no secrets found                              |
+| `1`       | Secrets found                                                 |
+| `2`       | Configuration error, execution error or incomplete scan       |
+
+If both apply, errors (exit 2) take precedence over findings.
+
+Each finding shows its path, line and byte column (1-based), rule, severity and a
+masked value.
+
+- **Values** show at most a 4-byte printable prefix, never more than a quarter of
+  the value, followed by a fixed-length mask (`ghp_********`). Short or non-ASCII
+  values print `[REDACTED]`.
+- **Paths** that are not UTF-8, contain control or bidi characters, or exceed
+  4 KiB are shown as `source #N`.
+- Source snippets, custom rule labels, CLI arguments and Git error output are
+  never printed.
+
+**Limits:** 256 KiB reads, 1 MiB per line and per config file, 64 KiB per
+candidate and 10,000 retained findings. Exceeding a limit returns exit 2.
+
+## Performance
+
+See the [measured release baseline](docs/research/release-baseline.md) for numbers
+and methodology. On the held-out synthetic corpus, rayloc reaches 98% precision
+and recall. That corpus is too small to estimate a real-world false-positive rate.
+Staged scans under 5 ms and 500 MB/s per core are goals, not guarantees yet.
+
+## Contributing
+
+Run these checks before opening a PR:
 
 ```sh
 cargo fmt --all -- --check
@@ -141,11 +280,22 @@ cargo bench --locked
 cargo coverage
 ```
 
-`cargo coverage` needs `cargo install cargo-llvm-cov --locked` and
-`rustup component add llvm-tools-preview`. Production Rust requires >=98% line/region and 100% function coverage. See the
-[test guide](tests/README.md), [benchmark guide](benches/README.md) and
-[technical design](technical-design.md). Dependencies are narrowly scoped to
-YAML, regex, ignores/globs and Rayon, with decisions in
-[development decisions](docs/development-decisions.md).
+`cargo coverage` requires 98% line and region coverage and 100% function coverage.
+Set it up with:
+
+```sh
+cargo install cargo-llvm-cov --locked
+rustup component add llvm-tools-preview
+```
+
+Further reading:
+
+- [Technical design](technical-design.md)
+- [Development decisions](docs/development-decisions.md), including dependency
+  choices (YAML, regex, ignore/glob and Rayon only)
+- [Test guide](tests/README.md) and [benchmark guide](benches/README.md)
+- [Release process](docs/release.md)
+
+## License
 
 Distributed under the [MIT License](LICENSE).

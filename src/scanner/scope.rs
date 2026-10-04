@@ -497,12 +497,19 @@ impl Runner<'_> {
         let lane_length = self.batch.len().div_ceil(self.workers.len());
         let collector = &self.collector;
         let registry = self.registry;
+        let root = self.root;
         let process = |(worker, work): (&mut Worker, &[Work])| {
             let mut outcome = ScanOutcome::default();
             for item in work {
                 engine::merge(
                     &mut outcome,
-                    worker.file(&item.path, item.source_id, registry, collector),
+                    worker.file(
+                        &item.path,
+                        item.path.strip_prefix(&root.root).unwrap_or(&item.path),
+                        item.source_id,
+                        registry,
+                        collector,
+                    ),
                 );
             }
             outcome

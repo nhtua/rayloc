@@ -60,7 +60,8 @@ jobs:
           python3 scripts/release.py stamp --version "$VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -qam "chore(release): v$VERSION"
+          # Main already carries this version when a deleted release is republished.
+          git diff --quiet || git commit -qam "chore(release): v$VERSION"
           git tag "v$VERSION"
           # Fails without changes if main moved after the validated commit.
           git push --atomic origin "HEAD:refs/heads/main" "refs/tags/v$VERSION"

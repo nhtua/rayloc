@@ -346,6 +346,10 @@ fn inherited_git_routing_and_config_cannot_mutate_external_fixture_state() {
     for args in [
         vec!["init", "-q"],
         vec![
+            // Detached auto-maintenance can create objects/maintenance.lock
+            // while the sentinel tree is compared.
+            "-c",
+            "maintenance.auto=false",
             "-c",
             "user.name=Sentinel",
             "-c",

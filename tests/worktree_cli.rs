@@ -57,7 +57,7 @@ fn check(out: Output, code: i32, findings: usize) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     let text = String::from_utf8(out.stdout).unwrap();
-    assert_eq!(text.matches("[REDACTED]").count(), findings, "{text}");
+    assert_eq!(text.matches("\nValue: ").count(), findings, "{text}");
     assert!(!text.contains(SECRET));
     assert!(!String::from_utf8(out.stderr).unwrap().contains(SECRET));
     text

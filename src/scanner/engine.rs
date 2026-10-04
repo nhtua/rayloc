@@ -1,8 +1,11 @@
 //! Bounded byte readers and one deterministic, globally capped collector.
-use super::{Finding, ScanError, ScanOutcome, ScanStats, redaction::RedactedString};
+use super::{
+    Finding, ScanError, ScanOutcome, ScanStats,
+    redaction::{RedactedString, safe_label},
+};
 use crate::rules::{BUILTINS, Registry, entropy::Histogram};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{self, BufRead, Read},
     path::Path,
@@ -24,12 +27,14 @@ pub(super) const LIMITS: Limits = Limits {
 type FindingKey = (u32, u64, usize, usize, crate::rules::builtin::RuleId);
 pub(super) struct Collector {
     entries: BTreeMap<FindingKey, Finding>,
+    labels: BTreeMap<u32, Box<str>>,
     limit: usize,
 }
 impl Collector {
     pub(super) fn new(limit: usize) -> Self {
         Self {
             entries: BTreeMap::new(),
+            labels: BTreeMap::new(),
             limit,
         }
     }
@@ -52,7 +57,16 @@ impl Collector {
         }
         self.entries.insert(key, finding);
     }
-    pub(super) fn finish(self, outcome: &mut ScanOutcome) {
+    /// Record a printable path for a source that produced findings.
+    pub(super) fn label(&mut self, source_id: u32, path: &[u8]) {
+        if let Some(label) = safe_label(path) {
+            self.labels.insert(source_id, label);
+        }
+    }
+    pub(super) fn finish(mut self, outcome: &mut ScanOutcome) {
+        let retained: BTreeSet<u32> = self.entries.keys().map(|key| key.0).collect();
+        self.labels.retain(|id, _| retained.contains(id));
+        outcome.sources = self.labels;
         outcome.findings = self.entries.into_values().collect();
         if outcome.stats.findings_detected > self.limit as u64 {
             outcome.fail(ScanError::FindingLimit);
@@ -77,6 +91,7 @@ impl Worker {
     pub(super) fn file(
         &mut self,
         path: &Path,
+        label: &Path,
         source_id: u32,
         registry: &Registry,
         collector: &Mutex<Collector>,
@@ -109,6 +124,12 @@ impl Worker {
                 }
             }
         }
+        if outcome.stats.findings_detected != 0 {
+            collector
+                .lock()
+                .expect("collector lock is not poisoned")
+                .label(source_id, label.as_os_str().as_encoded_bytes());
+        }
         outcome
     }
 }
@@ -140,12 +161,18 @@ impl BufRead for BufferedFile<'_> {
     }
 }
 pub fn scan_file(path: &Path, source_id: u32) -> ScanOutcome {
-    scan_file_with_registry(path, source_id, &BUILTINS)
+    scan_file_with_registry(path, path, source_id, &BUILTINS)
 }
-pub fn scan_file_with_registry(path: &Path, source_id: u32, registry: &Registry) -> ScanOutcome {
+/// `label` is the path shown in reports, e.g. relative to the scope root.
+pub fn scan_file_with_registry(
+    path: &Path,
+    label: &Path,
+    source_id: u32,
+    registry: &Registry,
+) -> ScanOutcome {
     let started = Instant::now();
     let collector = Mutex::new(Collector::new(MAX_FINDINGS));
-    let mut outcome = Worker::new().file(path, source_id, registry, &collector);
+    let mut outcome = Worker::new().file(path, label, source_id, registry, &collector);
     collector
         .into_inner()
         .expect("collector lock is not poisoned")
