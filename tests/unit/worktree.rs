@@ -166,12 +166,7 @@ fn snapshot_budget_and_recheck_detect_missing_corrupted_and_changed_bindings() {
     assert!(identity(root, root, b"nested", 0o100644).is_err());
 }
 #[test]
-fn dirty_gitlink_variant_requires_exact_paths_identity_and_single_line_change() {
-    if !in_isolated_git_child(
-        "dirty_gitlink_variant_requires_exact_paths_identity_and_single_line_change",
-    ) {
-        return;
-    }
+fn dirty_gitlink_variant_requires_exact_paths_and_single_line_change() {
     use crate::scanner::diff::{Event, Parser};
     let oid = "a".repeat(40);
     let empty = "b".repeat(40);
@@ -211,6 +206,12 @@ fn dirty_gitlink_variant_requires_exact_paths_identity_and_single_line_change() 
             patch == valid
         );
         assert_eq!(added, 0);
+    }
+}
+#[test]
+fn unresolved_worktree_identity_is_rejected() {
+    if !in_isolated_git_child("unresolved_worktree_identity_is_rejected") {
+        return;
     }
     let dir = repository();
     let root = dir.path();
@@ -377,7 +378,7 @@ fn inherited_git_routing_and_config_cannot_mutate_external_fixture_state() {
     let before = tree_bytes(root);
     for name in [
         "snapshot_budget_and_recheck_detect_missing_corrupted_and_changed_bindings",
-        "dirty_gitlink_variant_requires_exact_paths_identity_and_single_line_change",
+        "unresolved_worktree_identity_is_rejected",
         "link_and_submodule_identities_are_literal_and_policy_reads_are_bounded",
         "acquisition_and_hash_process_failures_cannot_complete_snapshots",
     ] {

@@ -178,8 +178,7 @@ fn direct_reference_diff_does_not_use_merge_base_or_history() {
     check(out, 0, 0);
 }
 #[test]
-fn clean_filters_match_diff_conversion_and_non_utf8_paths_are_safe() {
-    use std::os::unix::ffi::OsStringExt;
+fn clean_filters_match_diff_conversion_and_spaced_paths_are_safe() {
     let dir = repo();
     let root = dir.path();
     fs::write(root.join(".gitattributes"), "* filter=fixture\n").unwrap();
@@ -187,11 +186,11 @@ fn clean_filters_match_diff_conversion_and_non_utf8_paths_are_safe() {
     fs::write(root.join("entry"), "safe\n").unwrap();
     git(root, &["add", "."]);
     git(root, &["commit", "-qm", "base"]);
-    let name = std::ffi::OsString::from_vec(b"private\xff name".to_vec());
-    fs::write(root.join(&name), "XKIX0123456789XBCDEF\n").unwrap();
+    let name = "private name";
+    fs::write(root.join(name), "XKIX0123456789XBCDEF\n").unwrap();
     let out = isolated(Command::new("git").current_dir(root))
         .arg("add")
-        .arg(&name)
+        .arg(name)
         .output()
         .unwrap();
     assert!(out.status.success());

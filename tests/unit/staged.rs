@@ -138,6 +138,52 @@ fn index_stat_missing_and_invalid_parent_are_distinguished() {
     assert!(index_stamp(&dir.path().join("file/child")).is_err());
 }
 #[test]
+fn quoted_non_utf8_paths_and_nul_payloads_are_scanned_from_streams() {
+    let (old, new) = ("0".repeat(40), "1".repeat(40));
+    let secret = concat!("AKIA0123", "456789AB", "CDEF");
+    let mut raw = format!(":000000 100644 {old} {new} A\0").into_bytes();
+    raw.extend_from_slice(b"quotes\"\\\t\n\xff\0");
+    let quoted = r#""a/quotes\"\\\t\n\377" "b/quotes\"\\\t\n\377""#;
+    let target = r#""b/quotes\"\\\t\n\377""#;
+    let patch = format!(
+        "diff --git {quoted}\nnew file mode 100644\nindex {old}..{new}\n--- /dev/null\n+++ {target}\n@@ -0,0 +1 @@\n+zero\0 {secret}\n"
+    );
+    let outcome = run_streams(&raw, patch.as_bytes(), b"", Default::default(), EMPTY);
+    assert_eq!(outcome.exit_code(), 1);
+    assert_eq!(outcome.stats.findings_detected, 1);
+}
+#[test]
+fn resolved_worktree_consumer_scans_quoted_non_utf8_paths() {
+    let (old, new) = ("2".repeat(40), "1".repeat(40));
+    let mut raw = format!(":100644 100644 {old} {new} M\0").into_bytes();
+    raw.extend_from_slice(b"private\xff name\0");
+    let name = r#""a/private\377 name""#;
+    let target = r#""b/private\377 name""#;
+    let patch = format!(
+        "diff --git {name} {target}\nindex {old}..{new} 100644\n--- {name}\t\n+++ {target}\t\n@@ -1,0 +2 @@\n+{}\n",
+        concat!("AKIA0123", "456789AB", "CDEF")
+    );
+    let root = Path::new("/repo");
+    let exclusions =
+        Exclusions::from_bytes(root, None, PolicyUsage::default(), ACTIVE_POLICY).unwrap();
+    let mut outcome = ScanOutcome::default();
+    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+    consume_resolved(
+        &mut raw.as_slice(),
+        &mut patch.as_bytes(),
+        root,
+        EMPTY,
+        &crate::rules::BUILTINS,
+        &exclusions,
+        &mut outcome,
+        &collector,
+        true,
+    )
+    .unwrap();
+    collector.into_inner().unwrap().finish(&mut outcome);
+    assert_eq!(outcome.stats.findings_detected, 1);
+}
+#[test]
 fn source_ids_fail_without_wrapping_or_reusing_an_identifier() {
     let mut source = u32::MAX - 1;
     next_source(&mut source).unwrap();
