@@ -30,12 +30,16 @@ parallelism backend under the repository's traversal contract.
 
 ## Secret lifetime and memory bounds
 
-`RedactedString` discards input bytes at construction and retains only a private
-marker. Match evaluation borrows the reader's source bytes; findings retain safe
-source IDs, spans, fixed rule metadata, and a fully masked value. This is stronger
-than copying a secret into a private vector solely to print `[REDACTED]` later.
-Formatting has no raw getter, byte slicing, or serialization path. Reports omit
-source excerpts and filenames until safe path rendering is implemented.
+`RedactedString` retains at most a 4-byte ASCII-printable prefix, never more
+than a quarter of the value, and discards the rest at construction. Values under
+8 bytes or with non-ASCII prefixes retain nothing. `Display` prints the prefix
+and a fixed-width mask (`ghp_********`) so length is not disclosed; `Debug`
+always prints `[REDACTED]`. Match evaluation borrows the reader's source bytes;
+findings retain source IDs, spans, fixed rule metadata, and the masked value.
+Formatting has no raw getter or serialization path. Reports omit source
+excerpts. Paths are recorded only for sources with retained findings (bounded by
+the findings limit) and only when valid UTF-8 without control or bidi formatting
+characters and at most 4 KiB; otherwise reports fall back to source IDs.
 
 Regular files use a 256-KiB `BufReader`, lines are capped at 1 MiB, candidates at
 64 KiB, and retained findings at 10,000. Line allocation grows geometrically but

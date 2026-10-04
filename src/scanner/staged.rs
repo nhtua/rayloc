@@ -328,6 +328,8 @@ pub(super) fn consume_resolved(
         } else {
             engine::add(&mut outcome.stats.files_attempted, 1)?;
         }
+        let label = binding.path();
+        let detected = outcome.stats.findings_detected;
         let mut parser =
             Parser::new(binding, empty_blob.as_bytes()).map_err(|_| ScanError::GitMetadata)?;
         let mut first = true;
@@ -374,6 +376,12 @@ pub(super) fn consume_resolved(
             lookahead = git::record(patch, b'\n', &mut line)?;
         }
         parser.finish().map_err(|_| ScanError::GitMetadata)?;
+        if outcome.stats.findings_detected != detected {
+            collector
+                .lock()
+                .expect("collector lock is not poisoned")
+                .label(source_id, label);
+        }
         if !excluded {
             engine::add(&mut outcome.stats.files_completed, 1)?;
         }

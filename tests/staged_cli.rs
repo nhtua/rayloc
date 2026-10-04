@@ -57,7 +57,7 @@ fn check(out: Output, code: i32, findings: usize) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     let text = String::from_utf8(out.stdout).unwrap();
-    assert_eq!(text.matches("[REDACTED]").count(), findings, "{text}");
+    assert_eq!(text.matches("\nValue: ").count(), findings, "{text}");
     assert!(!text.contains(SECRET));
     assert!(!String::from_utf8(out.stderr).unwrap().contains(SECRET));
     text
@@ -147,8 +147,11 @@ fn attributes_nul_quoted_paths_and_symlink_text_remain_visible() {
         &["config", "diff.external", "/nonexistent/private-helper"],
     );
     let text = check(scan(root, &[]), 1, 4);
+    // Control characters withhold the path; printable paths are shown.
     assert!(!text.contains("quotes"));
-    assert!(!text.contains("binary"));
+    assert!(text.contains("\nbinary:1:"), "{text}");
+    assert!(text.contains("\nspace b/name:1:"), "{text}");
+    assert!(text.contains("\nlink:1:"), "{text}");
 }
 #[test]
 fn rename_delete_mode_changes_and_type_changes_obey_added_lines() {

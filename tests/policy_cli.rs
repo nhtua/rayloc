@@ -31,10 +31,11 @@ fn explicit_file_detects_builtin_and_custom_without_metadata_leaks() {
         "abcdefghijklmnop",
         "sensitive-rule-id",
         "sensitive-description",
-        "input",
     ] {
         assert!(!text.contains(private));
     }
+    assert!(text.contains("\ninput:2:6\n"));
+    assert!(text.contains("\ninput:3:1\n"));
     assert!(output.stderr.is_empty());
 }
 #[test]

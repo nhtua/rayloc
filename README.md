@@ -114,9 +114,13 @@ eligible for scanner exclusions. Hidden files are included. There are no implici
 symlink traversal. All-excluded scopes are labeled `EXCLUDED`; zero regular glob
 matches return 2. Raw-byte scanning includes binary-looking files.
 
-Reports show numeric source IDs and fixed rule metadata, locations in 1-based
-byte columns, suppression/exclusion counters and `[REDACTED]` values. Paths,
-custom labels, source snippets, CLI arguments and child stderr are withheld.
+Reports show scope-relative paths and fixed rule metadata, locations in 1-based
+byte columns, suppression/exclusion counters and masked values such as
+`ghp_********`. A value reveals at most a 4-byte ASCII-printable prefix (never
+more than a quarter of it); shorter or non-ASCII values print `[REDACTED]`.
+Paths that are not UTF-8, contain control or bidi formatting characters, or
+exceed 4 KiB fall back to numeric source IDs. Custom labels, source snippets,
+CLI arguments and child stderr are withheld.
 Input limits are 256-KiB reads, 1-MiB physical records/configuration, 64-KiB
 candidates and 10,000 retained findings; exceeded limits return 2.
 

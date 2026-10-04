@@ -429,12 +429,14 @@ impl std::fmt::Debug for RedactedString {
 ```
 
 This sketch omits internal construction/access; no public raw getter. Source
-buffers are not report objects. Mask whole values by default: byte prefix/suffix
-slicing can panic on Unicode and unnecessarily discloses credential material.
+buffers are not report objects. Reveal at most a 4-byte ASCII-printable prefix,
+never more than a quarter of the value, followed by a fixed-width mask; mask
+values under 8 bytes or with non-ASCII prefixes entirely. Byte-level ASCII
+checks avoid Unicode slicing panics, and the fixed mask hides length.
 Zeroization/core-dump protection is separate from safe formatting.
 
 Default reports show safe location, rule, severity/confidence, optional entropy,
-fixed advice, and `Value: [REDACTED]`; omit source lines. Future context output
+fixed advice, and a masked `Value: ghp_********`; omit source lines. Future context output
 must redact all candidate spans, including suppressed candidates, before escaping
 terminal controls. Withhold the whole line if coverage is uncertain.
 
@@ -578,7 +580,8 @@ The file/directory/glob, staged/reference, policy, context/JOSE and hook package
 are now implemented. YAML/MSRV/dependency and resource budgets are resolved in
 [development decisions](docs/development-decisions.md). Standalone entropy,
 memory mapping, extra prefix routing, language-complete parsing and decoding
-extensions remain deferred; full-mask/numeric-source reporting is intentional.
+extensions remain deferred. Reports show sanitized scope-relative paths and
+prefix-masked values, falling back to numeric sources and full masks.
 
 [Release baseline](docs/research/release-baseline.md) and its JSON provide warm
 complete-workload engine, startup-inclusive file/directory/staged, extended-file

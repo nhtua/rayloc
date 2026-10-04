@@ -224,7 +224,8 @@ fn scan(
         outcome.stats.files_excluded = 1;
         outcome
     } else if metadata.is_file() {
-        crate::scanner::engine::scan_file_with_registry(&absolute, 1, &registry)
+        let label = absolute.strip_prefix(&root.root).unwrap_or(&absolute);
+        crate::scanner::engine::scan_file_with_registry(&absolute, label, 1, &registry)
     } else {
         let selected = if pattern.is_some() {
             root.root.as_path()

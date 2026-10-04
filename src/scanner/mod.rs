@@ -54,7 +54,7 @@ impl fmt::Display for ScanError {
 
 impl std::error::Error for ScanError {}
 
-/// Half-open, 1-based byte columns; source IDs avoid unsafe path rendering.
+/// Half-open, 1-based byte columns; paths resolve through `ScanOutcome::sources`.
 #[derive(Debug)]
 pub struct Finding {
     pub source_id: u32,
@@ -76,10 +76,12 @@ pub struct ScanStats {
     pub suppressions: crate::rules::context::Suppressions,
 }
 
-/// Safe to format: neither findings nor errors own raw source bytes or paths.
+/// Safe to format: findings and errors own no raw source bytes, and `sources`
+/// holds only sanitized paths for sources with retained findings.
 #[derive(Debug, Default)]
 pub struct ScanOutcome {
     pub findings: Vec<Finding>,
+    pub sources: std::collections::BTreeMap<u32, Box<str>>,
     pub errors: Vec<ScanError>,
     pub stats: ScanStats,
     pub elapsed: Duration,
