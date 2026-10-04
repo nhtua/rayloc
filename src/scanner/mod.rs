@@ -7,6 +7,7 @@ use redaction::RedactedString;
 
 pub mod diff;
 pub mod engine;
+pub mod fingerprint;
 mod git;
 pub mod redaction;
 pub mod scope;
@@ -63,6 +64,7 @@ pub struct Finding {
     pub end_column: usize,
     pub rule: RuleId,
     pub value: RedactedString,
+    pub id: fingerprint::FindingId,
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]

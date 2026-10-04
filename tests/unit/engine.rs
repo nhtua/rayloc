@@ -16,7 +16,7 @@ fn scan_record(
 ) -> Result<(), ScanError> {
     let collector = Mutex::new(Collector::new(limits.findings));
     scan_record_into(
-        line, source_id, outcome, limits, registry, histogram, &collector,
+        line, source_id, b"", outcome, limits, registry, histogram, &collector,
     )
 }
 fn read_records(
@@ -30,6 +30,7 @@ fn read_records(
     read_records_into(
         reader,
         source_id,
+        b"",
         outcome,
         limits,
         registry,
@@ -490,6 +491,7 @@ fn reusable_file_buffers_and_worker_failures_preserve_counts() {
         end_column: 2,
         rule: crate::rules::builtin::RuleId::GithubToken,
         value: RedactedString::new(b"x"),
+        id: FindingId::new(b"", b"x"),
     });
     assert!(collector.entries.is_empty());
 }

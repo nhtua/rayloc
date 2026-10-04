@@ -354,3 +354,121 @@ fn malformed_document_boundaries_and_version_containers_are_rejected() {
         Err(ConfigError::Limit)
     ));
 }
+#[test]
+fn accepted_ids_are_validated_deduplicated_bounded_and_merged() {
+    let config = parse(b"version: \"1\"\naccepted: [s3e9k, ABCDE]").unwrap();
+    assert_eq!(
+        config.accepted,
+        ["s3e9k", "abcde"].map(|id| FindingId::parse(id).unwrap())
+    );
+    for text in [
+        "version: \"1\"\naccepted: {}",
+        "version: \"1\"\naccepted: [[]]",
+        "version: \"1\"\naccepted: [abcd]",
+        "version: \"1\"\naccepted: [abcdi]",
+        "version: \"1\"\naccepted: [abcde, ABCDE]",
+        "version: \"1\"\naccepted: [12345]",
+    ] {
+        assert_eq!(
+            parse(text.as_bytes()).err(),
+            Some(ConfigError::Schema),
+            "{text}"
+        );
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for n in 0.. {
+        if unique.len() == MAX_ACCEPTED + 2 {
+            break;
+        }
+        unique.insert(FindingId::new(b"", n.to_string().as_bytes()));
+    }
+    let quoted: Vec<String> = unique.iter().map(|id| format!("'{id}'")).collect();
+    let text = format!("version: \"1\"\naccepted: [{}]", quoted.join(", "));
+    assert_eq!(parse(text.as_bytes()).err(), Some(ConfigError::Limit));
+    let half = |range: std::ops::Range<usize>| {
+        parse(format!("version: \"1\"\naccepted: [{}]", quoted[range].join(", ")).as_bytes())
+            .unwrap()
+    };
+    let merged = half(0..2).merge(half(1..3)).unwrap();
+    assert_eq!(merged.accepted.len(), 3);
+    let split = MAX_ACCEPTED / 2 + 1;
+    assert_eq!(
+        half(0..split).merge(half(split..2 * split)).err(),
+        Some(ConfigError::Limit)
+    );
+}
+#[test]
+fn accepting_edits_block_lists_and_preserves_comments() {
+    let id = FindingId::parse("s3e9k").unwrap();
+    for (before, after) in [
+        ("", "accepted:\n  - \"s3e9k\"\n"),
+        ("version: '1'", "version: '1'\naccepted:\n  - \"s3e9k\"\n"),
+        ("a: 1\r\n", "a: 1\r\naccepted:\r\n  - \"s3e9k\"\r\n"),
+        ("accepted: []\nb: 2\n", "accepted:\n  - \"s3e9k\"\nb: 2\n"),
+        ("accepted:", "accepted:\n  - \"s3e9k\"\n"),
+        (
+            "accepted: # why\n\n# note\n- abcde\n",
+            "accepted: # why\n- \"s3e9k\"\n\n# note\n- abcde\n",
+        ),
+        (
+            "accepted:\n    - abcde\n",
+            "accepted:\n    - \"s3e9k\"\n    - abcde\n",
+        ),
+        ("accepted:\nb: 2\n", "accepted:\n  - \"s3e9k\"\nb: 2\n"),
+    ] {
+        assert_eq!(
+            insert_accepted(before, id).as_deref(),
+            Some(after),
+            "{before}"
+        );
+    }
+    assert_eq!(insert_accepted("accepted: [abcde]\n", id), None);
+}
+#[test]
+fn accepting_creates_updates_and_reports_policy_failures() {
+    let id = FindingId::parse("s3e9k").unwrap();
+    let root = TempDir::new();
+    let policy = root.path().join(".rayloc.yaml");
+    assert_eq!(accept(root.path(), id), Ok(Acceptance::Created));
+    assert_eq!(
+        std::fs::read_to_string(&policy).unwrap(),
+        "version: \"1\"\naccepted:\n  - \"s3e9k\"\n"
+    );
+    assert_eq!(accept(root.path(), id), Ok(Acceptance::Already));
+    assert_eq!(
+        accept(root.path(), FindingId::parse("abcde").unwrap()),
+        Ok(Acceptance::Added)
+    );
+    for (text, error) in [
+        (
+            b"version: '1'\naccepted: [abcde]\n".as_slice(),
+            ConfigError::Update,
+        ),
+        (b"version: '1'\naccepted: \"x\"\n", ConfigError::Schema),
+        (
+            b"version: '1'\n\"accepted\": [abcde]\n",
+            ConfigError::Update,
+        ),
+        (b"\xff", ConfigError::Syntax),
+    ] {
+        std::fs::write(&policy, text).unwrap();
+        assert_eq!(accept(root.path(), id), Err(error));
+        assert_eq!(std::fs::read(&policy).unwrap(), text);
+    }
+    std::fs::remove_file(&policy).unwrap();
+    std::fs::create_dir(&policy).unwrap();
+    assert_eq!(accept(root.path(), id), Err(ConfigError::Read));
+    assert_eq!(accept(&policy.join("x"), id), Err(ConfigError::Write));
+    assert_eq!(
+        accept(&root.path().join("file/x"), id).err(),
+        Some(ConfigError::Write)
+    );
+    std::fs::write(root.path().join("file"), b"").unwrap();
+    assert_eq!(
+        accept(&root.path().join("file"), id),
+        Err(ConfigError::Read)
+    );
+    for error in [ConfigError::Update, ConfigError::Write] {
+        assert!(!error.to_string().is_empty());
+    }
+}

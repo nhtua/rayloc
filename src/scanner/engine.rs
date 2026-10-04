@@ -1,6 +1,7 @@
 //! Bounded byte readers and one deterministic, globally capped collector.
 use super::{
     Finding, ScanError, ScanOutcome, ScanStats,
+    fingerprint::FindingId,
     redaction::{RedactedString, safe_label},
 };
 use crate::rules::{BUILTINS, Registry, entropy::Histogram};
@@ -110,6 +111,7 @@ impl Worker {
                 let result = read_records_into(
                     &mut reader,
                     source_id,
+                    label.as_os_str().as_encoded_bytes(),
                     &mut outcome,
                     LIMITS,
                     registry,
@@ -222,9 +224,11 @@ pub(super) fn add(counter: &mut u64, amount: usize) -> Result<(), ScanError> {
         .ok_or(ScanError::CounterOverflow)?;
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
 fn scan_record_into(
     line: &[u8],
     source_id: u32,
+    path: &[u8],
     outcome: &mut ScanOutcome,
     limits: Limits,
     registry: &Registry,
@@ -235,6 +239,7 @@ fn scan_record_into(
     detect_record(
         line,
         source_id,
+        path,
         outcome.stats.lines_scanned,
         outcome,
         limits,
@@ -247,6 +252,7 @@ fn scan_record_into(
 pub(super) fn detect_record(
     line: &[u8],
     source_id: u32,
+    path: &[u8],
     line_number: u64,
     outcome: &mut ScanOutcome,
     limits: Limits,
@@ -255,8 +261,14 @@ pub(super) fn detect_record(
     collector: &Mutex<Collector>,
 ) -> Result<(), ScanError> {
     let mut suppressions = crate::rules::context::Suppressions::default();
+    let mut accepted = 0;
     let result =
         registry.detect_line_with_suppressions(line, histogram, &mut suppressions, |rule, span| {
+            let id = FindingId::new(path, &line[span.clone()]);
+            if registry.accepted.contains(&id) {
+                accepted += 1;
+                return;
+            }
             if let Err(error) = add(&mut outcome.stats.findings_detected, 1) {
                 outcome.fail(error);
                 return;
@@ -274,8 +286,10 @@ pub(super) fn detect_record(
                     end_column: span.end + 1,
                     rule,
                     value: RedactedString::new(&line[span]),
+                    id,
                 });
         });
+    suppressions.accepted = accepted;
     merge_suppressions(&mut outcome.stats.suppressions, &suppressions)?;
     result
 }
@@ -289,6 +303,7 @@ fn merge_suppressions(
         (&mut target.reference, source.reference),
         (&mut target.checksum, source.checksum),
         (&mut target.generic_filter, source.generic_filter),
+        (&mut target.accepted, source.accepted),
     ] {
         *counter = counter
             .checked_add(amount)
@@ -336,6 +351,7 @@ fn scan_with_policy(
     let result = read_records_into(
         reader,
         source_id,
+        b"",
         &mut outcome,
         limits,
         registry,
@@ -359,6 +375,7 @@ fn scan_with_policy(
 fn read_records_into(
     reader: &mut dyn BufRead,
     source_id: u32,
+    path: &[u8],
     outcome: &mut ScanOutcome,
     limits: Limits,
     registry: &Registry,
@@ -376,7 +393,7 @@ fn read_records_into(
         if buffer.is_empty() {
             if !line.is_empty() {
                 scan_record_into(
-                    line, source_id, outcome, limits, registry, histogram, collector,
+                    line, source_id, path, outcome, limits, registry, histogram, collector,
                 )?;
             }
             return Ok(());
@@ -400,7 +417,7 @@ fn read_records_into(
         reader.consume(consumed);
         if newline.is_some() {
             scan_record_into(
-                line, source_id, outcome, limits, registry, histogram, collector,
+                line, source_id, path, outcome, limits, registry, histogram, collector,
             )?;
             line.clear();
         }

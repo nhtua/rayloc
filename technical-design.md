@@ -259,6 +259,12 @@ but this does not validate rayloc accuracy.
   Text inside a string is not a directive. Document supported lexer forms and
   defer complex language syntax. Proposed `--no-inline-ignores` disables directives
   for CI policy.
+- Accepted findings: each finding carries a 5-character ID (25 bits of a
+  SplitMix-finalized FNV-1a digest over the scope-relative path, a NUL and the
+  value). `rayloc accept <id>` adds it to `accepted` in the root policy;
+  matching candidates are dropped and counted as `accepted`. Path binding keeps
+  the same value reportable elsewhere. The command never takes the value, and the
+  truncated digest cannot reproduce it. Staged scans read the index policy.
 - Retain suppression reasons/counts without retaining raw values. Test paths have
   no special trust unless explicitly ignored.
 - Combine identical secret spans at a source location, preferring provider rules

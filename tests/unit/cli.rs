@@ -28,6 +28,7 @@ fn help_and_version_are_successful_and_extra_arguments_are_errors() {
         "-V",
         "--version",
         "scan",
+        "accept",
         "hook",
         "unrecognized",
     ] {

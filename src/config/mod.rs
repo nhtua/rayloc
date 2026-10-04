@@ -1,6 +1,6 @@
 //! Strict bounded YAML policy loading. Diagnostics never retain input text.
 
-use crate::rules::builtin::Severity;
+use crate::{rules::builtin::Severity, scanner::fingerprint::FindingId};
 use std::{
     collections::BTreeMap,
     fmt,
@@ -22,6 +22,7 @@ const MAX_DEPTH: usize = 16;
 pub const MAX_RULES: usize = 256;
 pub const MAX_PATTERN_BYTES: usize = 16 * 1024;
 pub const MAX_TOTAL_PATTERN_BYTES: usize = 256 * 1024;
+pub const MAX_ACCEPTED: usize = 4096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConfigError {
@@ -32,6 +33,8 @@ pub enum ConfigError {
     Pattern,
     Ignore,
     Discovery,
+    Update,
+    Write,
 }
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -43,6 +46,8 @@ impl fmt::Display for ConfigError {
             Self::Pattern => "invalid custom rule pattern",
             Self::Ignore => "invalid scanner ignore policy",
             Self::Discovery => "cannot discover policy root",
+            Self::Update => "cannot add accepted ID; edit the accepted list manually",
+            Self::Write => "cannot write policy",
         })
     }
 }
@@ -61,6 +66,7 @@ pub struct Config {
     pub entropy_thresholds: BTreeMap<String, f64>,
     pub(crate) rules: Vec<CustomRule>,
     pub(crate) disabled: Vec<String>,
+    pub(crate) accepted: Vec<FindingId>,
 }
 
 enum Value {
@@ -279,6 +285,18 @@ pub fn parse(bytes: &[u8]) -> Result<Config, ConfigError> {
             config.disabled.push(id);
         }
     }
+    if let Some(value) = fields.remove("accepted") {
+        for value in list(value)? {
+            if config.accepted.len() == MAX_ACCEPTED {
+                return Err(ConfigError::Limit);
+            }
+            let id = FindingId::parse(&scalar(value)?).ok_or(ConfigError::Schema)?;
+            if config.accepted.contains(&id) {
+                return Err(ConfigError::Schema);
+            }
+            config.accepted.push(id);
+        }
+    }
     if !fields.is_empty() {
         return Err(ConfigError::Schema);
     }
@@ -300,6 +318,7 @@ impl Config {
         }
 
         if self.rules.len() > MAX_RULES
+            || self.accepted.len() > MAX_ACCEPTED
             || self.rules.iter().map(|r| r.pattern.len()).sum::<usize>() > MAX_TOTAL_PATTERN_BYTES
         {
             return Err(ConfigError::Limit);
@@ -312,7 +331,8 @@ impl Config {
         }
         Ok(())
     }
-    /// Explicit scalars override, class maps merge, rules append, disables union.
+    /// Explicit scalars override, class maps merge, rules append, disables and
+    /// accepted IDs union.
     pub fn merge(mut self, explicit: Config) -> Result<Self, ConfigError> {
         if explicit.default_entropy_threshold.is_some() {
             self.default_entropy_threshold = explicit.default_entropy_threshold;
@@ -322,6 +342,11 @@ impl Config {
         for id in explicit.disabled {
             if !self.disabled.contains(&id) {
                 self.disabled.push(id);
+            }
+        }
+        for id in explicit.accepted {
+            if !self.accepted.contains(&id) {
+                self.accepted.push(id);
             }
         }
         self.validate()?;
@@ -568,6 +593,79 @@ pub fn load(root: &Path, explicit: Option<&Path>) -> Result<Config, ConfigError>
         Some(path) => base.merge(parse(&read_policy(path)?)?),
         None => Ok(base),
     }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum Acceptance {
+    Created,
+    Added,
+    Already,
+}
+/// Insert `id` into the root policy's `accepted` list, creating the policy or
+/// list when absent. The edited text must parse and contain the ID before it
+/// is written.
+pub fn accept(root: &Path, id: FindingId) -> Result<Acceptance, ConfigError> {
+    let path = root.join(".rayloc.yaml");
+    let (text, outcome) = match std::fs::symlink_metadata(&path) {
+        Ok(_) => (
+            String::from_utf8(read_policy(&path)?).map_err(|_| ConfigError::Syntax)?,
+            Acceptance::Added,
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            ("version: \"1\"\n".into(), Acceptance::Created)
+        }
+        Err(_) => return Err(ConfigError::Read),
+    };
+    if parse(text.as_bytes())?.accepted.contains(&id) {
+        return Ok(Acceptance::Already);
+    }
+    let updated = insert_accepted(&text, id).ok_or(ConfigError::Update)?;
+    if !parse(updated.as_bytes()).is_ok_and(|config| config.accepted.contains(&id)) {
+        return Err(ConfigError::Update);
+    }
+    std::fs::write(&path, updated).map_err(|_| ConfigError::Write)?;
+    Ok(outcome)
+}
+/// Text edit preserving comments; only block lists and `[]` are rewritten.
+/// IDs are quoted because plain `12345` or `1e234` would parse as numbers.
+fn insert_accepted(text: &str, id: FindingId) -> Option<String> {
+    let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let Some(index) = lines.iter().position(|line| line.starts_with("accepted:")) else {
+        let separator = if text.is_empty() || text.ends_with('\n') {
+            ""
+        } else {
+            newline
+        };
+        return Some(format!(
+            "{text}{separator}accepted:{newline}  - \"{id}\"{newline}"
+        ));
+    };
+    let rest = lines[index]["accepted:".len()..].trim();
+    let mut output: String = lines[..index].concat();
+    if rest == "[]" {
+        output.push_str(&format!("accepted:{newline}  - \"{id}\"{newline}"));
+    } else if rest.is_empty() || rest.starts_with('#') {
+        let indent = lines[index + 1..]
+            .iter()
+            .map(|line| line.trim_end())
+            .find(|line| !line.trim_start().is_empty() && !line.trim_start().starts_with('#'))
+            .and_then(|line| {
+                let item = line.trim_start();
+                item.starts_with("- ")
+                    .then(|| &line[..line.len() - item.len()])
+            })
+            .unwrap_or("  ");
+        output.push_str(lines[index]);
+        if !lines[index].ends_with('\n') {
+            output.push_str(newline);
+        }
+        output.push_str(&format!("{indent}- \"{id}\"{newline}"));
+    } else {
+        return None;
+    }
+    output.push_str(&lines[index + 1..].concat());
+    Some(output)
 }
 
 #[cfg(test)]

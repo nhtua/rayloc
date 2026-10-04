@@ -14,6 +14,7 @@ pub struct Suppressions {
     pub reference: usize,
     pub checksum: usize,
     pub generic_filter: usize,
+    pub accepted: usize,
 }
 
 pub(super) fn increment(counter: &mut usize) -> Result<(), ScanError> {

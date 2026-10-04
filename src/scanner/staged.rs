@@ -355,6 +355,7 @@ pub(super) fn consume_resolved(
                                 engine::detect_record(
                                     payload,
                                     source_id,
+                                    label,
                                     new_line,
                                     outcome,
                                     engine::LIMITS,
