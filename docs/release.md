@@ -36,10 +36,12 @@ per day. To publish, run Actions > Release > Run workflow on `main`. The workflo
 2. runs this validation matrix with the version stamped into `Cargo.toml` and
    `Cargo.lock` (`python3 scripts/release.py stamp --version VERSION`), so the
    archives and `rayloc --version` carry it;
-3. creates tag `vVERSION` on the validated commit and a GitHub release with the
-   four archives and `SHA256SUMS`.
+3. commits the version bump to `main` as `chore(release): vVERSION`, tags that
+   commit `vVERSION`, and creates a GitHub release with the four archives and
+   `SHA256SUMS`.
 
-The stamp exists only in the release build; the repository keeps its development
-version. `install.sh` installs the latest release (or `RAYLOC_VERSION`) after
+The push is atomic and fails if `main` moved after the dispatched commit; rerun
+the workflow in that case. If `main` is protected, allow GitHub Actions to push
+to it. `install.sh` installs the latest release (or `RAYLOC_VERSION`) after
 verifying `SHA256SUMS`. crates.io publication remains a separate manual step;
 recheck name/version availability first.
