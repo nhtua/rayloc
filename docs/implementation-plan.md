@@ -11,25 +11,28 @@ Each package below has a concrete completion gate and can become a focused PR.
 The work packages describe v1 contracts; partial implementation does not close a
 package's completion gate.
 
-## Current progress — 2026-10-02
+## Current progress — 2026-10-03
 
-Implementation baseline: commit `923400b` (`feat: implement dependency-free scanner
-foundation`). **We are in the P1/P2 library foundation, with P0 partially resolved.**
-No full package completion gate has been closed yet. The first useful delivery
-(P0–P3, including the explicit-file CLI) is still pending.
+P3 is complete at `ebc63d2` after implementation, required verification, and an
+independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is complete at `7a5185e`;
+P5 is complete at `e31e715`; P6 is complete at `39d359f`; P7 is complete at
+`e301c0e`. P8 is complete at `1808af7` after independent review and a test
+isolation fix. P9 is complete at `7d87e12` after independent review. P0–P2
+foundation gaps tied to full-scope evaluation remain tracked below rather than
+being silently closed by the explicit-file delivery.
 
 | Package | Status | Implemented evidence | Remaining to close the package |
 | --- | --- | --- | --- |
-| P0 | Partial | [Decision note](development-decisions.md); OS-native CLI parser retained; zero external crates; temporary-file helpers; stable/MSRV CI workflow; coverage gate | Bounded YAML/custom-regex feasibility and budgets; scope/global resource decisions; controlled Git helpers; calibration/held-out partitions; successful MSRV/CI run |
+| P0 | Partial | [Decision note](development-decisions.md); OS-native CLI parser; bounded YAML/regex policy and validated dependency graph; separate calibration/held-out corpus; temporary-file helpers; coverage gate; local Rust-1.85 checks | Scope/global resource decisions; complete controlled Git helpers; successful native CI run |
 | P1 | Partial | Private redaction marker; safe source IDs and fixed errors; byte locations; severity/confidence; scan counters; exit precedence; partial/clean terminal reports; output leak tests | Configuration error boundary; exclusion/suppression counters; final multi-source ordering and safe metadata contracts as policy/scope are added |
 | P2 | Partial | Bounded regular-file/byte engine; core provider/PEM rules; CRLF/invalid-byte/buffer-boundary tests; >10 MB streaming and limit tests; executable engine benchmark | Shared custom-regex registry and compiler budgets (deferred to P3); broader resource measurements and fixture evaluation |
-| P3 | Not started | — | Strict configuration, custom rules/entropy gates, explicit-file exclusions, and `scan <file>` CLI |
-| P4 | Not started | — | Context, generic/password detection, JOSE validation, suppressions, and accuracy baseline |
-| P5 | Not started | — | Directory/glob policy, bounded parallel scanning, and deterministic global collection |
-| P6 | Not started | — | Strict unified-patch parser and adversarial tests |
-| P7 | Not started | — | Pinned staged acquisition/policy and staged CLI |
-| P8 | Not started | — | Pinned reference-to-working-tree diff CLI |
-| P9 | Not started | — | Managed hook installation and commit enforcement |
+| P3 | Complete | Strict bounded configuration/merge, compiled custom captures/entropy, file exclusions and CLI; fail-closed discovery; 59 stable/MSRV tests; independent re-review approved | — |
+| P4 | Complete | Context/password/JOSE/suppression detection; review fixes at `7a5185e`; 88 Rust tests +2 evaluator; coverage gates; independent re-review approved | One non-blocking opaque-token span minor recorded for final review |
+| P5 | Complete | Directory/glob policy, bounded parallel scanning, deterministic global collection and measured crossover/RSS; 139 tests on current Git, Git 2.30 and Rust 1.85; independent review fixes approved | Two non-blocking minors recorded for final review |
+| P6 | Complete | Pure bounded raw-binding/unified-patch parser; adversarial byte/count tests; hunk-gap review fix at `39d359f`; 158 tests and coverage gates; independent re-review approved | P8 working-tree unknown-OID handoff recorded |
+| P7 | Complete | Pinned staged index acquisition/policy and added-line CLI; nested-root policy review fix at `e301c0e`; 196 tests current Git/Git 2.30/Rust 1.85; independent re-review approved | Staged latency and platform runs remain P10 gates |
+| P8 | Complete | Pinned reference-to-working-tree diff CLI, independent identities, dirty-gitlink exclusion and test-isolation review fix at `1808af7`; 226 tests on current Git/Git 2.30/Rust 1.85; independent re-review approved | Concurrent full-suite TempDir collision carried to P10 runner validation |
+| P9 | Complete | Managed active-hook installer, real commit tests, Rust-language pre-commit manifest and isolated framework validation on stable/Rust 1.85; 239 tests on current Git/Git 2.30/Rust 1.85; independent review approved at `7d87e12` | Native macOS and remote pinned-SHA consumer validation remain P10 gates |
 | P10 | Not started | — | Full evaluation, supported-platform artifacts, and release gates |
 
 Verified locally for `923400b`: all 26 tests pass; production function coverage
@@ -39,11 +42,17 @@ Format, strict Clippy, tests, benchmark, and the coverage gate passed on Rust
 on GitHub; Rust 1.85 is not installed locally. The small warm engine benchmark is
 a development baseline, not evidence for the complete v1 performance targets.
 
-**Next implementation work:** resolve the remaining P0 policy/parser contracts,
-then implement P3 configuration/custom rules/ignore handling and expose the
-explicit-file CLI, closing the associated P1/P2 gaps. CLI scan and hook commands
-currently return 2; low-level library scanning does not discover policy.
-Update this table and the package status lines whenever implementation advances.
+Verified P3 final checks at `ebc63d2`: 59 tests pass on local stable and Rust
+1.85; production function coverage is 99/99 (100%), lines 1065/1072 (99.35%),
+and regions 1718/1751 (98.12%). Formatting, strict Clippy, benchmark and diff
+checks pass. The independent reviewer approved both discovery failure handling
+and the portable Unix output-error fixture. Native CI/full v1 evaluation remain open.
+
+Implementation resumed and P9 passed independent review. Explicit-file,
+directory, glob, staged, reference-diff, and hook installation modes are available.
+P10 evaluation and release validation remain. Package sub-agent evidence is
+summarized in [the implementation report](implementation-report.md).
+Update this table and package status lines whenever implementation advances.
 
 User policy decisions and the remaining confirmation questions are tracked in
 [development decisions](development-decisions.md#user-decisions--2026-10-02).
@@ -252,7 +261,7 @@ behind P3 so discovered policy cannot be silently ignored.
 
 ### P3 — Load strict policy and expose the explicit-file CLI
 
-**Status:** Not started.
+**Status:** Complete — `f0729c4` implementation plus `ebc63d2` review fixes. Required checks and actual Rust-1.85 tests pass; independent scoped re-review approved with no open findings.
 
 Depends on P2 and the P0 parser decision. Work in `config/mod.rs`, `rules/mod.rs`,
 `rules/entropy.rs`, CLI/report modules, and explicit-file scanner exclusions. Discover repository-root
@@ -279,7 +288,7 @@ unsupported target modes remain unavailable until their packages pass.
 
 ### P4 — Add context, entropy, scoped suppression, and JOSE coverage
 
-**Status:** Not started.
+**Status:** Complete — `cda4344` plus `7a5185e` fixes; independent re-review approved. 88 Rust tests and 2 evaluator tests pass, actual Rust1.85 and required checks pass; functions100%, lines98.9910%, regions98.0769%. One non-blocking span minor is recorded for final review.
 
 Depends on P3. Work in entropy/context/JOSE modules and the registry. Reuse the
 entropy primitive and add alphabet precedence and the design's provisional class
@@ -314,7 +323,7 @@ thresholds as provisional until those results justify changes.
 
 ### P5 — Implement reproducible directory/glob scope and parallel scanning
 
-**Status:** Not started.
+**Status:** Complete — `9a7012b` plus `e31e715` review fixes; independent re-review approved. 139 tests pass on current Git, Git 2.30, and Rust 1.85; functions 100%, lines 98.9103%, regions 98.0193%. Two non-blocking minors are recorded for final review.
 
 Depends on P4. Work in `config/ignore.rs`, scanner engine/controller, and CLI.
 Implement recursive directory and repository-relative glob modes, brace
@@ -348,7 +357,7 @@ crossover before selecting a default parallelism threshold.
 
 ### P6 — Build and validate the strict unified-patch parser
 
-**Status:** Not started.
+**Status:** Complete — `94d0588` plus `39d359f` review fix; independent re-review approved. 158 tests pass on Rust 1.85; functions 100%, lines 98.9600%, regions 98.1840%.
 
 Depends on P2; can precede P5. Keep parsing independent of Git invocation in
 `scanner/diff.rs`. Accept bounded byte records and authoritative NUL-metadata
@@ -369,7 +378,7 @@ lines. Parser tests run without Git so acquisition failures cannot hide bugs.
 
 ### P7 — Acquire an index snapshot and enable staged scanning
 
-**Status:** Not started.
+**Status:** Complete — `f3e1c29` plus `e301c0e` review fix; independent re-review approved. 196 tests pass on current Git, Git 2.30 and Rust 1.85; functions 100%, lines 98.9253%, regions 98.0687%.
 
 Depends on P3–P6. Add the Git process layer with argument arrays, bounded stdout
 records, concurrent bounded stderr draining/discard, successful-child checks,
@@ -397,7 +406,7 @@ secret found only in unstaged replacement content is never reported by this mode
 
 ### P8 — Enable tracked working-tree diffs against a pinned reference
 
-**Status:** Not started.
+**Status:** Complete — `5b5ebd6` plus `1808af7` test-isolation review fix; independent re-review approved. 226 tests pass on current Git, Git 2.30, and Rust 1.85; functions 100%, lines 98.9939%, regions 98.0313%. Formatting, strict Clippy and benchmarks pass.
 
 Depends on P7. Resolve the supplied reference as a commit using
 `git rev-parse --verify --end-of-options <ref>^{commit}` with argument arrays;
@@ -413,7 +422,7 @@ semantics and cover empty diffs. No claim of an atomic future commit is made.
 
 ### P9 — Install a managed pre-commit hook safely
 
-**Status:** Not started.
+**Status:** In progress; paused at user request. The direct installer, CLI tests, framework manifest and consumer guide have uncommitted changes. Direct-hook integration tests were reported green; framework validation, final verification, commit and independent review remain open.
 
 Depends on P7. Work in `hook.rs`, CLI, and documentation. Resolve the active Git
 hook directory, including relative `core.hooksPath` and linked worktrees.
@@ -464,6 +473,58 @@ the design's remaining decisions to describe shipped behavior and known limits.
 **Completion:** all required checks and supported-platform jobs pass, measured
 results are reproducible, accuracy/leak/resource gates pass, and artifact smoke
 tests succeed. Publishing is a separate release action after review.
+
+### Remaining work to finish P10
+
+Continue in the existing `feat/rayloc-v1` worktree. P9 is implemented, committed,
+and independently approved; P10 owns the remaining cross-platform and release gates.
+
+**P9 — hook installation and framework integration**
+
+- [x] Finish the direct installer and test active hook resolution for default,
+  relative and absolute `core.hooksPath`, linked worktrees, idempotent executable
+  installation, unmanaged-hook preservation, missing scanner, and real commit
+  propagation of clean/finding/error statuses on current Git and Git 2.30.
+- [x] Validate `.pre-commit-hooks.yaml` with Python pre-commit and install the
+  Rust-language hook from a committed local revision into isolated consumer
+  repositories and `PRE_COMMIT_HOME`. Test clean, finding and configuration-error
+  commits, partial staging, empty staged scope, index policy, and repeated cached
+  execution. Check `pass_filenames: false`, `always_run: true`, and the documented
+  `core.hooksPath` and manual `--all-files` limitations.
+- [x] Verify the framework's fresh Cargo installation path on stable Rust and
+  Rust 1.85, including dependency resolution without `--locked`. Keep Python a
+  developer-side integration, not a rayloc runtime dependency. Run formatting,
+  strict Clippy, all tests, benchmarks, and `scripts/coverage.py` with 100%
+  function and >98% line/region coverage; commit P9, then independently review
+  and fix/re-review any blocking findings.
+
+**P10 — evaluation and release preparation**
+
+- [ ] Measure reproducible end-to-end file, directory, and staged workloads:
+  empty and 10/100/1,000 added-line diffs, different file counts, >10 MB files,
+  giant lines, and many tiny files. Record hardware, OS/CPU/Rust/Git, rules,
+  threads/cache state, corpus sizes, median/p95/p99, throughput, RSS, startup
+  latency, and binary size. Treat the 5 ms and 500 MB/s/core targets as stretch
+  goals until measured.
+- [ ] Extend held-out accuracy and leak evaluation by provider, value length and
+  context; report precision/recall, false positives per clean MB, and suppression
+  effects. Require detection of every mandatory supported fixture, no complete
+  detected value in output, and measured resource limits. Set regression gates
+  from these results rather than assumed thresholds.
+- [ ] Build and run native artifact/test jobs for Linux x86_64/aarch64 musl and
+  macOS x86_64/aarch64. Verify Git prerequisites, actual ELF/Mach-O linkage,
+  architecture, executable behavior and extracted-artifact smoke tests. Resolve
+  the existing concurrent-suite temporary-directory collision through runner
+  isolation or a fixture fix, then verify stable and Rust 1.85 jobs on the exact
+  branch commit.
+- [ ] Produce versioned archives and a checked SHA-256 manifest. Validate the
+  crates.io source package, its contents, locked Rust 1.85 build, dry-run publish,
+  and installation from the unpacked package before enabling future publishing.
+  Prepare both distribution channels without creating a release or publishing.
+- [ ] Update README, templates, development/test guides and remaining design
+  decisions to match shipped behavior and measured limits. Run all repository
+  checks, review the whole branch and deferred P4/P5 minor findings, fix any
+  release-blocking issues, and record passing supported-platform CI evidence.
 
 ## 5. Verification and feature traceability
 

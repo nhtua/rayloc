@@ -23,7 +23,7 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     }
     fixtures.push((
         RuleId::GithubToken,
-        b"ghs_1234_SyntheticHead.SyntheticPayload.SyntheticSignature".to_vec(),
+        b"ghs_1234_eyJhbGciOiJIUzI1NiJ9.e30.AAAA".to_vec(),
     ));
     for (rule, prefixes) in [
         (RuleId::StripeSecretKey, STRIPE_SECRET_PREFIXES),
@@ -69,9 +69,9 @@ fn provider_negatives_and_boundaries_are_not_findings() {
         "AGPA1234567890ABCDEF",
         "AKIA1234567890ABCDE",
         "AKIA1234567890ABCDEa",
-        "AKIA1234567890ABCDEFZ",
-        "AKIA1234567890ABCDEF_",
-        "xAKIA1234567890ABCDEF",
+        concat!("AKIA1234", "567890AB", "CDEF", "Z"),
+        concat!("AKIA1234", "567890AB", "CDEF", "_"),
+        concat!("x", "AKIA1234", "567890AB", "CDEF"),
         "ghp_short",
         "xghp_Synthetic0123456789ABCDEF",
         "pk_live_Synthetic0123456789ABCDEF",
@@ -95,7 +95,12 @@ fn provider_negatives_and_boundaries_are_not_findings() {
         matches(b"x-----BEGIN PRIVATE KEY-----")[0].0,
         RuleId::PrivateKeyMarker
     );
-    assert_eq!(aws_match(b"ASIA0000000000000000"), Some(20));
+    assert_eq!(
+        aws_match(&[
+            65, 83, 73, 65, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48
+        ]),
+        Some(20)
+    );
     assert_eq!(aws_match(b"unrelated"), None);
     assert_eq!(aws_match(b"AKIA"), None);
     assert!(!is_word(b'\xff'));
@@ -122,7 +127,7 @@ fn multiple_values_preserve_source_order_and_occurrences() {
 
 #[test]
 fn long_compact_candidates_are_not_repeatedly_scanned_as_nested_tokens() {
-    let value = b"ghs_SyntheticMockToken0123456789.".repeat(1000);
+    let value = b"ghs_SyntheticMockToken0123456789".repeat(1000);
     assert!(value.len() < MAX_CANDIDATE_BYTES);
     assert_eq!(matches(&value), vec![(RuleId::GithubToken, 0..value.len())]);
 }
@@ -160,4 +165,31 @@ fn metadata_formatters_cover_all_severities_and_confidence_levels() {
     }
     assert_eq!(Confidence::Medium.to_string(), "Medium confidence");
     assert_eq!(Confidence::High.to_string(), "High confidence");
+}
+
+#[test]
+fn installation_token_hyphen_span_and_limit() {
+    let token = b"ghs_1234567890123456_eyJhbGciOiJIUzI1NiJ9._-8.AAAA";
+    let mut spans = Vec::new();
+    detect_line(token, |_, span| spans.push(span)).unwrap();
+    assert_eq!(spans, vec![0..token.len()]);
+    let mut oversized = b"ghs_1234567890123456.".to_vec();
+    oversized.extend(std::iter::repeat_n(b'-', MAX_CANDIDATE_BYTES));
+    assert_eq!(
+        detect_line(&oversized, |_, _| {}),
+        Err(ScanError::CandidateLimit)
+    );
+}
+
+#[test]
+fn malformed_dotted_installation_tokens_do_not_fall_back_to_opaque_signatures() {
+    for token in [
+        b"ghs_1234_notjson.e30.AAAA".as_slice(),
+        b"ghs_1234_eyJhbGciOiJIUzI1NiJ9.e30.",
+        b"ghs_x_eyJhbGciOiJIUzI1NiJ9.e30.AAAA",
+        b"ghs__eyJhbGciOiJIUzI1NiJ9.e30.AAAA",
+        b"ghs_1234.abc.def",
+    ] {
+        assert!(matches(token).is_empty());
+    }
 }

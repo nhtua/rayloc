@@ -1,240 +1,112 @@
-# rayloc ⚡
+# rayloc
 
-> **X-ray speed for your commits. Fine-sieve filtering for your codebase.**
+`rayloc` (Vietnamese *rây lọc*, a fine-mesh sieve) scans files and added Git lines
+for potential credentials. It runs offline, masks every finding completely, and
+returns 0 for a completed clean scan, 1 for findings, or 2 for configuration,
+execution or incomplete-scan errors. Errors take precedence over findings.
 
-**Development status:** The library now provides bounded byte/file scanning,
-core AWS/GitHub/Stripe/Slack/private-key signatures, fully redacted findings,
-and terminal reports, with no external crate dependencies. The CLI supports
-help and version output. CLI scans await configuration and ignore policy;
-directory/Git modes, context/entropy/JOSE validation, and hooks remain planned.
-The CLI usage examples below describe the intended behavior.
+The v1 implementation supports files, directories, repository-relative globs,
+staged snapshots, direct reference diffs, YAML policy, Git-style scanner ignores,
+and a managed pre-commit hook. Release artifacts and crates.io publication are
+being validated; no published download or registry installation is advertised.
 
-`rayloc` (derived from the Vietnamese *rây lọc* — a fine-mesh strainer) is a secret scanner being built in Rust for fast local scans. Designed to run as a git `pre-commit` hook or CI step, it aims to catch passwords, API keys, access tokens, and context-associated high-entropy strings **before** they land in your git history.
+Build with Rust 1.85 or newer:
 
-Unlike coarse filters, `rayloc` lets smooth code flow through while trapping microscopic security risks.
-
----
-
-## Features
-
-- 🏎️ **Fast Scanning**: Planned parallel scanning (`rayon`) and regexes compiled once per process. Under 5ms for small staged scans is a stretch goal; end-to-end performance has not been measured yet.
-- 🎯 **Targeted Git Diff Mode**: Scans only added lines in staged changes or git diffs—ignoring existing codebase noise and deleted lines.
-- 🔒 **Auto-Redaction**: Safe by default. Output automatically masks detected secrets in terminal logs so sensitive data is never printed or exposed in CI logs.
-- 📦 **Single Executable**: Planned standalone binaries with no extra language runtime. Git modes and hook management require Git to be installed.
-- 📝 **Flexible Configuration**: Planned `.rayloc.yaml` custom rules/entropy settings and `.raylocignore` files using standard `.gitignore` syntax.
-
-Detection and performance contracts are described in the
-[technical design](technical-design.md), with evidence and experiments in the
-[design validation report](docs/research/technical-design-validation.md).
-The [implementation plan](docs/implementation-plan.md) maps those contracts to
-dependency-ordered work packages and acceptance checks.
-
----
-
-## Installation
-
-Build the current development version from this checkout:
-
-```bash
-cargo build --release
-./target/release/rayloc --help
+```sh
+cargo build --locked --release
+cargo install --locked --path .
+rayloc --help
 ```
 
-Standalone release downloads and registry installation are planned. The package
-currently has `publish = false`; CLI scanning is not available in this build.
+Git is required for policy discovery, Git scopes and hook installation. Linux
+integration tests pass with Git 2.30 and current Git. Native CI prepares Linux
+musl and macOS binaries for x86_64/aarch64; successful jobs on the release commit
+are required before platform support is advertised. Windows is deferred. See
+[release preparation](docs/release.md) for archive, linkage and source-package gates.
 
----
-
-## Quick Start & Usage
-
-`rayloc` is designed to support four primary scanning modes:
-
-### 1. Git Diff Mode (Pre-Commit / Added Content Only)
-Scans only the staged changes queued for the next commit:
-```bash
-rayloc scan --staged
-```
-
-Scan tracked working-tree changes against a commit or branch, including staged
-and unstaged changes (untracked files are excluded):
-```bash
-rayloc scan --diff main
-```
-
-This compares directly with `main`; it does not scan history or use a merge base.
-
-### 2. Directory Mode
-Recursively scan an entire workspace or folder:
-```bash
-rayloc scan ./src
-```
-
-### 3. Single File Mode
-Scan a single configuration or environment file:
-```bash
+```sh
 rayloc scan .env.production
-```
-
-### 4. Glob Pattern Mode
-Scan multi-file targets matching specific file glob patterns:
-```bash
-rayloc scan --glob "**/*.{pem,key,yaml}"
-```
-
----
-
-## Pre-Commit Hook Setup
-
-To automatically scan every commit before it occurs:
-
-```bash
-# Install rayloc hook into the current git repository
+rayloc scan ./src
+rayloc scan --glob '**/*.{pem,key,yaml}'
+rayloc scan --staged
+rayloc scan --diff main
 rayloc hook install
 ```
 
-Or manually integrate the following into your active Git `pre-commit` hook
-(Git may use a custom hooks directory):
+An omitted target scans the current directory. `--staged` scans added index lines,
+including partially staged files; configuration and ignores also come from the
+index. `--diff main` compares tracked final working-tree content directly with
+that commit, including staged and unstaged changes. It excludes untracked files
+and does not scan history or use a merge base. A known conservative limitation:
+when staged edits are completely reversed in the workspace, Git may rewrite its
+index cache during diff acquisition; rayloc returns incomplete-scan exit 2.
 
-```bash
-#!/bin/sh
-exec rayloc scan --staged
-```
+Provider signatures cover AWS IDs/secret assignments, GitHub opaque and app
+forms, Stripe secret/restricted keys, Slack/GovSlack webhooks and private-key
+markers. Compact JOSE candidates receive structural checks. Generic entropy
+requires assignment context; strong password literals of at least eight bytes
+have a separate branch. Findings identify potential exposure, without claiming
+credential activity. Shorter passwords, archive extraction, UTF-16 decoding,
+obfuscated values and arbitrary multiline rules are outside the v1 contract.
 
----
-
-## Configuration
-
-### Custom Rules (`.rayloc.yaml`)
-
-Place a `.rayloc.yaml` file in your repository root to configure detection sensitivity, custom regex patterns, and entropy thresholds:
+Repository `.rayloc.yaml` custom regexes add to built-ins and compile once. Each
+rule matches one physical byte line. Optional entropy measures the configured
+secret capture (default: the complete match):
 
 ```yaml
 version: "1"
-
-# Generic fallback entropy threshold in bits/byte (0.0 to 8.0).
-# Built-in alphabet thresholds are separate; provider rules bypass this gate.
 default_entropy_threshold: 4.5
-
 rules:
-  - id: custom-api-key
-    description: "Company Internal API Token"
-    regex: 'corp_[a-zA-Z0-9]{32}'
+  - id: company-token
+    regex: 'corp_([A-Za-z0-9]{32})'
+    secret_group: 1
     entropy: 3.8
     severity: "High"
-
-  - id: custom-private-key-marker
-    description: "Private Encryption Key Header"
-    regex: '-----BEGIN (?:(?:RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----'
-    severity: "Critical"
-
-  - id: custom-slack-webhook
-    description: "Slack Incoming Webhook URL"
-    regex: 'https://hooks\.slack\.com/services/T[a-zA-Z0-9_]+/B[a-zA-Z0-9_]+/[a-zA-Z0-9_]+'
-    severity: "High"
 ```
 
-Custom rules add to built-ins and check entropy only when `entropy` is specified.
-The optional entropy gate measures the secret capture (the whole match by
-default). Custom regexes match individual physical lines in the initial design.
+`--config PATH` merges present scalar settings over discovered policy, merges
+entropy class keys, appends rules with unique IDs, and unions disabled rules.
+Unknown fields, duplicate keys/IDs, aliases, tags and multiple YAML documents
+fail safely. `--no-inline-ignores` disables `rayloc:ignore` comment directives.
 
-### Ignore Patterns (`.raylocignore`)
+Directory/glob scopes use repository `.gitignore` for untracked paths, then
+higher-priority `.raylocignore`. Tracked and explicitly selected files remain
+eligible for scanner exclusions. Hidden files are included. There are no implicit
+`vendor/` or generated-directory exclusions, no global/parent ignore policy and no
+symlink traversal. All-excluded scopes are labeled `EXCLUDED`; zero regular glob
+matches return 2. Raw-byte scanning includes binary-looking files.
 
-Directory/glob scans apply repository `.gitignore` patterns to untracked paths;
-tracked files and explicitly selected files remain eligible. `.raylocignore`
-applies afterward with higher priority in every mode, including staged scans.
-Generated/dependency directories are excluded through these ignore files, without
-automatic directory defaults. Hidden files such as `.env` are
-included. Staged scans use policy from the index, so unstaged policy edits do not
-change their scope. Use explicit exclusions for intentional mock data:
+Reports show numeric source IDs and fixed rule metadata, locations in 1-based
+byte columns, suppression/exclusion counters and `[REDACTED]` values. Paths,
+custom labels, source snippets, CLI arguments and child stderr are withheld.
+Input limits are 256-KiB reads, 1-MiB physical records/configuration, 64-KiB
+candidates and 10,000 retained findings; exceeded limits return 2.
 
-```gitignore
-# Ignore test fixtures containing intentional mock keys
-tests/fixtures/**
-*.mock.json
+`hook install` resolves Git's active hook directory including `core.hooksPath`
+and linked worktrees, preserves unmanaged hooks, and installs an executable,
+idempotent `rayloc scan --staged` hook. A nonzero hook status blocks commits.
+[Hook instructions](docs/hooks.md) also describe the optional tested Python
+pre-commit 4.6.2 Rust backend and its staged-only scope.
 
-# Explicit dependency-directory exclusion
-vendor/
-```
+Performance results and limitations are in [the measured release baseline](docs/research/release-baseline.md).
+Under-5-ms staged latency and 500 MB/s/core remain stretch goals. The fixed
+held-out synthetic corpus achieves 98% record precision and recall; its small
+clean denominator cannot establish a real-world false-positive rate.
 
-Exclusions reduce coverage and are counted in reports. Lockfiles and
-binary-looking content are not automatically safe to skip; raw-byte scanning
-does not imply archive extraction or UTF-16 decoding.
+Run the required checks:
 
----
-
-## Auto-Redact Terminal Output Example
-
-When `rayloc` detects a secret, it reports the file, line number, and rule matched, while automatically masking the sensitive value:
-
-```text
-⚡ rayloc v0.1.0 — Secret Strainer Report
-
-[FAIL] Found 2 sensitive items in 1 file (scanned 4 staged lines)
-
-  ❌ config/services.py:12
-     ├─ Rule: AWS Secret Access Key [High]
-     ├─ Value: [REDACTED]
-     └─ Suggestion: Remove key and move to an environment variable.
-
-  ❌ config/services.py:18
-     ├─ Rule: High Entropy String [Medium]
-     ├─ Entropy: 5.82 (Threshold: 4.50)
-     └─ Value: [REDACTED]
-
-[FAIL] Remove exposed credentials and store them outside source code.
-```
-
-Values are fully masked and source lines are omitted by default. Standalone scans
-report findings; when run as a pre-commit hook, a nonzero status blocks the commit.
-Exit codes are 0 for a completed clean scan, 1 for findings, and 2 for execution,
-configuration, or incomplete-scan errors (including errors alongside findings).
-
----
-
-## Development
-
-Requires Rust 1.85 or newer with Rustfmt and Clippy installed.
-The current implementation has no external crate dependencies.
-
-```bash
-cargo build
-cargo run -- --help
-cargo run -- --version
-```
-
-The module layout follows `AGENTS.md` and `technical-design.md`. Starter
-configuration files are included as templates for the future configuration loader.
-Scan and hook commands currently return exit code 2 to indicate that they are
-unavailable.
-
-Run the required development checks:
-
-```bash
+```sh
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all
-cargo bench
-```
-
-Run the coverage gate with Python 3 and compatible LLVM tools:
-
-```bash
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all
+cargo bench --locked
 python3 scripts/coverage.py
 ```
 
-The script measures production Rust code, including the executable entry point,
-requires >98% line/region coverage and 100% function coverage, and stores its
-report in `target/coverage/coverage.json`. It uses Rust's `llvm-tools-preview`
-component when installed; `LLVM_COV` and `LLVM_PROFDATA` can select compatible
-installed tools. Tests and benchmark drivers are excluded from production counts.
-CI checks stable Rust and Rust 1.85 with the coverage gate.
-
-Tests use synthetic credentials and exercise buffer boundaries, large files,
-invalid bytes, redaction, error/limit handling, and CLI output. `cargo bench` now
-runs a small core-engine benchmark; it does not measure complete v1 detection or
-end-to-end staged latency. See [tests](tests/README.md) and
-[benchmark guidance](benches/README.md).
-
-## License
+Production Rust requires >98% line/region and 100% function coverage. See the
+[test guide](tests/README.md), [benchmark guide](benches/README.md) and
+[technical design](technical-design.md). Dependencies are narrowly scoped to
+YAML, regex, ignores/globs and Rayon, with decisions in
+[development decisions](docs/development-decisions.md).
 
 Distributed under the [MIT License](LICENSE).

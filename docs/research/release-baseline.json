@@ -1,0 +1,761 @@
+{
+  "accuracy": {
+    "calibration": {
+      "by_context": {
+        "assignment": {
+          "FN": 2,
+          "FP": 1,
+          "TN": 15,
+          "TP": 24
+        },
+        "signature": {
+          "TP": 21
+        },
+        "structure": {
+          "TN": 4,
+          "TP": 3
+        }
+      },
+      "by_family": {
+        "aws-id": {
+          "TP": 2
+        },
+        "aws-secret": {
+          "TP": 1
+        },
+        "clean-metadata": {
+          "TN": 5
+        },
+        "generic-alphanumeric": {
+          "TP": 5
+        },
+        "generic-base64": {
+          "FN": 1,
+          "TP": 4
+        },
+        "generic-filter": {
+          "TN": 2
+        },
+        "generic-hex": {
+          "TP": 5
+        },
+        "generic-other": {
+          "TP": 5
+        },
+        "github": {
+          "TP": 6
+        },
+        "github-app": {
+          "TP": 1
+        },
+        "inline-ignore": {
+          "TN": 2
+        },
+        "jwe": {
+          "TP": 1
+        },
+        "jws": {
+          "TP": 1
+        },
+        "malformed-jose": {
+          "TN": 4
+        },
+        "password": {
+          "TP": 4
+        },
+        "placeholder": {
+          "TN": 3
+        },
+        "private-key": {
+          "TP": 6
+        },
+        "public-example": {
+          "FP": 1
+        },
+        "reference": {
+          "TN": 3
+        },
+        "short-password": {
+          "FN": 1
+        },
+        "slack": {
+          "TP": 2
+        },
+        "stripe": {
+          "TP": 4
+        },
+        "unsecured": {
+          "TP": 1
+        }
+      },
+      "by_length": {
+        "16-23": {
+          "TN": 5,
+          "TP": 11
+        },
+        "24-31": {
+          "TN": 6,
+          "TP": 8
+        },
+        "32+": {
+          "FN": 1,
+          "FP": 1,
+          "TN": 5,
+          "TP": 26
+        },
+        "<16": {
+          "FN": 1,
+          "TN": 3,
+          "TP": 3
+        }
+      },
+      "clean_bytes": 756,
+      "confusion": {
+        "FN": 2,
+        "FP": 1,
+        "TN": 19,
+        "TP": 48
+      },
+      "false_positives_per_clean_MB": 1322.7513227513227,
+      "precision": 0.9795918367346939,
+      "recall": 0.96,
+      "records": 70,
+      "sha256": "1750843fb3ad3c3f98db8604ab953145e218bfcd59ab3791a6f2ec87d989e1bc",
+      "supported_positive_misses": 1,
+      "suppressions": {
+        "checksum": 3,
+        "generic_filter": 2,
+        "inline": 2,
+        "placeholder": 3,
+        "reference": 3
+      }
+    },
+    "calibration-no-inline": {
+      "by_context": {
+        "assignment": {
+          "FN": 2,
+          "FP": 3,
+          "TN": 13,
+          "TP": 24
+        },
+        "signature": {
+          "TP": 21
+        },
+        "structure": {
+          "TN": 4,
+          "TP": 3
+        }
+      },
+      "by_family": {
+        "aws-id": {
+          "TP": 2
+        },
+        "aws-secret": {
+          "TP": 1
+        },
+        "clean-metadata": {
+          "TN": 5
+        },
+        "generic-alphanumeric": {
+          "TP": 5
+        },
+        "generic-base64": {
+          "FN": 1,
+          "TP": 4
+        },
+        "generic-filter": {
+          "TN": 2
+        },
+        "generic-hex": {
+          "TP": 5
+        },
+        "generic-other": {
+          "TP": 5
+        },
+        "github": {
+          "TP": 6
+        },
+        "github-app": {
+          "TP": 1
+        },
+        "inline-ignore": {
+          "FP": 2
+        },
+        "jwe": {
+          "TP": 1
+        },
+        "jws": {
+          "TP": 1
+        },
+        "malformed-jose": {
+          "TN": 4
+        },
+        "password": {
+          "TP": 4
+        },
+        "placeholder": {
+          "TN": 3
+        },
+        "private-key": {
+          "TP": 6
+        },
+        "public-example": {
+          "FP": 1
+        },
+        "reference": {
+          "TN": 3
+        },
+        "short-password": {
+          "FN": 1
+        },
+        "slack": {
+          "TP": 2
+        },
+        "stripe": {
+          "TP": 4
+        },
+        "unsecured": {
+          "TP": 1
+        }
+      },
+      "by_length": {
+        "16-23": {
+          "TN": 5,
+          "TP": 11
+        },
+        "24-31": {
+          "TN": 6,
+          "TP": 8
+        },
+        "32+": {
+          "FN": 1,
+          "FP": 1,
+          "TN": 5,
+          "TP": 26
+        },
+        "<16": {
+          "FN": 1,
+          "FP": 2,
+          "TN": 1,
+          "TP": 3
+        }
+      },
+      "clean_bytes": 756,
+      "confusion": {
+        "FN": 2,
+        "FP": 3,
+        "TN": 17,
+        "TP": 48
+      },
+      "false_positives_per_clean_MB": 3968.253968253968,
+      "precision": 0.9411764705882353,
+      "recall": 0.96,
+      "records": 70,
+      "sha256": "1750843fb3ad3c3f98db8604ab953145e218bfcd59ab3791a6f2ec87d989e1bc",
+      "supported_positive_misses": 1,
+      "suppressions": {
+        "checksum": 3,
+        "generic_filter": 2,
+        "inline": 0,
+        "placeholder": 3,
+        "reference": 3
+      }
+    },
+    "data": "synthetic; no credential activity assessed",
+    "held-out": {
+      "by_context": {
+        "assignment": {
+          "FN": 1,
+          "FP": 1,
+          "TN": 15,
+          "TP": 25
+        },
+        "signature": {
+          "TP": 21
+        },
+        "structure": {
+          "TN": 4,
+          "TP": 3
+        }
+      },
+      "by_family": {
+        "aws-id": {
+          "TP": 2
+        },
+        "aws-secret": {
+          "TP": 1
+        },
+        "clean-metadata": {
+          "TN": 5
+        },
+        "generic-alphanumeric": {
+          "TP": 5
+        },
+        "generic-base64": {
+          "TP": 5
+        },
+        "generic-filter": {
+          "TN": 2
+        },
+        "generic-hex": {
+          "TP": 5
+        },
+        "generic-other": {
+          "TP": 5
+        },
+        "github": {
+          "TP": 6
+        },
+        "github-app": {
+          "TP": 1
+        },
+        "inline-ignore": {
+          "TN": 2
+        },
+        "jwe": {
+          "TP": 1
+        },
+        "jws": {
+          "TP": 1
+        },
+        "malformed-jose": {
+          "TN": 4
+        },
+        "password": {
+          "TP": 4
+        },
+        "placeholder": {
+          "TN": 3
+        },
+        "private-key": {
+          "TP": 6
+        },
+        "public-example": {
+          "FP": 1
+        },
+        "reference": {
+          "TN": 3
+        },
+        "short-password": {
+          "FN": 1
+        },
+        "slack": {
+          "TP": 2
+        },
+        "stripe": {
+          "TP": 4
+        },
+        "unsecured": {
+          "TP": 1
+        }
+      },
+      "by_length": {
+        "16-23": {
+          "TN": 5,
+          "TP": 11
+        },
+        "24-31": {
+          "TN": 6,
+          "TP": 8
+        },
+        "32+": {
+          "FP": 1,
+          "TN": 5,
+          "TP": 27
+        },
+        "<16": {
+          "FN": 1,
+          "TN": 3,
+          "TP": 3
+        }
+      },
+      "clean_bytes": 780,
+      "confusion": {
+        "FN": 1,
+        "FP": 1,
+        "TN": 19,
+        "TP": 49
+      },
+      "false_positives_per_clean_MB": 1282.051282051282,
+      "precision": 0.98,
+      "recall": 0.98,
+      "records": 70,
+      "sha256": "ba669100de122b975d977f8b98a3734310600b18f20592311f6cf30b64ef0547",
+      "supported_positive_misses": 0,
+      "suppressions": {
+        "checksum": 3,
+        "generic_filter": 2,
+        "inline": 2,
+        "placeholder": 3,
+        "reference": 3
+      }
+    },
+    "held-out-no-inline": {
+      "by_context": {
+        "assignment": {
+          "FN": 1,
+          "FP": 3,
+          "TN": 13,
+          "TP": 25
+        },
+        "signature": {
+          "TP": 21
+        },
+        "structure": {
+          "TN": 4,
+          "TP": 3
+        }
+      },
+      "by_family": {
+        "aws-id": {
+          "TP": 2
+        },
+        "aws-secret": {
+          "TP": 1
+        },
+        "clean-metadata": {
+          "TN": 5
+        },
+        "generic-alphanumeric": {
+          "TP": 5
+        },
+        "generic-base64": {
+          "TP": 5
+        },
+        "generic-filter": {
+          "TN": 2
+        },
+        "generic-hex": {
+          "TP": 5
+        },
+        "generic-other": {
+          "TP": 5
+        },
+        "github": {
+          "TP": 6
+        },
+        "github-app": {
+          "TP": 1
+        },
+        "inline-ignore": {
+          "FP": 2
+        },
+        "jwe": {
+          "TP": 1
+        },
+        "jws": {
+          "TP": 1
+        },
+        "malformed-jose": {
+          "TN": 4
+        },
+        "password": {
+          "TP": 4
+        },
+        "placeholder": {
+          "TN": 3
+        },
+        "private-key": {
+          "TP": 6
+        },
+        "public-example": {
+          "FP": 1
+        },
+        "reference": {
+          "TN": 3
+        },
+        "short-password": {
+          "FN": 1
+        },
+        "slack": {
+          "TP": 2
+        },
+        "stripe": {
+          "TP": 4
+        },
+        "unsecured": {
+          "TP": 1
+        }
+      },
+      "by_length": {
+        "16-23": {
+          "TN": 5,
+          "TP": 11
+        },
+        "24-31": {
+          "TN": 6,
+          "TP": 8
+        },
+        "32+": {
+          "FP": 1,
+          "TN": 5,
+          "TP": 27
+        },
+        "<16": {
+          "FN": 1,
+          "FP": 2,
+          "TN": 1,
+          "TP": 3
+        }
+      },
+      "clean_bytes": 780,
+      "confusion": {
+        "FN": 1,
+        "FP": 3,
+        "TN": 17,
+        "TP": 49
+      },
+      "false_positives_per_clean_MB": 3846.153846153846,
+      "precision": 0.9423076923076923,
+      "recall": 0.98,
+      "records": 70,
+      "sha256": "ba669100de122b975d977f8b98a3734310600b18f20592311f6cf30b64ef0547",
+      "supported_positive_misses": 0,
+      "suppressions": {
+        "checksum": 3,
+        "generic_filter": 2,
+        "inline": 0,
+        "placeholder": 3,
+        "reference": 3
+      }
+    },
+    "thresholds": "provisional, unchanged",
+    "unit": "record"
+  },
+  "end_to_end": {
+    "binary_bytes": 2765632,
+    "binary_sha256": "5479fc946429668e6a8278a772d4bf8600c1c761c490604c08acd71f639dc5b2",
+    "cache": "warm: created fixtures and one untimed scan; OS caches not flushed",
+    "cases": {
+      "directory_16MB": {
+        "MB_per_s": 707.2144478262779,
+        "bytes": 16781312,
+        "exit_code": 1,
+        "findings": 256,
+        "median_ms": 23.728746,
+        "p95_ms": 24.793408,
+        "p99_ms": 28.183926,
+        "peak_rss_kib": 4804,
+        "samples": 21
+      },
+      "file_gt10MB": {
+        "MB_per_s": 266.9762250320677,
+        "bytes": 12000022,
+        "exit_code": 1,
+        "findings": 1,
+        "median_ms": 44.947905,
+        "p95_ms": 46.377518,
+        "p99_ms": 48.426933,
+        "peak_rss_kib": 4908,
+        "samples": 21
+      },
+      "giant_line": {
+        "MB_per_s": 705.21765213052,
+        "bytes": 1048598,
+        "exit_code": 2,
+        "findings": 1,
+        "median_ms": 1.486914,
+        "p95_ms": 1.699254,
+        "p99_ms": 1.731524,
+        "peak_rss_kib": 5712,
+        "samples": 21
+      },
+      "many_tiny": {
+        "MB_per_s": 9.122618728199626,
+        "bytes": 38420,
+        "exit_code": 1,
+        "findings": 20,
+        "median_ms": 4.21151,
+        "p95_ms": 4.690531,
+        "p99_ms": 4.773241,
+        "peak_rss_kib": 4856,
+        "samples": 21
+      },
+      "staged_lines0_files1": {
+        "MB_per_s": null,
+        "added_lines": 0,
+        "bytes": 0,
+        "exit_code": 0,
+        "files": 1,
+        "findings": 0,
+        "median_ms": 6.199425,
+        "p95_ms": 6.949197,
+        "p99_ms": 7.189507,
+        "peak_rss_kib": 5316,
+        "samples": 21
+      },
+      "staged_lines0_files10": {
+        "MB_per_s": null,
+        "added_lines": 0,
+        "bytes": 0,
+        "exit_code": 0,
+        "files": 10,
+        "findings": 0,
+        "median_ms": 6.042584,
+        "p95_ms": 6.435085,
+        "p99_ms": 6.589575,
+        "peak_rss_kib": 5308,
+        "samples": 21
+      },
+      "staged_lines1000_files1": {
+        "MB_per_s": 2.6622434954567944,
+        "added_lines": 1000,
+        "bytes": 18002,
+        "exit_code": 1,
+        "files": 1,
+        "findings": 1,
+        "median_ms": 6.761966,
+        "p95_ms": 7.025377,
+        "p99_ms": 7.087456,
+        "peak_rss_kib": 5576,
+        "samples": 21
+      },
+      "staged_lines1000_files10": {
+        "MB_per_s": 2.61816540225751,
+        "added_lines": 1000,
+        "bytes": 18002,
+        "exit_code": 1,
+        "files": 10,
+        "findings": 1,
+        "median_ms": 6.875807,
+        "p95_ms": 7.254497,
+        "p99_ms": 7.270837,
+        "peak_rss_kib": 5576,
+        "samples": 21
+      },
+      "staged_lines1000_files100": {
+        "MB_per_s": 2.466403439318899,
+        "added_lines": 1000,
+        "bytes": 18002,
+        "exit_code": 1,
+        "files": 100,
+        "findings": 1,
+        "median_ms": 7.298887,
+        "p95_ms": 7.481858,
+        "p99_ms": 7.524257,
+        "peak_rss_kib": 5328,
+        "samples": 21
+      },
+      "staged_lines100_files1": {
+        "MB_per_s": 0.2800195485345203,
+        "added_lines": 100,
+        "bytes": 1802,
+        "exit_code": 1,
+        "files": 1,
+        "findings": 1,
+        "median_ms": 6.435265,
+        "p95_ms": 7.113496,
+        "p99_ms": 7.152527,
+        "peak_rss_kib": 5556,
+        "samples": 21
+      },
+      "staged_lines100_files10": {
+        "MB_per_s": 0.26609780999435023,
+        "added_lines": 100,
+        "bytes": 1802,
+        "exit_code": 1,
+        "files": 10,
+        "findings": 1,
+        "median_ms": 6.771946,
+        "p95_ms": 7.050527,
+        "p99_ms": 7.066086,
+        "peak_rss_kib": 5592,
+        "samples": 21
+      },
+      "staged_lines100_files100": {
+        "MB_per_s": 0.24759355415875417,
+        "added_lines": 100,
+        "bytes": 1802,
+        "exit_code": 1,
+        "files": 100,
+        "findings": 1,
+        "median_ms": 7.278057,
+        "p95_ms": 7.423247,
+        "p99_ms": 7.803388,
+        "peak_rss_kib": 5348,
+        "samples": 21
+      },
+      "staged_lines10_files1": {
+        "MB_per_s": 0.029603724864282373,
+        "added_lines": 10,
+        "bytes": 182,
+        "exit_code": 1,
+        "files": 1,
+        "findings": 1,
+        "median_ms": 6.147875,
+        "p95_ms": 6.606046,
+        "p99_ms": 7.873648,
+        "peak_rss_kib": 5588,
+        "samples": 21
+      },
+      "staged_lines10_files10": {
+        "MB_per_s": 0.027689136197840403,
+        "added_lines": 10,
+        "bytes": 182,
+        "exit_code": 1,
+        "files": 10,
+        "findings": 1,
+        "median_ms": 6.572975,
+        "p95_ms": 6.903196,
+        "p99_ms": 7.082676,
+        "peak_rss_kib": 5584,
+        "samples": 21
+      }
+    },
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "git": "git version 2.55.0",
+    "hardware": "Megalodon-AMD9950X",
+    "os": "Linux-7.1.13-2-MANJARO-x86_64-with-glibc2.44",
+    "rss": "native wait4 peak KiB; scanner and waited child high water; Python heap excluded (96MiB ballast regression tested)",
+    "rules": "all 10 built-in rules; default entropy/inline policy; no custom rules",
+    "rust": "rustc 1.88.0 (6b00bc388 2025-06-23)",
+    "threads": "explicit file/staged: serial; directory: auto up to 8 workers",
+    "throughput": "decimal MB/s, aggregate wall time, includes native benchmark launcher/startup/policy/Git/rendering; staged bytes exclude patch framing and newlines"
+  },
+  "engine": "engine: bytes=272384 samples=40 workers=1 median_ms=2.016 p95_ms=2.060 p99_ms=2.082 MB/s=135.11 findings=204800; precompiled 10 built-ins + custom, warm cache",
+  "extended_file": {
+    "MB_per_s": 278.24194595665074,
+    "bytes": 1024000024,
+    "exit_code": 1,
+    "findings": 1,
+    "median_ms": 3680.250368,
+    "p95_ms": 3683.89489,
+    "p99_ms": 3683.89489,
+    "peak_rss_kib": 4824,
+    "samples": 3
+  },
+  "measured_date": "2026-10-04",
+  "scope": [
+    "scope: files=8 bytes_each=287 workers=1 samples=5 median_ms=0.039 p95_ms=0.114 p99_ms=0.114 MB/s=58.39",
+    "scope: files=8 bytes_each=287 workers=2 samples=5 median_ms=0.173 p95_ms=0.230 p99_ms=0.230 MB/s=13.27",
+    "scope: files=8 bytes_each=287 workers=8 samples=5 median_ms=0.366 p95_ms=0.465 p99_ms=0.465 MB/s=6.28",
+    "scope: files=32 bytes_each=287 workers=1 samples=5 median_ms=0.122 p95_ms=0.194 p99_ms=0.194 MB/s=75.21",
+    "scope: files=32 bytes_each=287 workers=2 samples=5 median_ms=0.124 p95_ms=0.144 p99_ms=0.144 MB/s=74.03",
+    "scope: files=32 bytes_each=287 workers=8 samples=5 median_ms=0.278 p95_ms=0.295 p99_ms=0.295 MB/s=33.00",
+    "scope: files=128 bytes_each=287 workers=1 samples=5 median_ms=0.405 p95_ms=0.422 p99_ms=0.422 MB/s=90.81",
+    "scope: files=128 bytes_each=287 workers=2 samples=5 median_ms=0.340 p95_ms=0.412 p99_ms=0.412 MB/s=108.16",
+    "scope: files=128 bytes_each=287 workers=8 samples=5 median_ms=0.398 p95_ms=0.561 p99_ms=0.561 MB/s=92.25",
+    "scope: files=256 bytes_each=287 workers=1 samples=5 median_ms=0.820 p95_ms=0.865 p99_ms=0.865 MB/s=89.64",
+    "scope: files=256 bytes_each=287 workers=2 samples=5 median_ms=0.749 p95_ms=0.761 p99_ms=0.761 MB/s=98.09",
+    "scope: files=256 bytes_each=287 workers=8 samples=5 median_ms=0.680 p95_ms=0.789 p99_ms=0.789 MB/s=108.06",
+    "scope: files=4096 bytes_each=287 workers=1 samples=5 median_ms=14.958 p95_ms=16.476 p99_ms=16.476 MB/s=78.59",
+    "scope: files=4096 bytes_each=287 workers=2 samples=5 median_ms=9.144 p95_ms=10.333 p99_ms=10.333 MB/s=128.56",
+    "scope: files=4096 bytes_each=287 workers=8 samples=5 median_ms=6.302 p95_ms=7.084 p99_ms=7.084 MB/s=186.53",
+    "scope: files=8 bytes_each=16418 workers=1 samples=5 median_ms=0.579 p95_ms=0.641 p99_ms=0.641 MB/s=226.70",
+    "scope: files=8 bytes_each=16418 workers=2 samples=5 median_ms=0.401 p95_ms=0.477 p99_ms=0.477 MB/s=327.53",
+    "scope: files=8 bytes_each=16418 workers=8 samples=5 median_ms=0.345 p95_ms=0.402 p99_ms=0.402 MB/s=380.38",
+    "scope: files=32 bytes_each=16418 workers=1 samples=5 median_ms=2.011 p95_ms=2.057 p99_ms=2.057 MB/s=261.19",
+    "scope: files=32 bytes_each=16418 workers=2 samples=5 median_ms=1.414 p95_ms=1.619 p99_ms=1.619 MB/s=371.66",
+    "scope: files=32 bytes_each=16418 workers=8 samples=5 median_ms=0.735 p95_ms=0.895 p99_ms=0.895 MB/s=714.73",
+    "scope: files=128 bytes_each=16418 workers=1 samples=5 median_ms=8.084 p95_ms=8.418 p99_ms=8.418 MB/s=259.96",
+    "scope: files=128 bytes_each=16418 workers=2 samples=5 median_ms=5.130 p95_ms=5.767 p99_ms=5.767 MB/s=409.68",
+    "scope: files=128 bytes_each=16418 workers=8 samples=5 median_ms=1.988 p95_ms=2.238 p99_ms=2.238 MB/s=1056.94",
+    "scope: files=256 bytes_each=16418 workers=1 samples=5 median_ms=17.314 p95_ms=20.954 p99_ms=20.954 MB/s=242.76",
+    "scope: files=256 bytes_each=16418 workers=2 samples=5 median_ms=10.446 p95_ms=10.986 p99_ms=10.986 MB/s=402.36",
+    "scope: files=256 bytes_each=16418 workers=8 samples=5 median_ms=3.216 p95_ms=4.152 p99_ms=4.152 MB/s=1306.91",
+    "scope: files=4096 bytes_each=16418 workers=1 samples=5 median_ms=291.210 p95_ms=370.762 p99_ms=370.762 MB/s=230.93",
+    "scope: files=4096 bytes_each=16418 workers=2 samples=5 median_ms=172.960 p95_ms=194.545 p99_ms=194.545 MB/s=388.81",
+    "scope: files=4096 bytes_each=16418 workers=8 samples=5 median_ms=68.290 p95_ms=85.640 p99_ms=85.640 MB/s=984.75"
+  ],
+  "source_base": "9ce96e23e0c39e90f001a88d80f70ac3f4d0e28e"
+}

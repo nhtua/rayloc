@@ -69,3 +69,31 @@ fn every_report_write_propagates_output_failure() {
     )
     .unwrap();
 }
+#[test]
+fn custom_report_and_excluded_scope_propagate_every_output_error() {
+    let registry = crate::rules::Registry::compile(crate::config::parse(b"version: \"1\"\nrules: [{id: sensitive-id, regex: secret, description: sensitive-description}]").unwrap()).unwrap();
+    let outcome = crate::scanner::engine::scan_reader_with_registry(
+        &mut Cursor::new(b"secret"),
+        9,
+        &registry,
+    );
+    let mut complete = Vec::new();
+    render(&outcome, &mut complete).unwrap();
+    let text = String::from_utf8_lossy(&complete);
+    assert!(text.contains("Custom rule #1"));
+    assert!(!text.contains("sensitive-id"));
+    assert!(!text.contains("sensitive-description"));
+    assert!(!text.contains("secret"));
+    for remaining in 0..complete.len() {
+        assert!(render(&outcome, &mut LimitedWriter { remaining }).is_err());
+    }
+    let mut excluded = ScanOutcome::default();
+    excluded.stats.files_excluded = 1;
+    let mut output = Vec::new();
+    render(&excluded, &mut output).unwrap();
+    assert!(
+        String::from_utf8(output)
+            .unwrap()
+            .starts_with("rayloc — EXCLUDED")
+    );
+}

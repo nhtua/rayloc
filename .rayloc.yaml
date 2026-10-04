@@ -1,4 +1,4 @@
-# Configuration template; loading will be implemented in src/config.
+# Repository policy template; staged scans load the index version.
 version: "1"
 # Generic fallback in bits/byte; provider rules do not inherit this gate.
 default_entropy_threshold: 4.5

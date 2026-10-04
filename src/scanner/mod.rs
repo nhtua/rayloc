@@ -7,10 +7,15 @@ use redaction::RedactedString;
 
 pub mod diff;
 pub mod engine;
+mod git;
 pub mod redaction;
+pub mod scope;
+pub mod staged;
+mod tracked;
+pub mod worktree;
 
 /// Errors contain fixed categories only, never paths, arguments, or source text.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ScanError {
     Open,
     NotRegularFile,
@@ -19,6 +24,12 @@ pub enum ScanError {
     CandidateLimit,
     FindingLimit,
     CounterOverflow,
+    Discovery,
+    ScopeLimit,
+    GitMetadata,
+    Policy,
+    NoGlobMatches,
+    Pool,
 }
 
 impl fmt::Display for ScanError {
@@ -31,6 +42,12 @@ impl fmt::Display for ScanError {
             Self::CandidateLimit => "candidate exceeds scan limit",
             Self::FindingLimit => "finding count exceeds scan limit",
             Self::CounterOverflow => "scan counter exceeds supported range",
+            Self::Discovery => "cannot enumerate selected scope",
+            Self::ScopeLimit => "selected scope exceeds resource limit",
+            Self::GitMetadata => "cannot read tracked scope metadata",
+            Self::Policy => "cannot load scope ignore policy",
+            Self::NoGlobMatches => "glob matches no regular files",
+            Self::Pool => "cannot initialize scan workers",
         })
     }
 }
@@ -52,9 +69,11 @@ pub struct Finding {
 pub struct ScanStats {
     pub files_attempted: u64,
     pub files_completed: u64,
+    pub files_excluded: u64,
     pub bytes_read: u64,
     pub lines_scanned: u64,
     pub findings_detected: u64,
+    pub suppressions: crate::rules::context::Suppressions,
 }
 
 /// Safe to format: neither findings nor errors own raw source bytes or paths.

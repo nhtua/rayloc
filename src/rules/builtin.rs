@@ -9,7 +9,7 @@ use crate::scanner::ScanError;
 
 pub const MAX_CANDIDATE_BYTES: usize = 64 * 1024;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Severity {
     Low,
     Medium,
@@ -51,6 +51,11 @@ pub enum RuleId {
     StripeRestrictedKey,
     SlackWebhook,
     PrivateKeyMarker,
+    AwsSecretAccessKey,
+    JoseToken,
+    ContextSecret,
+    PasswordAssignment,
+    Custom(u16, Severity),
 }
 
 pub struct RuleMetadata {
@@ -65,6 +70,41 @@ pub struct RuleMetadata {
 impl RuleId {
     pub fn metadata(self) -> RuleMetadata {
         let (id, description, severity, confidence, reference) = match self {
+            Self::AwsSecretAccessKey => (
+                "aws-secret-access-key",
+                "AWS secret access key assignment",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html",
+            ),
+            Self::JoseToken => (
+                "jose-token",
+                "Compact JOSE structure (not verified)",
+                Severity::High,
+                Confidence::Medium,
+                "https://www.rfc-editor.org/rfc/rfc7515.html",
+            ),
+            Self::ContextSecret => (
+                "context-secret",
+                "Context-associated secret",
+                Severity::High,
+                Confidence::Medium,
+                "",
+            ),
+            Self::PasswordAssignment => (
+                "password-assignment",
+                "Concrete password assignment",
+                Severity::High,
+                Confidence::Medium,
+                "",
+            ),
+            Self::Custom(_, severity) => (
+                "custom-rule",
+                "Custom rule",
+                severity,
+                Confidence::Medium,
+                "",
+            ),
             Self::AwsAccessKeyId => (
                 "aws-access-key-id",
                 "AWS access key ID (not a secret access key)",
@@ -159,17 +199,42 @@ fn token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, ScanEr
     let Some(prefix) = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix)) else {
         return Ok(None);
     };
-    // Include the complete compact installation form instead of exposing a tail
-    // through an incomplete span. Structural JOSE checks are implemented later.
+    // Frame the complete compact installation form, including forbidden padding,
+    // so JOSE validation cannot accept a valid prefix of a malformed token.
     let allow_dot = *prefix == b"ghs_";
+    let allow_padding = allow_dot && {
+        let body = &bytes[prefix.len()..];
+        let id_length = body
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .take(MAX_CANDIDATE_BYTES + 1)
+            .count();
+        id_length != 0 && body.get(id_length) == Some(&b'_')
+    };
     let body_length = bytes[prefix.len()..]
         .iter()
-        .take_while(|&&byte| is_word(byte) || (allow_dot && byte == b'.'))
+        .take_while(|&&byte| {
+            is_word(byte)
+                || (allow_dot && matches!(byte, b'.' | b'-'))
+                || (allow_padding && byte == b'=')
+        })
         .take(MAX_CANDIDATE_BYTES + 1)
         .count();
     let length = prefix.len() + body_length;
     if length > MAX_CANDIDATE_BYTES {
         return Err(ScanError::CandidateLimit);
+    }
+    if allow_dot && bytes[..length].contains(&b'.') {
+        let body = &bytes[prefix.len()..length];
+        let Some(separator) = body.iter().position(|b| *b == b'_') else {
+            return Ok(None);
+        };
+        if separator == 0
+            || !body[..separator].iter().all(u8::is_ascii_digit)
+            || !super::jose::valid(&body[separator + 1..])?
+        {
+            return Ok(None);
+        }
     }
     Ok((body_length >= 16).then_some(length))
 }
@@ -207,8 +272,11 @@ fn slack_match(bytes: &[u8]) -> Result<Option<usize>, ScanError> {
     Ok((bytes.get(end) != Some(&b'/')).then_some(end))
 }
 
-fn match_at(bytes: &[u8]) -> Result<Option<(RuleId, usize)>, ScanError> {
-    if let Some(end) = aws_match(bytes) {
+fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>, ScanError> {
+    if let Some(end) = (!disabled.contains(&RuleId::AwsAccessKeyId))
+        .then(|| aws_match(bytes))
+        .flatten()
+    {
         return Ok(Some((RuleId::AwsAccessKeyId, end)));
     }
     for (rule, prefixes) in [
@@ -216,12 +284,20 @@ fn match_at(bytes: &[u8]) -> Result<Option<(RuleId, usize)>, ScanError> {
         (RuleId::StripeSecretKey, STRIPE_SECRET_PREFIXES),
         (RuleId::StripeRestrictedKey, STRIPE_RESTRICTED_PREFIXES),
     ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
         if let Some(end) = token_match(bytes, prefixes)? {
             return Ok(Some((rule, end)));
         }
     }
-    if let Some(end) = slack_match(bytes)? {
-        return Ok(Some((RuleId::SlackWebhook, end)));
+    if !disabled.contains(&RuleId::SlackWebhook) {
+        if let Some(end) = slack_match(bytes)? {
+            return Ok(Some((RuleId::SlackWebhook, end)));
+        }
+    }
+    if disabled.contains(&RuleId::PrivateKeyMarker) {
+        return Ok(None);
     }
     Ok(PRIVATE_KEY_MARKERS
         .iter()
@@ -231,8 +307,13 @@ fn match_at(bytes: &[u8]) -> Result<Option<(RuleId, usize)>, ScanError> {
 
 /// Visit matches in source order without allocating a candidate collection.
 /// Callback spans are zero-based and half-open; source bytes remain borrowed.
-pub fn detect_line(
+pub fn detect_line(bytes: &[u8], emit: impl FnMut(RuleId, Range<usize>)) -> Result<(), ScanError> {
+    detect_line_with_disabled(bytes, &[], emit)
+}
+
+pub(crate) fn detect_line_with_disabled(
     bytes: &[u8],
+    disabled: &[RuleId],
     mut emit: impl FnMut(RuleId, Range<usize>),
 ) -> Result<(), ScanError> {
     let mut covered_until = 0;
@@ -246,7 +327,7 @@ pub fn detect_line(
         if offset > 0 && is_word(bytes[offset - 1]) && byte != b'-' {
             continue;
         }
-        if let Some((rule, length)) = match_at(&bytes[offset..])? {
+        if let Some((rule, length)) = match_at(&bytes[offset..], disabled)? {
             emit(rule, offset..offset + length);
             covered_until = offset + length;
         }

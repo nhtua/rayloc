@@ -1,0 +1,523 @@
+{
+  "calibration": {
+    "by_context": {
+      "assignment": {
+        "FN": 2,
+        "FP": 1,
+        "TN": 15,
+        "TP": 24
+      },
+      "signature": {
+        "TP": 21
+      },
+      "structure": {
+        "TN": 4,
+        "TP": 3
+      }
+    },
+    "by_family": {
+      "aws-id": {
+        "TP": 2
+      },
+      "aws-secret": {
+        "TP": 1
+      },
+      "clean-metadata": {
+        "TN": 5
+      },
+      "generic-alphanumeric": {
+        "TP": 5
+      },
+      "generic-base64": {
+        "FN": 1,
+        "TP": 4
+      },
+      "generic-filter": {
+        "TN": 2
+      },
+      "generic-hex": {
+        "TP": 5
+      },
+      "generic-other": {
+        "TP": 5
+      },
+      "github": {
+        "TP": 6
+      },
+      "github-app": {
+        "TP": 1
+      },
+      "inline-ignore": {
+        "TN": 2
+      },
+      "jwe": {
+        "TP": 1
+      },
+      "jws": {
+        "TP": 1
+      },
+      "malformed-jose": {
+        "TN": 4
+      },
+      "password": {
+        "TP": 4
+      },
+      "placeholder": {
+        "TN": 3
+      },
+      "private-key": {
+        "TP": 6
+      },
+      "public-example": {
+        "FP": 1
+      },
+      "reference": {
+        "TN": 3
+      },
+      "short-password": {
+        "FN": 1
+      },
+      "slack": {
+        "TP": 2
+      },
+      "stripe": {
+        "TP": 4
+      },
+      "unsecured": {
+        "TP": 1
+      }
+    },
+    "by_length": {
+      "16-23": {
+        "TN": 5,
+        "TP": 11
+      },
+      "24-31": {
+        "TN": 6,
+        "TP": 8
+      },
+      "32+": {
+        "FN": 1,
+        "FP": 1,
+        "TN": 5,
+        "TP": 26
+      },
+      "<16": {
+        "FN": 1,
+        "TN": 3,
+        "TP": 3
+      }
+    },
+    "clean_bytes": 756,
+    "confusion": {
+      "FN": 2,
+      "FP": 1,
+      "TN": 19,
+      "TP": 48
+    },
+    "false_positives_per_clean_MB": 1322.7513227513227,
+    "precision": 0.9795918367346939,
+    "recall": 0.96,
+    "records": 70,
+    "sha256": "1750843fb3ad3c3f98db8604ab953145e218bfcd59ab3791a6f2ec87d989e1bc",
+    "supported_positive_misses": 1,
+    "suppressions": {
+      "checksum": 3,
+      "generic_filter": 2,
+      "inline": 2,
+      "placeholder": 3,
+      "reference": 3
+    }
+  },
+  "calibration-no-inline": {
+    "by_context": {
+      "assignment": {
+        "FN": 2,
+        "FP": 3,
+        "TN": 13,
+        "TP": 24
+      },
+      "signature": {
+        "TP": 21
+      },
+      "structure": {
+        "TN": 4,
+        "TP": 3
+      }
+    },
+    "by_family": {
+      "aws-id": {
+        "TP": 2
+      },
+      "aws-secret": {
+        "TP": 1
+      },
+      "clean-metadata": {
+        "TN": 5
+      },
+      "generic-alphanumeric": {
+        "TP": 5
+      },
+      "generic-base64": {
+        "FN": 1,
+        "TP": 4
+      },
+      "generic-filter": {
+        "TN": 2
+      },
+      "generic-hex": {
+        "TP": 5
+      },
+      "generic-other": {
+        "TP": 5
+      },
+      "github": {
+        "TP": 6
+      },
+      "github-app": {
+        "TP": 1
+      },
+      "inline-ignore": {
+        "FP": 2
+      },
+      "jwe": {
+        "TP": 1
+      },
+      "jws": {
+        "TP": 1
+      },
+      "malformed-jose": {
+        "TN": 4
+      },
+      "password": {
+        "TP": 4
+      },
+      "placeholder": {
+        "TN": 3
+      },
+      "private-key": {
+        "TP": 6
+      },
+      "public-example": {
+        "FP": 1
+      },
+      "reference": {
+        "TN": 3
+      },
+      "short-password": {
+        "FN": 1
+      },
+      "slack": {
+        "TP": 2
+      },
+      "stripe": {
+        "TP": 4
+      },
+      "unsecured": {
+        "TP": 1
+      }
+    },
+    "by_length": {
+      "16-23": {
+        "TN": 5,
+        "TP": 11
+      },
+      "24-31": {
+        "TN": 6,
+        "TP": 8
+      },
+      "32+": {
+        "FN": 1,
+        "FP": 1,
+        "TN": 5,
+        "TP": 26
+      },
+      "<16": {
+        "FN": 1,
+        "FP": 2,
+        "TN": 1,
+        "TP": 3
+      }
+    },
+    "clean_bytes": 756,
+    "confusion": {
+      "FN": 2,
+      "FP": 3,
+      "TN": 17,
+      "TP": 48
+    },
+    "false_positives_per_clean_MB": 3968.253968253968,
+    "precision": 0.9411764705882353,
+    "recall": 0.96,
+    "records": 70,
+    "sha256": "1750843fb3ad3c3f98db8604ab953145e218bfcd59ab3791a6f2ec87d989e1bc",
+    "supported_positive_misses": 1,
+    "suppressions": {
+      "checksum": 3,
+      "generic_filter": 2,
+      "inline": 0,
+      "placeholder": 3,
+      "reference": 3
+    }
+  },
+  "data": "synthetic; no credential activity assessed",
+  "held-out": {
+    "by_context": {
+      "assignment": {
+        "FN": 1,
+        "FP": 1,
+        "TN": 15,
+        "TP": 25
+      },
+      "signature": {
+        "TP": 21
+      },
+      "structure": {
+        "TN": 4,
+        "TP": 3
+      }
+    },
+    "by_family": {
+      "aws-id": {
+        "TP": 2
+      },
+      "aws-secret": {
+        "TP": 1
+      },
+      "clean-metadata": {
+        "TN": 5
+      },
+      "generic-alphanumeric": {
+        "TP": 5
+      },
+      "generic-base64": {
+        "TP": 5
+      },
+      "generic-filter": {
+        "TN": 2
+      },
+      "generic-hex": {
+        "TP": 5
+      },
+      "generic-other": {
+        "TP": 5
+      },
+      "github": {
+        "TP": 6
+      },
+      "github-app": {
+        "TP": 1
+      },
+      "inline-ignore": {
+        "TN": 2
+      },
+      "jwe": {
+        "TP": 1
+      },
+      "jws": {
+        "TP": 1
+      },
+      "malformed-jose": {
+        "TN": 4
+      },
+      "password": {
+        "TP": 4
+      },
+      "placeholder": {
+        "TN": 3
+      },
+      "private-key": {
+        "TP": 6
+      },
+      "public-example": {
+        "FP": 1
+      },
+      "reference": {
+        "TN": 3
+      },
+      "short-password": {
+        "FN": 1
+      },
+      "slack": {
+        "TP": 2
+      },
+      "stripe": {
+        "TP": 4
+      },
+      "unsecured": {
+        "TP": 1
+      }
+    },
+    "by_length": {
+      "16-23": {
+        "TN": 5,
+        "TP": 11
+      },
+      "24-31": {
+        "TN": 6,
+        "TP": 8
+      },
+      "32+": {
+        "FP": 1,
+        "TN": 5,
+        "TP": 27
+      },
+      "<16": {
+        "FN": 1,
+        "TN": 3,
+        "TP": 3
+      }
+    },
+    "clean_bytes": 780,
+    "confusion": {
+      "FN": 1,
+      "FP": 1,
+      "TN": 19,
+      "TP": 49
+    },
+    "false_positives_per_clean_MB": 1282.051282051282,
+    "precision": 0.98,
+    "recall": 0.98,
+    "records": 70,
+    "sha256": "ba669100de122b975d977f8b98a3734310600b18f20592311f6cf30b64ef0547",
+    "supported_positive_misses": 0,
+    "suppressions": {
+      "checksum": 3,
+      "generic_filter": 2,
+      "inline": 2,
+      "placeholder": 3,
+      "reference": 3
+    }
+  },
+  "held-out-no-inline": {
+    "by_context": {
+      "assignment": {
+        "FN": 1,
+        "FP": 3,
+        "TN": 13,
+        "TP": 25
+      },
+      "signature": {
+        "TP": 21
+      },
+      "structure": {
+        "TN": 4,
+        "TP": 3
+      }
+    },
+    "by_family": {
+      "aws-id": {
+        "TP": 2
+      },
+      "aws-secret": {
+        "TP": 1
+      },
+      "clean-metadata": {
+        "TN": 5
+      },
+      "generic-alphanumeric": {
+        "TP": 5
+      },
+      "generic-base64": {
+        "TP": 5
+      },
+      "generic-filter": {
+        "TN": 2
+      },
+      "generic-hex": {
+        "TP": 5
+      },
+      "generic-other": {
+        "TP": 5
+      },
+      "github": {
+        "TP": 6
+      },
+      "github-app": {
+        "TP": 1
+      },
+      "inline-ignore": {
+        "FP": 2
+      },
+      "jwe": {
+        "TP": 1
+      },
+      "jws": {
+        "TP": 1
+      },
+      "malformed-jose": {
+        "TN": 4
+      },
+      "password": {
+        "TP": 4
+      },
+      "placeholder": {
+        "TN": 3
+      },
+      "private-key": {
+        "TP": 6
+      },
+      "public-example": {
+        "FP": 1
+      },
+      "reference": {
+        "TN": 3
+      },
+      "short-password": {
+        "FN": 1
+      },
+      "slack": {
+        "TP": 2
+      },
+      "stripe": {
+        "TP": 4
+      },
+      "unsecured": {
+        "TP": 1
+      }
+    },
+    "by_length": {
+      "16-23": {
+        "TN": 5,
+        "TP": 11
+      },
+      "24-31": {
+        "TN": 6,
+        "TP": 8
+      },
+      "32+": {
+        "FP": 1,
+        "TN": 5,
+        "TP": 27
+      },
+      "<16": {
+        "FN": 1,
+        "FP": 2,
+        "TN": 1,
+        "TP": 3
+      }
+    },
+    "clean_bytes": 780,
+    "confusion": {
+      "FN": 1,
+      "FP": 3,
+      "TN": 17,
+      "TP": 49
+    },
+    "false_positives_per_clean_MB": 3846.153846153846,
+    "precision": 0.9423076923076923,
+    "recall": 0.98,
+    "records": 70,
+    "sha256": "ba669100de122b975d977f8b98a3734310600b18f20592311f6cf30b64ef0547",
+    "supported_positive_misses": 0,
+    "suppressions": {
+      "checksum": 3,
+      "generic_filter": 2,
+      "inline": 0,
+      "placeholder": 3,
+      "reference": 3
+    }
+  },
+  "thresholds": "provisional, unchanged",
+  "unit": "record"
+}
