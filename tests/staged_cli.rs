@@ -114,14 +114,14 @@ fn staged_argument_conflicts_and_nonrepository_fail_safely() {
     check(scan(outside.path(), &[]), 2, 0);
 }
 #[test]
-fn attributes_nul_quoted_non_utf8_paths_and_symlink_text_remain_visible() {
+fn attributes_nul_quoted_paths_and_symlink_text_remain_visible() {
     use std::os::unix::{ffi::OsStringExt, fs::symlink};
     let dir = repo();
     let root = dir.path();
     fs::write(root.join(".gitattributes"), "* -diff\n").unwrap();
     let names = [
         b"space b/name".to_vec(),
-        b"quotes\"\\\t\n\xff".to_vec(),
+        b"quotes\"\\\t\n".to_vec(),
         b"binary".to_vec(),
     ];
     fs::create_dir(root.join("space b")).unwrap();

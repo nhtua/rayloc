@@ -1,7 +1,9 @@
 name: Rust checks
 
 on:
+  # Branch pushes are covered by their pull request run.
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -26,7 +28,9 @@ jobs:
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all
       - run: cargo bench --locked
-      - run: python3 scripts/coverage.py
+      # Rust 1.85 instruments error-mapping closures as functions; gate on stable.
+      - if: matrix.toolchain == 'stable'
+        run: python3 scripts/coverage.py
       - run: cargo build --locked --release
       - name: Accuracy, artifact tooling and measurement contracts
         env:

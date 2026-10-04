@@ -516,7 +516,7 @@ fn exhaustive_short_bodies_emit_only_added_records_and_reject_wrong_counts() {
         let mut expected = vec![];
         let mut previous_added = false;
         for _ in 0..6 {
-            let indicator = [b'+', b'-', b' '][(value % 3) as usize];
+            let indicator = b"+- "[(value % 3) as usize];
             value /= 3;
             if indicator != b'+' {
                 old_count += 1;

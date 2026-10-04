@@ -207,7 +207,7 @@ fn permission_failures_preserve_partial_findings_even_in_ignored_trees() {
     assert!(result.errors.contains(&ScanError::Open));
     assert!(result.errors.contains(&ScanError::Discovery));
 }
-fn runner<'a>(root: &'a ScopeRoot) -> Runner<'a> {
+fn runner(root: &ScopeRoot) -> Runner<'_> {
     Runner {
         registry: &BUILTINS,
         exclusions: Exclusions::load(&root.root).unwrap(),

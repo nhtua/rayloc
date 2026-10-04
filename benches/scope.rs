@@ -4,7 +4,7 @@ use rayloc::{
     rules::{BUILTINS, Registry},
     scanner::scope::{ScopeOptions, scan_directory_with_options},
 };
-use std::{fs, time::Instant};
+use std::{fmt::Write, fs, time::Instant};
 #[path = "../tests/support/mod.rs"]
 mod support;
 fn main() {
@@ -41,9 +41,11 @@ fn main() {
                 content
             };
             let policy_bytes = if complex {
-                let policy = (0..256)
-                    .map(|i| format!("**/{}{}never{i}.rs\n", "a".repeat(64), "?*".repeat(4)))
-                    .collect::<String>();
+                let prefix = format!("**/{}{}never", "a".repeat(64), "?*".repeat(4));
+                let policy = (0..256).fold(String::new(), |mut policy, i| {
+                    writeln!(policy, "{prefix}{i}.rs").unwrap();
+                    policy
+                });
                 fs::write(temp.path().join(".gitignore"), &policy).unwrap();
                 policy.len()
             } else {

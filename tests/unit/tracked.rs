@@ -1,6 +1,16 @@
 use super::*;
 use std::io::Cursor;
 #[test]
+fn records_keep_newline_and_non_utf8_names_raw_and_skip_conflict_stages() {
+    let input = b"a\nkey\0conflict\0conflict\0z\xffkey\0";
+    let mut records = Records::new(Cursor::new(input), LIMITS);
+    for expected in [b"a\nkey".as_slice(), b"conflict", b"z\xffkey"] {
+        assert!(records.next().unwrap());
+        assert_eq!(records.current, expected);
+    }
+    assert!(!records.next().unwrap());
+}
+#[test]
 fn records_validate_framing_order_duplicates_and_budgets() {
     let mut records = Records::new(
         io::BufReader::with_capacity(1, Cursor::new(b"a\0a\0b\0")),

@@ -216,18 +216,12 @@ fn source_numbers_follow_raw_path_bytes_including_directory_separator() {
 }
 #[cfg(unix)]
 #[test]
-fn nonutf8_and_newline_paths_and_duplicate_index_stages_keep_raw_order() {
+fn newline_paths_and_duplicate_index_stages_keep_raw_order() {
     use std::io::Write;
-    use std::os::unix::ffi::OsStringExt;
     let root = TempDir::new();
     git(&root, &["init", "--quiet"]);
-    for bytes in [b"a\nkey".as_slice(), b"z\xffkey"] {
-        fs::write(
-            root.path()
-                .join(std::ffi::OsString::from_vec(bytes.to_vec())),
-            "ghp_abcdefghijklmnop",
-        )
-        .unwrap();
+    for name in ["a\nkey", "zkey"] {
+        fs::write(root.path().join(name), "ghp_abcdefghijklmnop").unwrap();
     }
     git(&root, &["add", "."]);
     let hash = Command::new("git")

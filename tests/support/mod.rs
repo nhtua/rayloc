@@ -18,7 +18,7 @@ impl TempDir {
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             match fs::create_dir(&path) {
-                Ok(()) => return Self(path),
+                Ok(()) => return Self(fs::canonicalize(&path).unwrap()),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(error) => panic!("cannot create isolated test directory: {error}"),
             }
