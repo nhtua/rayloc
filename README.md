@@ -150,7 +150,7 @@ hook, and can be re-run safely. The hook runs `rayloc scan --staged`, and a
 non-zero exit blocks the commit.
 
 Or use the [pre-commit](https://pre-commit.com) framework, which runs your
-installed `rayloc`:
+installed `rayloc`. Add this to `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
@@ -158,6 +158,14 @@ repos:
     rev: v2026.10.4
     hooks:
       - id: rayloc-staged
+```
+
+Then install pre-commit and the hook:
+
+```sh
+python3 -m pip install pre-commit==4.6.2
+pre-commit validate-config
+pre-commit install --install-hooks
 ```
 
 See the [hook instructions](docs/hooks.md) for details, including the optional
