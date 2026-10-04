@@ -397,9 +397,15 @@ fn inherited_git_routing_and_config_cannot_mutate_external_fixture_state() {
             .args(["--exact", &target, "--nocapture"])
             .output()
             .unwrap();
+        let after = tree_bytes(root);
+        let changed: Vec<_> = before
+            .keys()
+            .chain(after.keys())
+            .filter(|path| before.get(*path) != after.get(*path))
+            .collect();
         assert!(
-            before == tree_bytes(root),
-            "unit fixture modified external sentinel repository or index"
+            changed.is_empty(),
+            "unit fixture modified external sentinel repository or index after {name}: {changed:?}"
         );
         assert!(
             child.status.success(),

@@ -571,10 +571,12 @@ fn index_changes_cancelled_in_workspace_fail_closed_without_value_leak() {
     let out = scan(root, &[]);
     assert!(matches!(out.status.code(), Some(0 | 2)));
     assert!(!String::from_utf8_lossy(&out.stdout).contains(SECRET));
+    assert!(!String::from_utf8_lossy(&out.stderr).contains(SECRET));
     // The scan must not be described as clean when another path adds a secret.
     fs::write(root.join("added"), format!("{SECRET}\n")).unwrap();
     git(root, &["add", "added"]);
     let out = scan(root, &[]);
     assert!(matches!(out.status.code(), Some(1 | 2)));
     assert!(!String::from_utf8_lossy(&out.stdout).contains(SECRET));
+    assert!(!String::from_utf8_lossy(&out.stderr).contains(SECRET));
 }
