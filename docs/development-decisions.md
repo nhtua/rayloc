@@ -55,17 +55,18 @@ Unit tests live outside production modules but are included with `#[cfg(test)]`
 so private functions and failure paths remain testable. Integration tests run
 the real CLI and therefore exercise both `main` and its stdio adapter.
 
-`scripts/coverage.py` uses Python's standard library and installed compatible LLVM
-executables to instrument Rust, merge unit/integration/child-process profiles,
-and enforce >98% lines/regions plus 100% functions. Only test/support/benchmark
-source is excluded; all production Rust is counted. A separate target directory
-keeps instrumented builds apart from normal development and benchmarks.
+`cargo coverage` (a Cargo alias for `cargo llvm-cov`) instruments Rust, merges
+unit/integration/child-process profiles, and enforces >=98% lines/regions plus
+100% functions. It replaced a custom Python driver; cargo-llvm-cov is a
+development tool, not a crate dependency. Only test/support/benchmark source is
+excluded; all production Rust is counted. Its separate target directory keeps
+instrumented builds apart from normal development and benchmarks. CI gates
+coverage on stable because Rust 1.85 instruments trivial error-mapping closures
+as separate functions.
 [Rust coverage reference](https://doc.rust-lang.org/rustc/instrument-coverage.html).
 
-The local Rust 1.88.0 compiler's profiles were successfully read by the installed
-AMD LLVM 22 tools. CI installs Rust's matching LLVM tools and checks both stable
-and Rust 1.85.0. The local machine has no Rust 1.85 toolchain; the newly added CI
-configuration has not yet run on GitHub.
+CI installs Rust's matching LLVM tools and cargo-llvm-cov, runs every other check
+on both stable and Rust 1.85.0, and runs the coverage gate on stable.
 
 The release benchmark measures the core byte engine over a small, warm synthetic
 corpus, including finding construction. It is a development baseline for this

@@ -81,9 +81,11 @@ When editing or extending `rayloc`, strict adherence to the following rules is r
 
 * Every production function must be exercised by tests, including formatters,
   error paths, and the executable entry point.
-* Production coverage must exceed 98%. Run `python3 scripts/coverage.py`; it
-  requires >98% line and region coverage and 100% function coverage. Test helpers
-  and benchmark drivers are excluded; production code must not be excluded.
+* Production coverage must be at least 98%. Run `cargo coverage` (an alias for
+  `cargo llvm-cov` in `.cargo/config.toml`; install with
+  `cargo install cargo-llvm-cov --locked` and `rustup component add llvm-tools-preview`).
+  It requires >=98% line and region coverage and 100% function coverage. Test
+  helpers and benchmark drivers are excluded; production code must not be excluded.
 * Prefer the Rust standard library for short, bounded implementations. Add an
   external dependency only when the capability cannot be implemented shortly
   and correctly, and record the justification. Avoid redundant libraries.
@@ -107,8 +109,8 @@ cargo test --all
 # 4. Benchmark secret scanning speed against test fixtures
 cargo bench
 
-# 5. Enforce production coverage (>98% lines/regions, all functions exercised)
-python3 scripts/coverage.py
+# 5. Enforce production coverage (>=98% lines/regions, all functions exercised)
+cargo coverage
 ```
 
 ---

@@ -100,10 +100,11 @@ cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all
 cargo bench --locked
-python3 scripts/coverage.py
+cargo coverage
 ```
 
-Production Rust requires >98% line/region and 100% function coverage. See the
+`cargo coverage` needs `cargo install cargo-llvm-cov --locked` and
+`rustup component add llvm-tools-preview`. Production Rust requires >=98% line/region and 100% function coverage. See the
 [test guide](tests/README.md), [benchmark guide](benches/README.md) and
 [technical design](technical-design.md). Dependencies are narrowly scoped to
 YAML, regex, ignores/globs and Rayon, with decisions in

@@ -1,0 +1,10 @@
+[alias]
+# Production coverage gate (requires cargo-llvm-cov and llvm-tools-preview).
+# Test helpers, fixtures and benchmark drivers are excluded; src/ is all counted.
+coverage = [
+    "llvm-cov", "--locked", "--workspace", "--all-features",
+    "--ignore-filename-regex", "(^|/)(tests|benches)/",
+    "--fail-under-functions", "100",
+    "--fail-under-lines", "98",
+    "--fail-under-regions", "98",
+]

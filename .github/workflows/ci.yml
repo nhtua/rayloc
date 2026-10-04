@@ -30,7 +30,11 @@ jobs:
       - run: cargo bench --locked
       # Rust 1.85 instruments error-mapping closures as functions; gate on stable.
       - if: matrix.toolchain == 'stable'
-        run: python3 scripts/coverage.py
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - if: matrix.toolchain == 'stable'
+        run: cargo coverage
       - run: cargo build --locked --release
       - name: Accuracy, artifact tooling and measurement contracts
         env:
