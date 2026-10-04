@@ -43,6 +43,7 @@ pub struct Registry {
     set: RegexSet,
     custom: Vec<CompiledRule>,
     disabled: Vec<RuleId>,
+    pub(crate) accepted: std::collections::BTreeSet<crate::scanner::fingerprint::FindingId>,
     pub inline_ignores: bool,
     pub default_entropy_threshold: f64,
     pub entropy_thresholds: std::collections::BTreeMap<String, f64>,
@@ -155,6 +156,7 @@ impl Registry {
             set,
             custom,
             disabled,
+            accepted: config.accepted.into_iter().collect(),
             default_entropy_threshold: config.default_entropy_threshold.unwrap_or(4.5),
             entropy_thresholds: config.entropy_thresholds,
         })

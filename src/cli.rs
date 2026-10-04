@@ -20,6 +20,9 @@ Commands:
   scan [<file|directory> | --glob <pattern> | --staged | --diff <ref>] [--config <file>] [--no-inline-ignores]
                   Scan files, a directory (default: current directory), or a glob
 
+  accept <id>     Accept a reviewed finding by its report ID in the root .rayloc.yaml;
+                  the ID covers that value in that file only
+
   hook install    Install a managed pre-commit hook into Git's active hooks directory
 
 Staged mode scans added index lines; --diff scans tracked additions against a commit.";
@@ -51,6 +54,7 @@ fn run_with_args(
             format_args!("rayloc {}", env!("CARGO_PKG_VERSION")),
         ),
         Some("scan") => scan(args, output, errors),
+        Some("accept") => accept(args, output, errors),
         Some("hook") => {
             if args.next().as_deref() != Some(std::ffi::OsStr::new("install"))
                 || args.next().is_some()
@@ -238,6 +242,48 @@ fn scan(
         return scan_error(errors, "cannot write command output");
     }
     outcome.exit_code()
+}
+fn accept(
+    mut args: impl Iterator<Item = OsString>,
+    output: &mut dyn Write,
+    errors: &mut dyn Write,
+) -> u8 {
+    let id = args.next();
+    let id = match id.as_ref().and_then(|id| id.to_str()) {
+        Some("-h" | "--help") if args.next().is_none() => return print_help(output, errors),
+        Some(id) if args.next().is_none() => crate::scanner::fingerprint::FindingId::parse(id),
+        _ => None,
+    };
+    // Never echo an unvalidated argument: it may be a pasted secret.
+    let Some(id) = id else {
+        return scan_error(
+            errors,
+            "invalid accept arguments; use a 5-character report ID",
+        );
+    };
+    let result = crate::config::discover_root(Path::new("."))
+        .and_then(|root| crate::config::accept(&root, id));
+    use crate::config::Acceptance;
+    match result {
+        Ok(Acceptance::Created) => write_output(
+            output,
+            errors,
+            format_args!(
+                "rayloc: created .rayloc.yaml and accepted {id}; stage it for --staged scans"
+            ),
+        ),
+        Ok(Acceptance::Added) => write_output(
+            output,
+            errors,
+            format_args!("rayloc: accepted {id} in .rayloc.yaml; stage it for --staged scans"),
+        ),
+        Ok(Acceptance::Already) => write_output(
+            output,
+            errors,
+            format_args!("rayloc: {id} is already accepted"),
+        ),
+        Err(error) => scan_error(errors, &error.to_string()),
+    }
 }
 fn scan_error(errors: &mut dyn Write, category: &str) -> u8 {
     let _ = writeln!(errors, "rayloc: {category}");

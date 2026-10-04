@@ -21,14 +21,16 @@ $ rayloc scan .
 rayloc — FINDINGS
 1 finding(s); 1 retained; 1 of 1 file(s) completed; 2 line(s); 51 byte(s) read
 0 file(s) excluded
-Suppressed: inline=0; placeholder=0; reference=0; checksum=0; generic-filter=0
+Suppressed: inline=0; placeholder=0; reference=0; checksum=0; generic-filter=0; accepted=0
 Elapsed: 0.692 ms
 
 src/app.py:2:8
 Rule: GitHub token signature (github-token)
 Severity: High; Medium confidence
 Value: ghp_********
+ID: 7kq2m
 Remove exposed credentials from source code.
+If a finding is a reviewed false positive, run: rayloc accept <ID>
 ```
 
 ## Contents
@@ -38,7 +40,7 @@ Remove exposed credentials from source code.
 - [Usage](#usage)
 - [What it detects](#what-it-detects)
 - [Configuration](#configuration)
-- [Ignoring files and lines](#ignoring-files-and-lines)
+- [Ignoring files, lines and findings](#ignoring-files-lines-and-findings)
 - [Reports and exit codes](#reports-and-exit-codes)
 - [Performance](#performance)
 - [Contributing](#contributing)
@@ -117,6 +119,7 @@ rayloc scan .env.production                  # a single file
 rayloc scan --glob '**/*.{pem,key,yaml}'     # a repository-relative glob
 rayloc scan --staged                         # lines added to the index
 rayloc scan --diff main                      # tracked changes against a commit
+rayloc accept 7kq2m                          # accept a reviewed false positive
 ```
 
 | Option                | Description                                         |
@@ -209,11 +212,11 @@ rules:
 
 - Each rule matches against a single line.
 - `--config <file>` merges on top of the repository policy: settings override,
-  rules are appended and disabled rules are combined.
+  rules are appended, and disabled rules and accepted IDs are combined.
 - The parser is strict. Unknown fields, duplicate keys or IDs, YAML aliases or
   tags, and multiple documents are rejected with exit 2.
 
-## Ignoring files and lines
+## Ignoring files, lines and findings
 
 **Files.** Directory and glob scans skip untracked files matched by `.gitignore`,
 then apply `.raylocignore` (same syntax), which takes priority:
@@ -237,6 +240,28 @@ API_KEY = "example-not-a-real-key"  # rayloc:ignore
 
 `// rayloc:ignore` also works. Use `--no-inline-ignores` to enforce scanning in CI.
 
+**Findings.** Formats without comments, such as Markdown plans or JSON fixtures,
+can accept a reviewed false positive by the ID printed in the report:
+
+```sh
+rayloc accept 7kq2m
+git add .rayloc.yaml   # staged scans read the policy from the index
+```
+
+This adds the ID to `accepted` in the root `.rayloc.yaml`:
+
+```yaml
+accepted:
+  - "7kq2m"   # docs/plan.md: example login payload
+```
+
+- An ID is derived from the file path and the detected value. It covers that value
+  in that file only. The same value in another file, or a new secret in the same
+  file, is still reported. Renaming the file brings the finding back.
+- The command takes the ID only, so secrets never reach shell history or the
+  policy file. The 5-character ID cannot reproduce the value.
+- Accepted findings are counted as `accepted=N` in the report.
+
 ## Reports and exit codes
 
 | Exit code | Meaning                                                       |
@@ -247,8 +272,8 @@ API_KEY = "example-not-a-real-key"  # rayloc:ignore
 
 If both apply, errors (exit 2) take precedence over findings.
 
-Each finding shows its path, line and byte column (1-based), rule, severity and a
-masked value.
+Each finding shows its path, line and byte column (1-based), rule, severity, a
+masked value and an ID for `rayloc accept`.
 
 - **Values** show at most a 4-byte printable prefix, never more than a quarter of
   the value, followed by a fixed-length mask (`ghp_********`). Short or non-ASCII

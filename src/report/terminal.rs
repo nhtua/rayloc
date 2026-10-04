@@ -29,12 +29,13 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
     let suppressed = &outcome.stats.suppressions;
     writeln!(
         output,
-        "Suppressed: inline={}; placeholder={}; reference={}; checksum={}; generic-filter={}",
+        "Suppressed: inline={}; placeholder={}; reference={}; checksum={}; generic-filter={}; accepted={}",
         suppressed.inline,
         suppressed.placeholder,
         suppressed.reference,
         suppressed.checksum,
-        suppressed.generic_filter
+        suppressed.generic_filter,
+        suppressed.accepted
     )?;
     writeln!(
         output,
@@ -52,7 +53,7 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
         }
         writeln!(
             output,
-            ":{}:{}\nRule: {} ({})\nSeverity: {}; {}\nValue: {}",
+            ":{}:{}\nRule: {} ({})\nSeverity: {}; {}\nValue: {}\nID: {}",
             finding.line,
             finding.start_column,
             metadata.description,
@@ -60,6 +61,7 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
             metadata.severity,
             metadata.confidence,
             finding.value,
+            finding.id,
         )?;
     }
     for error in &outcome.errors {
@@ -67,6 +69,10 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
     }
     if !outcome.findings.is_empty() {
         writeln!(output, "Remove exposed credentials from source code.")?;
+        writeln!(
+            output,
+            "If a finding is a reviewed false positive, run: rayloc accept <ID>"
+        )?;
     }
     Ok(())
 }
