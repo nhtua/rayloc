@@ -5,6 +5,7 @@
 
 pub mod cli;
 pub mod config;
+mod hook;
 pub mod report;
 pub mod rules;
 pub mod scanner;

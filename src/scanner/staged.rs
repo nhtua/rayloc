@@ -134,7 +134,7 @@ pub(super) fn index_stamp(file: &Path) -> Result<Option<IndexStamp>, ScanError> 
         Err(_) => Err(ScanError::GitMetadata),
     }
 }
-pub(super) fn git_path(cwd: &Path, args: &[&str]) -> Result<PathBuf, ScanError> {
+pub(crate) fn git_path(cwd: &Path, args: &[&str]) -> Result<PathBuf, ScanError> {
     let bytes = git::successful(git::command(cwd).args(args), MAX_LINE_BYTES)?;
     let value = bytes
         .strip_suffix(b"\n")

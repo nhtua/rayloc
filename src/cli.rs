@@ -20,7 +20,9 @@ Commands:
   scan [<file|directory> | --glob <pattern> | --staged | --diff <ref>] [--config <file>] [--no-inline-ignores]
                   Scan files, a directory (default: current directory), or a glob
 
-Staged mode scans added index lines; --diff scans tracked additions against a commit. Hook mode is not available yet.";
+  hook install    Install a managed pre-commit hook into Git's active hooks directory
+
+Staged mode scans added index lines; --diff scans tracked additions against a commit.";
 
 /// Run the CLI, returning exit code 2 for unsupported operations.
 pub fn run() -> ExitCode {
@@ -50,8 +52,19 @@ fn run_with_args(
         ),
         Some("scan") => scan(args, output, errors),
         Some("hook") => {
-            let _ = writeln!(errors, "rayloc: hook management is not implemented yet");
-            2
+            if args.next().as_deref() != Some(std::ffi::OsStr::new("install"))
+                || args.next().is_some()
+            {
+                return scan_error(errors, "invalid hook arguments; use hook install");
+            }
+            match crate::hook::install(Path::new(".")) {
+                Ok(()) => write_output(
+                    output,
+                    errors,
+                    format_args!("rayloc: managed pre-commit hook installed"),
+                ),
+                Err(category) => scan_error(errors, category),
+            }
         }
         _ => {
             // Arguments may contain sensitive values; never echo them in errors.
