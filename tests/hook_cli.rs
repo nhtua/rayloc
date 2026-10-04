@@ -147,6 +147,16 @@ fn active_relative_absolute_and_linked_hooks_paths_are_used_from_nested_callers(
             if custom.is_some() {
                 assert!(!original.join(".git/hooks/pre-commit").exists());
             }
+            if linked && custom == Some("absolute") {
+                check(install(original), 0);
+                ok_git(
+                    original,
+                    &["commit", "--allow-empty", "-qm", "shared clean"],
+                );
+                fs::write(original.join("other-entry"), SECRET).unwrap();
+                ok_git(original, &["add", "other-entry"]);
+                check(git(original, &["commit", "-qm", "shared blocked"]), 1);
+            }
         }
     }
 }
@@ -278,4 +288,41 @@ fn failing_hook_directory_lookup_suppresses_child_diagnostics() {
         .output()
         .unwrap();
     assert!(!check(out, 2).contains("private-path"));
+}
+
+#[test]
+fn relative_git_routing_environment_is_preserved_when_installing_from_nested_cwd() {
+    for custom in [false, true] {
+        let dir = repo();
+        let root = dir.path();
+        fs::create_dir(root.join("nested")).unwrap();
+        if custom {
+            ok_git(root, &["config", "core.hooksPath", "custom"]);
+        }
+        let out =
+            isolated(Command::new(env!("CARGO_BIN_EXE_rayloc")).current_dir(root.join("nested")))
+                .env("PATH", path())
+                .env("GIT_DIR", "../.git")
+                .env("GIT_WORK_TREE", "..")
+                .args(["hook", "install"])
+                .output()
+                .unwrap();
+        check(out, 0);
+        assert!(
+            root.join(if custom {
+                "custom/pre-commit"
+            } else {
+                ".git/hooks/pre-commit"
+            })
+            .is_file()
+        );
+        let out = isolated(Command::new("git").current_dir(root.join("nested")))
+            .env("PATH", path())
+            .env("GIT_DIR", "../.git")
+            .env("GIT_WORK_TREE", "..")
+            .args(["commit", "--allow-empty", "-qm", "installed"])
+            .output()
+            .unwrap();
+        check(out, 0);
+    }
 }

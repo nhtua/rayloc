@@ -14,11 +14,13 @@ const WRITE: &str = "cannot install executable hook";
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn install(cwd: &Path) -> Result<(), &'static str> {
-    // Hooks run at the worktree root. Resolve both relative core.hooksPath and
-    // relative PATH entries there, even when installation starts in a subdirectory.
+    // Hooks run at the worktree root. Check relative PATH entries there, even
+    // when installation starts in a subdirectory.
     let root = crate::scanner::staged::git_path(cwd, &["rev-parse", "--show-toplevel"])
         .map_err(|_| "cannot resolve Git worktree")?;
-    let directory = crate::scanner::staged::git_path(&root, &["rev-parse", "--git-path", "hooks"])
+    // Git reports paths relative to its cwd, including core.hooksPath. Keep
+    // Git in the caller's cwd because GIT_DIR/GIT_WORK_TREE may be relative.
+    let directory = crate::scanner::staged::git_path(cwd, &["rev-parse", "--git-path", "hooks"])
         .map_err(|_| "cannot resolve active Git hooks directory")?;
     let available = Command::new("/bin/sh")
         .current_dir(&root)
