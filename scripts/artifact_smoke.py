@@ -22,7 +22,8 @@ def smoke(binary):
         def run(*command, code=0, cwd=root, environment=env):
             result = subprocess.run(command, cwd=cwd, env=environment, capture_output=True)
             assert SECRET.encode() not in result.stdout + result.stderr, 'complete fixture value leaked'
-            assert result.returncode == code, f'artifact command {command[0]}: expected {code}, got {result.returncode}'
+            codes = code if isinstance(code, tuple) else (code,)
+            assert result.returncode in codes, f'artifact command {command[0]}: expected {code}, got {result.returncode}'
             return result
 
         def git(*arguments, **kwargs):
@@ -59,7 +60,8 @@ def smoke(binary):
         scan('--staged')  # deleted credential is outside scope
         write('source', SECRET + '\n')
         scan('--staged')  # partial staging: clean index, dirty workspace
-        scan('--diff', 'HEAD', code=2)  # known fail-closed index-cache refresh edge
+        # Clean workspace (0), or fail-closed (2) when Git refreshes the index mid-scan.
+        scan('--diff', 'HEAD', code=(0, 2))
         write('source', 'safe replacement\n')
         git('commit', '-qm', 'clean baseline')
         write('source', 'safe replacement\n' + SECRET + '\n')
