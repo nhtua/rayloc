@@ -126,3 +126,20 @@ Git, Git 2.30, and Rust 1.85, plus formatting, strict Clippy, benchmarks, and
 coverage at 337/337 functions, 98.9939% lines, and 98.0313% regions. Concurrent
 full-suite runs exposed an existing temporary-directory collision; separate
 temporary roots passed and P10 will validate runner isolation.
+
+## P9
+
+`rayloc hook install` now installs an exact managed staged-scan script in Git's
+active hook directory, including configured hook paths and linked worktrees. It
+publishes the executable atomically, preserves unmanaged hooks, and is idempotent.
+Real-commit tests cover clean, finding, and error statuses, missing scanner, and
+relative Git environment routing. A Rust-language Python pre-commit manifest,
+consumer guide, and isolated framework harness cover fresh installation, partial
+staging, index policy, empty scope, repeated cached runs, and hook coexistence.
+
+The independent review approved P9 without findings. All 239 tests pass on
+current Git, actual Git 2.30, and locked Rust 1.85; formatting, strict Clippy,
+benchmarks, and coverage pass at 346/346 functions, 98.9926% lines, and
+98.0226% regions. The real pre-commit 4.6.2 Rust backend passed on stable and
+Rust 1.85 with fresh dependency resolution. Native macOS and remote pinned-SHA
+framework installation remain P10 evidence.

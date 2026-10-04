@@ -17,7 +17,7 @@ P3 is complete at `ebc63d2` after implementation, required verification, and an
 independent review/fix/re-review cycle in `feat/rayloc-v1`. P4 is complete at `7a5185e`;
 P5 is complete at `e31e715`; P6 is complete at `39d359f`; P7 is complete at
 `e301c0e`. P8 is complete at `1808af7` after independent review and a test
-isolation fix. P0–P2
+isolation fix. P9 is complete at `7d87e12` after independent review. P0–P2
 foundation gaps tied to full-scope evaluation remain tracked below rather than
 being silently closed by the explicit-file delivery.
 
@@ -32,7 +32,7 @@ being silently closed by the explicit-file delivery.
 | P6 | Complete | Pure bounded raw-binding/unified-patch parser; adversarial byte/count tests; hunk-gap review fix at `39d359f`; 158 tests and coverage gates; independent re-review approved | P8 working-tree unknown-OID handoff recorded |
 | P7 | Complete | Pinned staged index acquisition/policy and added-line CLI; nested-root policy review fix at `e301c0e`; 196 tests current Git/Git 2.30/Rust 1.85; independent re-review approved | Staged latency and platform runs remain P10 gates |
 | P8 | Complete | Pinned reference-to-working-tree diff CLI, independent identities, dirty-gitlink exclusion and test-isolation review fix at `1808af7`; 226 tests on current Git/Git 2.30/Rust 1.85; independent re-review approved | Concurrent full-suite TempDir collision carried to P10 runner validation |
-| P9 | In progress; paused | Uncommitted installer, CLI tests, Rust-language pre-commit manifest and consumer guide; agent reported direct-hook integration tests green | Finish framework installation/commit tests, required checks, commit, independent review and any fixes |
+| P9 | Complete | Managed active-hook installer, real commit tests, Rust-language pre-commit manifest and isolated framework validation on stable/Rust 1.85; 239 tests on current Git/Git 2.30/Rust 1.85; independent review approved at `7d87e12` | Native macOS and remote pinned-SHA consumer validation remain P10 gates |
 | P10 | Not started | — | Full evaluation, supported-platform artifacts, and release gates |
 
 Verified locally for `923400b`: all 26 tests pass; production function coverage
@@ -48,10 +48,9 @@ and regions 1718/1751 (98.12%). Formatting, strict Clippy, benchmark and diff
 checks pass. The independent reviewer approved both discovery failure handling
 and the portable Unix output-error fixture. Native CI/full v1 evaluation remain open.
 
-**Work paused at user request.** On resumption, finish and review P9, then P10.
-Explicit-file,
-directory, glob, staged, and reference-diff scans are available; hook mode remains
-unavailable pending P9. Package sub-agent evidence is
+Implementation resumed and P9 passed independent review. Explicit-file,
+directory, glob, staged, reference-diff, and hook installation modes are available.
+P10 evaluation and release validation remain. Package sub-agent evidence is
 summarized in [the implementation report](implementation-report.md).
 Update this table and package status lines whenever implementation advances.
 
@@ -475,25 +474,24 @@ the design's remaining decisions to describe shipped behavior and known limits.
 results are reproducible, accuracy/leak/resource gates pass, and artifact smoke
 tests succeed. Publishing is a separate release action after review.
 
-### Remaining work to finish P9 and P10
+### Remaining work to finish P10
 
-Resume in the existing `feat/rayloc-v1` worktree. Preserve the uncommitted P9
-installer, tests, manifest, guide, and framework test script. Direct-hook tests
-were reported green before the pause, but P9 has no final verification or review.
+Continue in the existing `feat/rayloc-v1` worktree. P9 is implemented, committed,
+and independently approved; P10 owns the remaining cross-platform and release gates.
 
 **P9 — hook installation and framework integration**
 
-- [ ] Finish the direct installer and test active hook resolution for default,
+- [x] Finish the direct installer and test active hook resolution for default,
   relative and absolute `core.hooksPath`, linked worktrees, idempotent executable
   installation, unmanaged-hook preservation, missing scanner, and real commit
   propagation of clean/finding/error statuses on current Git and Git 2.30.
-- [ ] Validate `.pre-commit-hooks.yaml` with Python pre-commit and install the
+- [x] Validate `.pre-commit-hooks.yaml` with Python pre-commit and install the
   Rust-language hook from a committed local revision into isolated consumer
   repositories and `PRE_COMMIT_HOME`. Test clean, finding and configuration-error
   commits, partial staging, empty staged scope, index policy, and repeated cached
   execution. Check `pass_filenames: false`, `always_run: true`, and the documented
   `core.hooksPath` and manual `--all-files` limitations.
-- [ ] Verify the framework's fresh Cargo installation path on stable Rust and
+- [x] Verify the framework's fresh Cargo installation path on stable Rust and
   Rust 1.85, including dependency resolution without `--locked`. Keep Python a
   developer-side integration, not a rayloc runtime dependency. Run formatting,
   strict Clippy, all tests, benchmarks, and `scripts/coverage.py` with 100%
