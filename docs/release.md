@@ -5,7 +5,7 @@ Build from the checkout with Rust 1.85 or newer. Git modes, policy discovery and
 hook installation require Git; Git 2.30 is the tested minimum on local Linux.
 The native matrix prepares x86_64/aarch64 Linux musl and macOS archives. Support
 claims require successful native jobs on the exact release commit. macOS is only
-runtime tested on the runner OS (14 ARM and 15 Intel); older OS support is unverified.
+runtime tested on the runner OS (macOS 15, ARM and Intel); older OS support is unverified.
 Linux ELF artifacts must have no interpreter or needed libraries; macOS executables
 may depend on `/usr/lib` and `/System/Library` system libraries.
 
