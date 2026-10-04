@@ -26,7 +26,7 @@ impl FindingId {
         hash ^= hash >> 31;
         let mut id = [0; ID_LENGTH];
         for (i, slot) in id.iter_mut().enumerate() {
-            *slot = ALPHABET[(hash >> (5 * i) & 31) as usize];
+            *slot = ALPHABET[((hash >> (5 * i)) & 31) as usize];
         }
         Self(id)
     }
