@@ -1,7 +1,9 @@
 name: Release validation
 
 on:
+  # Branch pushes are covered by their pull request run.
   push:
+    branches: [main]
   pull_request:
 
 permissions:
