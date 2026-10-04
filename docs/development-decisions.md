@@ -214,3 +214,37 @@ The stripped local release executable is 2,458,424 bytes. The required
 synthetic engine benchmark scanned 2.212 MB in 0.0028 s (800.89 MB/s, one
 thread); these local warm measurements are development evidence, not whole-v1
 acceptance or held-out detection-quality claims.
+
+## P10 — release readiness (2026-10-04)
+
+The complete v1 CLI is implemented. Earlier scaffold-only statements above are
+historical slice descriptions. Production dependencies remain the justified
+YAML/regex/ignore/glob/Rayon set; P10 adds no Rust dependency. The C program under
+`scripts/` is a benchmark-only launcher compiled by `cc`, not a scanner runtime
+requirement. It measures native scanner RSS without inheriting Python's fixture
+heap; a 96-MiB ballast regression exercises that measurement boundary.
+
+The fixed synthetic detection confusion/suppression counts now form an explicit
+regression gate; numerical quality claims remain limited to that corpus. Warm
+startup-inclusive file/directory/staged and extended 1.024-GB measurements are
+recorded in [release baseline](research/release-baseline.md). Under 5-ms staged
+latency and 500MB/s/core are still stretch goals. Files exceeding 10 MB continue to
+stream; observed RSS remains bounded for the extended file workload.
+
+Cargo publishing is restricted to crates.io and a narrow package include list
+retains production/test/bench/source-validation inputs while excluding worktrees,
+coordination notes, CI files and generated outputs. Package validation and a
+publication dry run do not authorize publication. Native release CI prepares
+four Linux-musl/macOS architecture archives, executes extracted binaries and
+actual linkage gates, collects checksums and tests source installs on 1.85.
+Runtime support for those platforms requires green native jobs at the exact
+release SHA. Local GNU-host evidence cannot replace musl/macOS evidence. No
+published release or Cargo registry install is advertised.
+
+A new artifact characterization found that staged edits completely reversed in
+the workspace can cause Git to rewrite its index cache during direct-diff
+acquisition. Existing stamp validation safely returns 2. Optional-lock/config
+switches did not resolve the observation on local Git 2.55 or2.30, so no race
+safeguard was weakened; this remains a documented conservative limitation.
+Deferred P4/P5 delimiter/glob/duplicate-ignore-compile minors are recorded in the
+release baseline for final whole-branch review.

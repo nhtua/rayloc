@@ -570,3 +570,26 @@ tuning detection, establish held-out data and length-specific entropy tradeoffs.
 Before release, fix supported OS/Git versions and artifact names. Memory mapping,
 extra prefix routing, richer context, and broader decoding need measured evidence;
 they are not prerequisites for correctness.
+
+## 11. V1 implementation and release evidence (2026-10-04)
+
+Sections above describe the original contract, not the current scaffold status.
+The file/directory/glob, staged/reference, policy, context/JOSE and hook packages
+are now implemented. YAML/MSRV/dependency and resource budgets are resolved in
+[development decisions](docs/development-decisions.md). Standalone entropy,
+memory mapping, extra prefix routing, language-complete parsing and decoding
+extensions remain deferred; full-mask/numeric-source reporting is intentional.
+
+[Release baseline](docs/research/release-baseline.md) and its JSON provide warm
+complete-workload engine, startup-inclusive file/directory/staged, extended-file
+RSS, and held-out accuracy evidence. The two speed targets remain stretch goals.
+Rust 1.85 and Git 2.30 are locally exercised on Linux. Native musl/macOS linkage,
+architecture and runtime checks remain exact-SHA CI gates before support claims.
+Archives/checksums and crates.io source validation are prepared separately from
+publication. See [release instructions](docs/release.md).
+
+Direct-reference scans conservatively return incomplete-scan error 2 when staged
+edits reversed in the workspace cause Git's index cache to mutate during the
+acquisition. Keep index/workspace race validation until a proven read-only
+snapshot protocol replaces it. The release baseline lists deferred P4/P5 minor
+compatibility/performance observations for whole-branch review.

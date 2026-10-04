@@ -27,3 +27,11 @@ jobs:
       - run: cargo test --locked --all
       - run: cargo bench --locked
       - run: python3 scripts/coverage.py
+      - run: cargo build --locked --release
+      - name: Accuracy, artifact tooling and measurement contracts
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python3 tests/detection_evaluator.py
+          python3 -m unittest discover -s tests -p '*tools.py'
+          python3 scripts/detection_baseline.py --check

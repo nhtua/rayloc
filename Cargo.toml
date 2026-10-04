@@ -6,7 +6,9 @@ rust-version = "1.85"
 description = "A fast, automatically redacting secret scanner for Git workflows"
 license = "MIT"
 repository = "https://github.com/nhtua/rayloc"
-publish = false
+publish = ["crates-io"]
+readme = "README.md"
+include = ["src/**/*.rs", "tests/**/*.rs", "tests/*.py", "tests/corpus/**", "tests/README.md", "benches/*.rs", "benches/README.md", "scripts/*.py", "scripts/*.c", "docs/release.md", "docs/hooks.md", "docs/research/detection-baseline.json", "docs/research/release-baseline.md", "docs/research/release-baseline.json", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE", ".pre-commit-hooks.yaml", ".rayloc.yaml", ".raylocignore"]
 
 [dependencies]
 yaml-rust2 = { version = "=0.13.0", default-features = false }

@@ -10,14 +10,19 @@ pub struct TempDir(PathBuf);
 
 impl TempDir {
     pub fn new() -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "rayloc-test-{}-{}-{}",
-            std::process::id(),
-            module_path!().replace("::", "-"),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&path).unwrap();
-        Self(path)
+        loop {
+            let path = std::env::temp_dir().join(format!(
+                "rayloc-test-{}-{}-{}",
+                std::process::id(),
+                module_path!().replace("::", "-"),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            match fs::create_dir(&path) {
+                Ok(()) => return Self(path),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("cannot create isolated test directory: {error}"),
+            }
+        }
     }
 
     pub fn path(&self) -> &Path {

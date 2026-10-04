@@ -1,0 +1,129 @@
+name: Release validation
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: ${{ matrix.platform.target }} / Rust ${{ matrix.toolchain }}
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ["1.85.0", stable]
+        platform:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            linker_var: CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            linker_var: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.platform.runner }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
+      RAYLOC_TARGET: ${{ matrix.platform.target }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install native Linux musl linker
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          musl-gcc --version
+          echo '${{ matrix.platform.linker_var }}=musl-gcc' >> "$GITHUB_ENV"
+      - name: Install Rust target
+        run: |
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+          rustup target add "$RAYLOC_TARGET"
+      - name: Record native environment
+        run: |
+          uname -a
+          rustc --version --verbose
+          cargo --version
+          git --version
+          echo "Runner image $ImageOS $ImageVersion; target $RAYLOC_TARGET"
+      - run: cargo test --locked --all --target "$RAYLOC_TARGET"
+      - run: cargo build --locked --release --target "$RAYLOC_TARGET"
+      - name: Linkage and shipped artifact smoke
+        run: |
+          python3 scripts/release.py linkage --binary "target/$RAYLOC_TARGET/release/rayloc" --target "$RAYLOC_TARGET"
+          python3 scripts/release.py archive --binary "target/$RAYLOC_TARGET/release/rayloc" --target "$RAYLOC_TARGET" --output dist
+          mkdir extracted
+          tar -xzf dist/rayloc-*.tar.gz -C extracted
+          test -x extracted/rayloc-*/rayloc
+          python3 scripts/artifact_smoke.py extracted/rayloc-*/rayloc
+          python3 scripts/detection_baseline.py --binary extracted/rayloc-*/rayloc --check --output dist/accuracy.json
+      - name: Upload prepared archive
+        if: matrix.toolchain == '1.85.0'
+        uses: actions/upload-artifact@v6
+        with:
+          name: rayloc-native-${{ matrix.platform.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+      - name: Real remote Rust pre-commit installation
+        if: matrix.toolchain == '1.85.0'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/framework"
+          "$RUNNER_TEMP/framework/bin/pip" install pre-commit==4.6.2
+          python3 scripts/test_pre_commit.py --repo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --rev "$GITHUB_SHA" --pre-commit "$RUNNER_TEMP/framework/bin/pre-commit" --language-version 1.85.0
+
+  checksums:
+    needs: native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: rayloc-native-*
+          path: dist
+          merge-multiple: true
+      - name: Verify complete target set and checksum bytes
+        run: |
+          python3 -c 'from pathlib import Path; import sys; sys.path.insert(0, "scripts"); from release import TARGETS; import tomllib; version = tomllib.loads(Path("Cargo.toml").read_text())["package"]["version"]; assert {p.name for p in Path("dist").glob("*.tar.gz")} == {f"rayloc-{version}-{target}.tar.gz" for target in TARGETS}'
+          python3 scripts/release.py checksums --output dist
+          python3 scripts/release.py verify --output dist
+          (cd dist && sha256sum --check SHA256SUMS)
+        working-directory: .
+      - uses: actions/upload-artifact@v6
+        with:
+          name: rayloc-release-validation
+          path: dist/
+          if-no-files-found: error
+
+  source-package:
+    runs-on: ubuntu-24.04
+    env:
+      RUSTUP_TOOLCHAIN: "1.85.0"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      - run: cargo package --locked --list
+      - run: cargo package --locked
+      - run: cargo publish --dry-run --locked
+      - name: Install and smoke source archive
+        run: |
+          mkdir source
+          tar -xzf target/package/rayloc-*.crate -C source
+          cargo test --locked --all --manifest-path source/rayloc-*/Cargo.toml
+          cargo install --locked --bins --path source/rayloc-* --root "$RUNNER_TEMP/locked"
+          python3 scripts/artifact_smoke.py "$RUNNER_TEMP/locked/bin/rayloc"
+          cargo install --bins --path source/rayloc-* --root "$RUNNER_TEMP/unlocked"
+          python3 scripts/artifact_smoke.py "$RUNNER_TEMP/unlocked/bin/rayloc"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: rayloc-source-validation
+          path: target/package/*.crate
+          if-no-files-found: error

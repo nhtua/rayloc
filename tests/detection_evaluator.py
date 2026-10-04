@@ -71,6 +71,19 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(disabled['confusion'], {'FP': 1})
         self.assertEqual(disabled['suppressions']['inline'], 0)
 
+class RegressionGateTests(unittest.TestCase):
+    def test_gate_rejects_regressed_counts_supported_misses_and_suppression_drift(self):
+        good = {'confusion': {'TP': 49, 'FP': 1, 'FN': 1, 'TN': 19},
+                'supported_positive_misses': 0, 'suppressions': {'inline': 2}}
+        expected = {'held-out': good}
+        self.assertTrue(hasattr(baseline, 'check_regression'), 'accuracy regression gate missing')
+        baseline.check_regression(expected, expected)
+        for wrong in [dict(good, supported_positive_misses=1),
+                      dict(good, confusion={'TP': 48, 'FP': 1, 'FN': 2, 'TN': 19}),
+                      dict(good, suppressions={'inline': 0})]:
+            with self.assertRaises(ValueError):
+                baseline.check_regression({'held-out': wrong}, expected)
+
 
 if __name__ == '__main__':
     unittest.main()

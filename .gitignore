@@ -9,3 +9,8 @@
 # Editor temporary files
 *.swp
 *.swo
+
+# Generated validation outputs
+/dist/
+__pycache__/
+*.pyc

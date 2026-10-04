@@ -550,3 +550,28 @@ fn symlink_hash_failures_and_nonregular_secondary_policy_return_incomplete() {
         );
     }
 }
+#[test]
+fn index_changes_cancelled_in_workspace_fail_closed_without_value_leak() {
+    let dir = repo();
+    let root = dir.path();
+    fs::write(root.join("entry"), format!("{SECRET}\n")).unwrap();
+    git(root, &["add", "entry"]);
+    git(root, &["commit", "-qm", "base"]);
+    fs::write(root.join("entry"), "safe staged\n").unwrap();
+    git(root, &["add", "entry"]);
+    fs::write(root.join("entry"), format!("{SECRET}\n")).unwrap();
+    let raw = git(root, &["diff", "--raw", "-z", "--no-abbrev", "HEAD", "--"]);
+    assert!(raw.stdout.is_empty());
+    assert!(
+        git(root, &["diff", "--patch", "HEAD", "--"])
+            .stdout
+            .is_empty()
+    );
+    check(scan(root, &[]), 2, 0);
+    // The incomplete scope must not be described as clean when another path changes.
+    fs::write(root.join("added"), format!("{SECRET}\n")).unwrap();
+    git(root, &["add", "added"]);
+    let out = scan(root, &[]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(!String::from_utf8_lossy(&out.stdout).contains(SECRET));
+}

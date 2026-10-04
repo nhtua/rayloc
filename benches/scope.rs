@@ -33,7 +33,12 @@ fn main() {
             let content = if dense {
                 b"ghp_abcdefghijklmnop\n".repeat(100)
             } else {
-                b"ordinary code line\n".repeat(bytes.div_ceil(19))
+                let mut content = b"ordinary code line\n".repeat(bytes.div_ceil(19));
+                content.extend_from_slice(&[
+                    65, 75, 73, 65, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70,
+                    10,
+                ]);
+                content
             };
             let policy_bytes = if complex {
                 let policy = (0..256)
@@ -71,8 +76,12 @@ fn main() {
                         if dense {
                             if count * 100 > 10000 { 2 } else { 1 }
                         } else {
-                            0
+                            1
                         }
+                    );
+                    assert_eq!(
+                        out.stats.findings_detected,
+                        (count * if dense { 100 } else { 1 }) as u64
                     );
                     assert_eq!(out.stats.files_completed, count as u64 + u64::from(complex));
                     assert_eq!(
@@ -84,9 +93,11 @@ fn main() {
                 times.sort_by(f64::total_cmp);
                 let seconds = times[2];
                 println!(
-                    "scope: files={count} bytes_each={} workers={workers} median_ms={:.3} MB/s={:.2}",
+                    "scope: files={count} bytes_each={} workers={workers} samples=5 median_ms={:.3} p95_ms={:.3} p99_ms={:.3} MB/s={:.2}",
                     content.len(),
                     seconds * 1000.0,
+                    times[4] * 1000.0,
+                    times[4] * 1000.0,
                     content.len() as f64 * count as f64 / seconds / 1e6
                 );
             }

@@ -65,17 +65,33 @@ def evaluate(binary, corpus, inline=True):
                 by_context=dict(contexts), suppressions=dict(suppressions), sha256=hashlib.sha256(corpus.read_bytes()).hexdigest())
 
 
+def check_regression(actual, expected):
+    """Require existing measured confusion and suppression counts to stay stable."""
+    for partition, reference in expected.items():
+        if not isinstance(reference, dict) or 'confusion' not in reference:
+            continue
+        candidate = actual[partition]
+        for key in ('confusion', 'supported_positive_misses', 'suppressions'):
+            if candidate[key] != reference[key]:
+                raise ValueError('detection baseline drift; review labeled evidence before updating')
+    if actual['held-out']['supported_positive_misses']:
+        raise ValueError('held-out supported positive missed')
+
+
 def main():
     root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, default=root / 'target/release/rayloc')
     parser.add_argument('--output', type=Path, default=root / 'target/detection-baseline.json')
+    parser.add_argument('--check', action='store_true', help='require measured baseline counts and suppression stability')
     args = parser.parse_args()
     result = {'unit': 'record', 'data': 'synthetic; no credential activity assessed', 'thresholds': 'provisional, unchanged'}
     for partition in ['calibration', 'held-out']:
         corpus = root / 'tests/corpus/detection' / (partition + '.jsonl')
         result[partition] = evaluate(args.binary.resolve(), corpus)
         result[partition + '-no-inline'] = evaluate(args.binary.resolve(), corpus, inline=False)
+    if args.check:
+        check_regression(result, json.loads((root / 'docs/research/detection-baseline.json').read_text()))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + '\n')
     print(json.dumps(result, indent=2, sort_keys=True))
