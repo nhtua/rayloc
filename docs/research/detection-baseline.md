@@ -23,6 +23,11 @@ normal inline policy and `--no-inline-ignores`. The committed
 context, byte-length, suppression and clean-byte metrics. The corpus and label
 semantics are in [the corpus README](../../tests/corpus/detection/README.md).
 
+The stored corpus uses short string chunks to avoid committing complete synthetic
+credential shapes. The evaluator reconstructs the original bytes; labels,
+predictions, and all accuracy/suppression metrics are unchanged. Corpus hashes
+identify the encoded JSONL files, including this storage change.
+
 | Partition / policy | TP | FP | FN | TN | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Calibration, normal | 48 | 1 | 2 | 19 | 97.9592% | 96% |

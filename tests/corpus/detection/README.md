@@ -26,6 +26,13 @@ secret field names illustrate a false positive. No token is a live credential an
 no activity was verified. Labels and predictions are at record level, not
 per-occurrence span matching.
 
+Committed records store `text_parts` and `value_parts` as strings of at most
+eight characters. The evaluator joins them only at runtime, writes the original
+source bytes to isolated temporary files, and still checks the complete expected
+value for output leakage. This keeps complete credential-shaped synthetic
+fixtures out of Git history without weakening detection or changing labels.
+Corpus SHA-256 values identify the stored chunked JSONL representation.
+
 Run `cargo build --release` then
 `PYTHONDONTWRITEBYTECODE=1 python3 scripts/detection_baseline.py`.
 The evaluator runs the real binary in isolated temporary directories without
