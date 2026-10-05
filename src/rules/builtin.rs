@@ -65,6 +65,10 @@ pub enum RuleId {
     GoogleApiKey,
     AlibabaKey,
     BaiduKey,
+    WandbKey,
+    FirecrawlKey,
+    LangsmithKey,
+    VoyageKey,
     Custom(u16, Severity),
 }
 
@@ -227,6 +231,34 @@ impl RuleId {
                 Confidence::Medium,
                 "https://cloud.baidu.com/doc/QIANFAN/s/Yl4i8xj2y",
             ),
+            Self::WandbKey => (
+                "wandb-key",
+                "Weights & Biases API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.wandb.ai/models/articles/how-do-i-find-my-api-key",
+            ),
+            Self::FirecrawlKey => (
+                "firecrawl-key",
+                "Firecrawl API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.firecrawl.dev/introduction",
+            ),
+            Self::LangsmithKey => (
+                "langsmith-key",
+                "LangSmith API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.langchain.com/langsmith/create-account-api-key",
+            ),
+            Self::VoyageKey => (
+                "voyage-key",
+                "Voyage AI API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.voyageai.com/docs/faq",
+            ),
         };
         RuleMetadata {
             id,
@@ -266,6 +298,10 @@ const XAI_PREFIXES: &[&[u8]] = &[b"xai-"];
 const GOOGLE_API_PREFIXES: &[&[u8]] = &[b"AIza", b"AQ."];
 const ALIBABA_PREFIXES: &[&[u8]] = &[b"sk-ws-"];
 const BAIDU_PREFIXES: &[&[u8]] = &[b"bce-v3/ALTAK-"];
+const WANDB_PREFIXES: &[&[u8]] = &[b"wandb_"];
+const FIRECRAWL_PREFIXES: &[&[u8]] = &[b"fc-"];
+const LANGSMITH_PREFIXES: &[&[u8]] = &[b"lsv2_pt_", b"lsv2_sk_"];
+const VOYAGE_PREFIXES: &[&[u8]] = &[b"al-", b"pa-"];
 
 fn is_word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
@@ -368,7 +404,8 @@ fn llm_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, Scan
     let Some(prefix) = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix)) else {
         return Ok(None);
     };
-    let body_length = bytes[prefix.len()..]
+    let body = &bytes[prefix.len()..];
+    let body_length = body
         .iter()
         .take_while(|&&byte| is_word(byte) || byte == b'-' || byte == b'.')
         .take(MAX_CANDIDATE_BYTES + 1)
@@ -405,12 +442,16 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
             return Ok(Some((RuleId::SlackWebhook, end)));
         }
     }
-    // LLM provider API keys (more specific prefixes first to avoid false matches)
+    // LLM provider and AI infrastructure API keys (more specific prefixes first)
     for (rule, prefixes) in [
         (RuleId::OpenrouterKey, OPENROUTER_PREFIXES),
         (RuleId::AnthropicKey, ANTHROPIC_PREFIXES),
         (RuleId::AlibabaKey, ALIBABA_PREFIXES),
         (RuleId::BaiduKey, BAIDU_PREFIXES),
+        (RuleId::LangsmithKey, LANGSMITH_PREFIXES),
+        (RuleId::WandbKey, WANDB_PREFIXES),
+        (RuleId::FirecrawlKey, FIRECRAWL_PREFIXES),
+        (RuleId::VoyageKey, VOYAGE_PREFIXES),
         (RuleId::OpenaiKey, OPENAI_PREFIXES),
         (RuleId::GroqKey, GROQ_PREFIXES),
         (RuleId::PerplexityKey, PERPLEXITY_PREFIXES),
@@ -450,7 +491,7 @@ pub(crate) fn detect_line_with_disabled(
         if offset < covered_until {
             continue;
         }
-        if !matches!(byte, b'A' | b'b' | b'g' | b's' | b'r' | b'h' | b'p' | b'x' | b'-') {
+        if !matches!(byte, b'A' | b'b' | b'g' | b's' | b'r' | b'h' | b'p' | b'x' | b'w' | b'l' | b'f' | b'a' | b'-' ) {
             continue;
         }
         if offset > 0 && is_word(bytes[offset - 1]) && byte != b'-' {
