@@ -12,6 +12,13 @@ fn allocation_admission_accounts_for_both_capacities_and_overflow() {
     assert!(append(&mut excess, b"a", 0, 1).is_err());
 }
 #[test]
+fn scan_diff_wrapper_delegates_to_emitter_variant() {
+    use std::ffi::OsStr;
+    let dir = TempDir::new();
+    let outcome = scan_diff(dir.path(), OsStr::new("HEAD"), None, false);
+    assert_eq!(outcome.exit_code(), 2);
+}
+#[test]
 fn opened_identity_and_policy_limits_reject_unsafe_inputs() {
     use std::os::unix::fs::symlink;
     let dir = TempDir::new();

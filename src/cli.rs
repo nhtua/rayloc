@@ -161,24 +161,27 @@ fn scan(
         }
         path = Some(arg);
     }
+    let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
+        crate::report::emitter::TerminalEmitter::new(std::io::stdout()),
+    ));
     if staged || reference.is_some() {
         let outcome = if let Some(reference) = reference {
-            crate::scanner::worktree::scan_diff(
+            crate::scanner::worktree::scan_diff_with_emitter(
                 Path::new("."),
                 &reference,
                 explicit.as_deref().map(Path::new),
                 no_inline,
+                Some(emitter.clone()),
             )
         } else {
-            crate::scanner::staged::scan_staged(
+            crate::scanner::staged::scan_staged_with_emitter(
                 Path::new("."),
                 explicit.as_deref().map(Path::new),
                 no_inline,
+                Some(emitter.clone()),
             )
         };
-        if crate::report::terminal::render(&outcome, output).is_err() {
-            return scan_error(errors, "cannot write command output");
-        }
+        emitter.finish_scan(&outcome);
         return outcome.exit_code();
     }
     if let Some(target) = &path {
@@ -229,18 +232,28 @@ fn scan(
         outcome
     } else if metadata.is_file() {
         let label = absolute.strip_prefix(&root.root).unwrap_or(&absolute);
-        crate::scanner::engine::scan_file_with_registry(&absolute, label, 1, &registry)
+        crate::scanner::engine::scan_file_with_registry_and_emitter(
+            &absolute,
+            label,
+            1,
+            &registry,
+            Some(emitter.clone()),
+        )
     } else {
         let selected = if pattern.is_some() {
             root.root.as_path()
         } else {
             absolute.as_path()
         };
-        crate::scanner::scope::scan_directory(&root, selected, pattern, &registry)
+        crate::scanner::scope::scan_directory_with_emitter(
+            &root,
+            selected,
+            pattern,
+            &registry,
+            emitter.clone(),
+        )
     };
-    if crate::report::terminal::render(&outcome, output).is_err() {
-        return scan_error(errors, "cannot write command output");
-    }
+    emitter.finish_scan(&outcome);
     outcome.exit_code()
 }
 fn accept(

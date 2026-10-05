@@ -56,7 +56,7 @@ impl fmt::Display for ScanError {
 impl std::error::Error for ScanError {}
 
 /// Half-open, 1-based byte columns; paths resolve through `ScanOutcome::sources`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Finding {
     pub source_id: u32,
     pub line: u64,
@@ -94,7 +94,7 @@ impl ScanOutcome {
     pub fn exit_code(&self) -> u8 {
         if !self.errors.is_empty() {
             2
-        } else if !self.findings.is_empty() {
+        } else if self.stats.findings_detected > 0 {
             1
         } else {
             0

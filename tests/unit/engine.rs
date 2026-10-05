@@ -16,7 +16,7 @@ fn scan_record(
 ) -> Result<(), ScanError> {
     let collector = Mutex::new(Collector::new(limits.findings));
     scan_record_into(
-        line, source_id, b"", outcome, limits, registry, histogram, &collector,
+        line, source_id, b"", outcome, limits, registry, histogram, &collector, None,
     )
 }
 fn read_records(
@@ -37,6 +37,7 @@ fn read_records(
         &mut Vec::new(),
         &mut Histogram::new(),
         &collector,
+        None,
     )
 }
 
@@ -484,15 +485,18 @@ fn reusable_file_buffers_and_worker_failures_preserve_counts() {
         );
     }
     let mut collector = Collector::new(0);
-    collector.offer(Finding {
-        source_id: 1,
-        line: 1,
-        start_column: 1,
-        end_column: 2,
-        rule: crate::rules::builtin::RuleId::GithubToken,
-        value: RedactedString::new(b"x"),
-        id: FindingId::new(b"", b"x"),
-    });
+    collector.offer(
+        Finding {
+            source_id: 1,
+            line: 1,
+            start_column: 1,
+            end_column: 2,
+            rule: crate::rules::builtin::RuleId::GithubToken,
+            value: RedactedString::new(b"x"),
+            id: FindingId::new(b"", b"x"),
+        },
+        b"test/path",
+    );
     assert!(collector.entries.is_empty());
 }
 #[cfg(unix)]

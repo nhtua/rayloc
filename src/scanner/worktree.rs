@@ -290,6 +290,16 @@ pub fn scan_diff(
     explicit: Option<&Path>,
     no_inline: bool,
 ) -> ScanOutcome {
+    scan_diff_with_emitter(cwd, reference, explicit, no_inline, None)
+}
+
+pub fn scan_diff_with_emitter(
+    cwd: &Path,
+    reference: &OsStr,
+    explicit: Option<&Path>,
+    no_inline: bool,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
+) -> ScanOutcome {
     let started = Instant::now();
     let mut outcome = ScanOutcome::default();
     let collector = Mutex::new(Collector::new(MAX_FINDINGS));
@@ -300,6 +310,7 @@ pub fn scan_diff(
         no_inline,
         &mut outcome,
         &collector,
+        emitter.as_ref(),
     ) {
         outcome.fail(error);
     }
@@ -317,6 +328,7 @@ fn acquire(
     no_inline: bool,
     outcome: &mut ScanOutcome,
     collector: &Mutex<Collector>,
+    emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
     // Option-like refs are invalid even if a specially named revision exists.
     if reference.as_bytes().starts_with(b"-") || reference.is_empty() {
@@ -384,6 +396,7 @@ fn acquire(
         &exclusions,
         outcome,
         collector,
+        emitter,
         true,
     )?;
     patch.finish_success()?;

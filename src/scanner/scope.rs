@@ -12,10 +12,11 @@ use crate::{
     rules::Registry,
 };
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
+use rayon::prelude::*;
 use std::{
     ffi::{OsStr, OsString},
     fs,
+    io::{IsTerminal, Write},
     path::Path,
     sync::Mutex,
     time::Instant,
@@ -115,15 +116,17 @@ struct Runner<'a> {
     root: &'a ScopeRoot,
     options: ScopeOptions,
     limits: Limits,
-    pool: Option<ThreadPool>,
     workers: Vec<Worker>,
     collector: Mutex<Collector>,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
     outcome: ScanOutcome,
     budget: Budget,
     frames: Vec<Frame>,
     batch: Vec<Work>,
     batch_bytes: usize,
     matched: u32,
+    scanned: u32,
+    last_progress: Option<std::time::Instant>,
     total_policy: PolicyUsage,
     administration: Vec<Box<Path>>,
     repositories: usize,
@@ -137,6 +140,24 @@ pub fn scan_directory(
     registry: &Registry,
 ) -> ScanOutcome {
     scan_directory_with_options(root, selected, pattern, registry, ScopeOptions::default())
+}
+
+pub fn scan_directory_with_emitter(
+    root: &ScopeRoot,
+    selected: &Path,
+    pattern: Option<&str>,
+    registry: &Registry,
+    emitter: crate::report::emitter::SharedEmitter,
+) -> ScanOutcome {
+    scan_scope_with_emitter(
+        root,
+        selected,
+        pattern,
+        registry,
+        ScopeOptions::default(),
+        LIMITS,
+        Some(emitter),
+    )
 }
 pub fn scan_directory_with_options(
     root: &ScopeRoot,
@@ -155,6 +176,18 @@ fn scan_scope(
     options: ScopeOptions,
     limits: Limits,
 ) -> ScanOutcome {
+    scan_scope_with_emitter(root, selected, pattern, registry, options, limits, None)
+}
+
+fn scan_scope_with_emitter(
+    root: &ScopeRoot,
+    selected: &Path,
+    pattern: Option<&str>,
+    registry: &Registry,
+    options: ScopeOptions,
+    limits: Limits,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
+) -> ScanOutcome {
     let started = Instant::now();
     let result = (|| {
         if options.workers == 0 || options.workers > 8 {
@@ -168,6 +201,7 @@ fn scan_scope(
             limits.policy,
         )
         .map_err(policy_error)?;
+        let collector = Mutex::new(Collector::new(MAX_FINDINGS));
         let mut runner = Runner {
             registry,
             total_policy: exclusions.usage,
@@ -175,15 +209,17 @@ fn scan_scope(
             root,
             options,
             limits,
-            pool: None,
             workers: vec![Worker::new()],
-            collector: Mutex::new(Collector::new(MAX_FINDINGS)),
+            collector,
+            emitter,
             outcome: ScanOutcome::default(),
             budget: Budget::default(),
             frames: Vec::new(),
             batch: Vec::with_capacity(BATCH),
             batch_bytes: 0,
             matched: 0,
+            scanned: 0,
+            last_progress: None,
             administration: Vec::new(),
             repositories: 0,
             metadata_only: false,
@@ -197,6 +233,11 @@ fn scan_scope(
             runner.outcome.fail(error);
         }
         runner.flush();
+        // Print final newline after progress output
+        let mut stderr = std::io::stderr();
+        if runner.last_progress.is_some() && stderr.is_terminal() {
+            writeln!(stderr, "\r").ok();
+        }
         if pattern.is_some() && runner.matched == 0 && runner.outcome.errors.is_empty() {
             runner.outcome.fail(ScanError::NoGlobMatches);
         }
@@ -284,17 +325,10 @@ fn compile_glob(pattern: &str) -> Result<GlobSet, ScanError> {
 }
 impl Runner<'_> {
     fn pool(&mut self, count: usize) -> Result<(), ScanError> {
-        if self.pool.is_none()
+        if self.workers.len() == 1
             && self.options.workers > 1
             && count >= self.options.parallel_threshold
         {
-            self.pool = Some(
-                ThreadPoolBuilder::new()
-                    .num_threads(self.options.workers)
-                    .stack_size(2 * 1024 * 1024)
-                    .build()
-                    .map_err(|_| ScanError::Pool)?,
-            );
             self.workers
                 .extend((1..self.options.workers).map(|_| Worker::new()));
         }
@@ -425,11 +459,7 @@ impl Runner<'_> {
                     Err(_) => Kind::Error,
                 };
             };
-            if let Some(pool) = &self.pool {
-                pool.install(|| batch.par_iter_mut().for_each(classify));
-            } else {
-                batch.iter_mut().for_each(classify);
-            }
+            batch.par_iter_mut().for_each(classify);
         }
         // '/' belongs to directory sorting keys; component order would misorder a.txt vs a/x.
         entries.sort_unstable_by(|a, b| {
@@ -498,6 +528,7 @@ impl Runner<'_> {
         let collector = &self.collector;
         let registry = self.registry;
         let root = self.root;
+        let emitter = self.emitter.as_ref();
         let process = |(worker, work): (&mut Worker, &[Work])| {
             let mut outcome = ScanOutcome::default();
             for item in work {
@@ -509,24 +540,42 @@ impl Runner<'_> {
                         item.source_id,
                         registry,
                         collector,
+                        emitter,
                     ),
                 );
             }
             outcome
         };
-        let results: Vec<_> = if let Some(pool) = &self.pool {
-            pool.install(|| {
+        let results: Vec<_> =
+            if self.options.workers > 1 && self.batch.len() >= self.options.parallel_threshold {
                 self.workers
                     .par_iter_mut()
                     .zip(self.batch.par_chunks(lane_length))
                     .map(process)
                     .collect()
-            })
-        } else {
-            vec![process((&mut self.workers[0], &self.batch))]
-        };
+            } else {
+                vec![process((&mut self.workers[0], &self.batch))]
+            };
         for outcome in results {
             engine::merge(&mut self.outcome, outcome);
+        }
+        let batch_size = self.batch.len() as u32;
+        self.scanned = self.scanned.saturating_add(batch_size);
+        // Throttle progress output: only print if stderr is a terminal and
+        // at least 100ms has elapsed since the last progress message.
+        let now = std::time::Instant::now();
+        let should_print = self.last_progress.is_none()
+            || now.duration_since(self.last_progress.unwrap())
+                >= std::time::Duration::from_millis(100);
+        if should_print {
+            // Use \r to overwrite previous progress line (only when terminal)
+            let mut stderr = std::io::stderr();
+            let is_terminal = stderr.is_terminal();
+            if is_terminal {
+                write!(stderr, "\r").ok();
+            }
+            eprint!("rayloc: scanned {}/{} files", self.scanned, self.matched);
+            self.last_progress = Some(now);
         }
         self.budget.paths -= self.batch_bytes;
         self.batch_bytes = 0;
