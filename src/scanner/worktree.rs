@@ -290,9 +290,22 @@ pub fn scan_diff(
     explicit: Option<&Path>,
     no_inline: bool,
 ) -> ScanOutcome {
+    scan_diff_with_emitter(cwd, reference, explicit, no_inline, None)
+}
+
+pub fn scan_diff_with_emitter(
+    cwd: &Path,
+    reference: &OsStr,
+    explicit: Option<&Path>,
+    no_inline: bool,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
+) -> ScanOutcome {
     let started = Instant::now();
     let mut outcome = ScanOutcome::default();
-    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+    let collector = match emitter {
+        Some(e) => Mutex::new(Collector::with_emitter(MAX_FINDINGS, e)),
+        None => Mutex::new(Collector::new(MAX_FINDINGS)),
+    };
     if let Err(error) = acquire(
         cwd,
         reference,

@@ -94,7 +94,7 @@ impl ScanOutcome {
     pub fn exit_code(&self) -> u8 {
         if !self.errors.is_empty() {
             2
-        } else if !self.findings.is_empty() {
+        } else if self.stats.findings_detected > 0 {
             1
         } else {
             0

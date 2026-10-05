@@ -29,6 +29,7 @@ fn outcomes_obey_exit_precedence_and_deduplicate_errors() {
     let mut outcome = ScanOutcome::default();
     assert_eq!(outcome.exit_code(), 0);
     let sentinel = b"synthetic-private-sentinel";
+    outcome.stats.findings_detected = 1;
     outcome.findings.push(Finding {
         source_id: 7,
         line: 42,

@@ -184,9 +184,21 @@ fn diff(cwd: &Path, base: &str, index: &str, patch: bool) -> Result<Process, Sca
 }
 /// Staged mode never reads source or discovered policy from working-tree files.
 pub fn scan_staged(cwd: &Path, explicit: Option<&Path>, no_inline: bool) -> ScanOutcome {
+    scan_staged_with_emitter(cwd, explicit, no_inline, None)
+}
+
+pub fn scan_staged_with_emitter(
+    cwd: &Path,
+    explicit: Option<&Path>,
+    no_inline: bool,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
+) -> ScanOutcome {
     let started = Instant::now();
     let mut outcome = ScanOutcome::default();
-    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+    let collector = match emitter {
+        Some(e) => Mutex::new(Collector::with_emitter(MAX_FINDINGS, e)),
+        None => Mutex::new(Collector::new(MAX_FINDINGS)),
+    };
     if let Err(error) = acquire(cwd, explicit, no_inline, &mut outcome, &collector) {
         outcome.fail(error);
     }
@@ -329,7 +341,11 @@ pub(super) fn consume_resolved(
             engine::add(&mut outcome.stats.files_attempted, 1)?;
         }
         let label = binding.path();
-        let detected = outcome.stats.findings_detected;
+        // Add label before scanning so findings can reference it
+        collector
+            .lock()
+            .expect("collector lock is not poisoned")
+            .label(source_id, label);
         let mut parser =
             Parser::new(binding, empty_blob.as_bytes()).map_err(|_| ScanError::GitMetadata)?;
         let mut first = true;
@@ -377,12 +393,6 @@ pub(super) fn consume_resolved(
             lookahead = git::record(patch, b'\n', &mut line)?;
         }
         parser.finish().map_err(|_| ScanError::GitMetadata)?;
-        if outcome.stats.findings_detected != detected {
-            collector
-                .lock()
-                .expect("collector lock is not poisoned")
-                .label(source_id, label);
-        }
         if !excluded {
             engine::add(&mut outcome.stats.files_completed, 1)?;
         }

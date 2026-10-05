@@ -129,6 +129,11 @@ impl Worker {
     ) -> ScanOutcome {
         let mut outcome = ScanOutcome::default();
         outcome.stats.files_attempted = 1;
+        // Add label before scanning so findings can reference it
+        collector
+            .lock()
+            .expect("collector lock is not poisoned")
+            .label(source_id, label.as_os_str().as_encoded_bytes());
         match open_regular(path) {
             Err(error) => outcome.fail(error),
             Ok(file) => {
@@ -155,12 +160,6 @@ impl Worker {
                     Ok(()) => {}
                 }
             }
-        }
-        if outcome.stats.findings_detected != 0 {
-            collector
-                .lock()
-                .expect("collector lock is not poisoned")
-                .label(source_id, label.as_os_str().as_encoded_bytes());
         }
         outcome
     }
@@ -202,8 +201,21 @@ pub fn scan_file_with_registry(
     source_id: u32,
     registry: &Registry,
 ) -> ScanOutcome {
+    scan_file_with_registry_and_emitter(path, label, source_id, registry, None)
+}
+
+pub fn scan_file_with_registry_and_emitter(
+    path: &Path,
+    label: &Path,
+    source_id: u32,
+    registry: &Registry,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
+) -> ScanOutcome {
     let started = Instant::now();
-    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+    let collector = match emitter {
+        Some(e) => Mutex::new(Collector::with_emitter(MAX_FINDINGS, e)),
+        None => Mutex::new(Collector::new(MAX_FINDINGS)),
+    };
     let mut outcome = Worker::new().file(path, label, source_id, registry, &collector);
     collector
         .into_inner()

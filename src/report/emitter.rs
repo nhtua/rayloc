@@ -10,6 +10,33 @@ use std::sync::{Arc, Mutex};
 
 use crate::scanner::{Finding, ScanOutcome};
 
+/// Thread-safe wrapper that makes a `&mut dyn Write` Send.
+pub struct ThreadSafeWriter<'a> {
+    inner: Mutex<&'a mut dyn Write>,
+}
+
+impl<'a> ThreadSafeWriter<'a> {
+    pub fn new(writer: &'a mut dyn Write) -> Self {
+        Self {
+            inner: Mutex::new(writer),
+        }
+    }
+}
+
+impl Write for ThreadSafeWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut writer = self.inner.lock().expect("writer lock not poisoned");
+        writer.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let mut writer = self.inner.lock().expect("writer lock not poisoned");
+        writer.flush()
+    }
+}
+
+unsafe impl Send for ThreadSafeWriter<'_> {}
+
 /// Trait for emitting findings in real-time.
 pub trait FindingEmitter {
     /// Called at the start of a scan.
@@ -23,14 +50,23 @@ pub trait FindingEmitter {
 }
 
 /// Thread-safe wrapper that delegates to the underlying emitter.
+/// Can be cloned and shared across threads.
 pub struct SharedEmitter {
-    inner: Mutex<Box<dyn FindingEmitter + Send>>,
+    inner: Arc<Mutex<Box<dyn FindingEmitter + Send>>>,
+}
+
+impl Clone for SharedEmitter {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
 }
 
 impl SharedEmitter {
     pub fn new(emitter: Box<dyn FindingEmitter + Send>) -> Self {
         Self {
-            inner: Mutex::new(emitter),
+            inner: Arc::new(Mutex::new(emitter)),
         }
     }
 
@@ -57,19 +93,19 @@ impl SharedEmitter {
 }
 
 /// Terminal output emitter that streams findings immediately.
-pub struct TerminalEmitter {
-    output: Arc<Mutex<dyn Write + Send>>,
+pub struct TerminalEmitter<W: Write + Send + 'static> {
+    output: Arc<Mutex<W>>,
 }
 
-impl TerminalEmitter {
-    pub fn new(output: impl Write + Send + 'static) -> Self {
+impl<W: Write + Send + 'static> TerminalEmitter<W> {
+    pub fn new(output: W) -> Self {
         Self {
             output: Arc::new(Mutex::new(output)),
         }
     }
 }
 
-impl FindingEmitter for TerminalEmitter {
+impl<W: Write + Send + 'static> FindingEmitter for TerminalEmitter<W> {
     fn begin_scan(&mut self) {
         // No header; summary is rendered at the end
     }
@@ -81,9 +117,9 @@ impl FindingEmitter for TerminalEmitter {
             let _ = writeln!(output, "Custom rule #{index}");
         }
         if let Some(path) = source_path {
-            let _ = write!(output, "{path}");
+            let _ = write!(output, "\n{path}");
         } else {
-            let _ = write!(output, "source #{}", finding.source_id);
+            let _ = write!(output, "\nsource #{}", finding.source_id);
         }
         let _ = writeln!(
             output,
@@ -141,12 +177,13 @@ impl FindingEmitter for TerminalEmitter {
         for error in &outcome.errors {
             let _ = writeln!(output, "Error: {error}");
         }
-        if !outcome.findings.is_empty() {
+        if outcome.stats.findings_detected > 0 {
             let _ = writeln!(output, "Remove exposed credentials from source code.");
             let _ = writeln!(
                 output,
                 "If a finding is a reviewed false positive, run: rayloc accept <ID>"
             );
         }
+        let _ = output.flush();
     }
 }

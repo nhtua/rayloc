@@ -138,6 +138,24 @@ pub fn scan_directory(
 ) -> ScanOutcome {
     scan_directory_with_options(root, selected, pattern, registry, ScopeOptions::default())
 }
+
+pub fn scan_directory_with_emitter(
+    root: &ScopeRoot,
+    selected: &Path,
+    pattern: Option<&str>,
+    registry: &Registry,
+    emitter: crate::report::emitter::SharedEmitter,
+) -> ScanOutcome {
+    scan_scope_with_emitter(
+        root,
+        selected,
+        pattern,
+        registry,
+        ScopeOptions::default(),
+        LIMITS,
+        Some(emitter),
+    )
+}
 pub fn scan_directory_with_options(
     root: &ScopeRoot,
     selected: &Path,
@@ -155,6 +173,18 @@ fn scan_scope(
     options: ScopeOptions,
     limits: Limits,
 ) -> ScanOutcome {
+    scan_scope_with_emitter(root, selected, pattern, registry, options, limits, None)
+}
+
+fn scan_scope_with_emitter(
+    root: &ScopeRoot,
+    selected: &Path,
+    pattern: Option<&str>,
+    registry: &Registry,
+    options: ScopeOptions,
+    limits: Limits,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
+) -> ScanOutcome {
     let started = Instant::now();
     let result = (|| {
         if options.workers == 0 || options.workers > 8 {
@@ -168,6 +198,10 @@ fn scan_scope(
             limits.policy,
         )
         .map_err(policy_error)?;
+        let collector = match emitter {
+            Some(e) => Mutex::new(Collector::with_emitter(MAX_FINDINGS, e)),
+            None => Mutex::new(Collector::new(MAX_FINDINGS)),
+        };
         let mut runner = Runner {
             registry,
             total_policy: exclusions.usage,
@@ -177,7 +211,7 @@ fn scan_scope(
             limits,
             pool: None,
             workers: vec![Worker::new()],
-            collector: Mutex::new(Collector::new(MAX_FINDINGS)),
+            collector,
             outcome: ScanOutcome::default(),
             budget: Budget::default(),
             frames: Vec::new(),
