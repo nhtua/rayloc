@@ -55,6 +55,25 @@ pub enum RuleId {
     JoseToken,
     ContextSecret,
     PasswordAssignment,
+    OpenaiKey,
+    OpenrouterKey,
+    AnthropicKey,
+    GroqKey,
+    PerplexityKey,
+    HuggingfaceKey,
+    XaiKey,
+    GoogleApiKey,
+    AlibabaKey,
+    BaiduKey,
+    WandbKey,
+    FirecrawlKey,
+    LangsmithKey,
+    VoyageKey,
+    CartesiaKey,
+    ReplicateKey,
+    VercelKey,
+    SupabaseKey,
+    CloudflareKey,
     Custom(u16, Severity),
 }
 
@@ -147,6 +166,139 @@ impl RuleId {
                 Confidence::Medium,
                 "https://www.rfc-editor.org/rfc/rfc7468.html",
             ),
+            Self::OpenaiKey => (
+                "openai-key",
+                "OpenAI API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://platform.openai.com/api-keys",
+            ),
+            Self::OpenrouterKey => (
+                "openrouter-key",
+                "OpenRouter API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://openrouter.ai/docs/api_reference/authentication",
+            ),
+            Self::AnthropicKey => (
+                "anthropic-key",
+                "Anthropic API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.anthropic.com/en/api/getting-started-with-the-api",
+            ),
+            Self::GroqKey => (
+                "groq-key",
+                "Groq API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://console.groq.com/docs/api-reference",
+            ),
+            Self::PerplexityKey => (
+                "perplexity-key",
+                "Perplexity API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.perplexity.ai/docs/getting-started",
+            ),
+            Self::HuggingfaceKey => (
+                "huggingface-key",
+                "Hugging Face API token",
+                Severity::High,
+                Confidence::Medium,
+                "https://huggingface.co/docs/hub/security-tokens",
+            ),
+            Self::XaiKey => (
+                "xai-key",
+                "xAI/Grok API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.x.ai/developers/quickstart",
+            ),
+            Self::GoogleApiKey => (
+                "google-api-key",
+                "Google API key (Gemini)",
+                Severity::High,
+                Confidence::Medium,
+                "https://ai.google.dev/gemini-api/docs/api-key",
+            ),
+            Self::AlibabaKey => (
+                "alibaba-key",
+                "Alibaba Cloud API key (Tongyi/Qwen)",
+                Severity::High,
+                Confidence::Medium,
+                "https://www.alibabacloud.com/help/en/model-studio/get-api-key",
+            ),
+            Self::BaiduKey => (
+                "baidu-key",
+                "Baidu API key (Ernie Bot)",
+                Severity::High,
+                Confidence::Medium,
+                "https://cloud.baidu.com/doc/QIANFAN/s/Yl4i8xj2y",
+            ),
+            Self::WandbKey => (
+                "wandb-key",
+                "Weights & Biases API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.wandb.ai/models/articles/how-do-i-find-my-api-key",
+            ),
+            Self::FirecrawlKey => (
+                "firecrawl-key",
+                "Firecrawl API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.firecrawl.dev/introduction",
+            ),
+            Self::LangsmithKey => (
+                "langsmith-key",
+                "LangSmith API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.langchain.com/langsmith/create-account-api-key",
+            ),
+            Self::VoyageKey => (
+                "voyage-key",
+                "Voyage AI API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.voyageai.com/docs/faq",
+            ),
+            Self::CartesiaKey => (
+                "cartesia-key",
+                "Cartesia AI API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.cartesia.ai/use-the-api/api-conventions",
+            ),
+            Self::ReplicateKey => (
+                "replicate-key",
+                "Replicate API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://replicate.com/docs/topics/security/api-tokens",
+            ),
+            Self::VercelKey => (
+                "vercel-key",
+                "Vercel API token",
+                Severity::High,
+                Confidence::Medium,
+                "https://vercel.com/docs/accounts/access-tokens",
+            ),
+            Self::SupabaseKey => (
+                "supabase-key",
+                "Supabase API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://supabase.com/docs/guides/getting-started/api-keys",
+            ),
+            Self::CloudflareKey => (
+                "cloudflare-key",
+                "Cloudflare API token",
+                Severity::High,
+                Confidence::Medium,
+                "https://developers.cloudflare.com/fundamentals/api/get-started/token-formats",
+            ),
         };
         RuleMetadata {
             id,
@@ -174,6 +326,27 @@ const PRIVATE_KEY_MARKERS: &[&[u8]] = &[
     b"-----BEGIN OPENSSH PRIVATE KEY-----",
     b"-----BEGIN ENCRYPTED PRIVATE KEY-----",
 ];
+
+// LLM provider API key prefixes
+const OPENAI_PREFIXES: &[&[u8]] = &[b"sk-"];
+const OPENROUTER_PREFIXES: &[&[u8]] = &[b"sk-or-v1-"];
+const ANTHROPIC_PREFIXES: &[&[u8]] = &[b"sk-ant-api03-"];
+const GROQ_PREFIXES: &[&[u8]] = &[b"gsk_"];
+const PERPLEXITY_PREFIXES: &[&[u8]] = &[b"pplx-"];
+const HUGGINGFACE_PREFIXES: &[&[u8]] = &[b"hf_"];
+const XAI_PREFIXES: &[&[u8]] = &[b"xai-"];
+const GOOGLE_API_PREFIXES: &[&[u8]] = &[b"AIza", b"AQ."];
+const ALIBABA_PREFIXES: &[&[u8]] = &[b"sk-ws-"];
+const BAIDU_PREFIXES: &[&[u8]] = &[b"bce-v3/ALTAK-"];
+const WANDB_PREFIXES: &[&[u8]] = &[b"wandb_"];
+const FIRECRAWL_PREFIXES: &[&[u8]] = &[b"fc-"];
+const LANGSMITH_PREFIXES: &[&[u8]] = &[b"lsv2_pt_", b"lsv2_sk_"];
+const VOYAGE_PREFIXES: &[&[u8]] = &[b"al-", b"pa-"];
+const CARTESIA_PREFIXES: &[&[u8]] = &[b"sk_car_"];
+const REPLICATE_PREFIXES: &[&[u8]] = &[b"r8_"];
+const VERCEL_PREFIXES: &[&[u8]] = &[b"vcp_", b"vci_", b"vca_", b"vcr_", b"vck_"];
+const SUPABASE_PREFIXES: &[&[u8]] = &[b"sb_publishable_", b"sb_secret_"];
+const CLOUDFLARE_PREFIXES: &[&[u8]] = &[b"cfk_", b"cfut_", b"cfat_"];
 
 fn is_word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
@@ -272,6 +445,24 @@ fn slack_match(bytes: &[u8]) -> Result<Option<usize>, ScanError> {
     Ok((bytes.get(end) != Some(&b'/')).then_some(end))
 }
 
+fn llm_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, ScanError> {
+    let Some(prefix) = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix)) else {
+        return Ok(None);
+    };
+    let body = &bytes[prefix.len()..];
+    let body_length = body
+        .iter()
+        .take_while(|&&byte| is_word(byte) || byte == b'-' || byte == b'.')
+        .take(MAX_CANDIDATE_BYTES + 1)
+        .count();
+    let length = prefix.len() + body_length;
+    if length > MAX_CANDIDATE_BYTES {
+        return Err(ScanError::CandidateLimit);
+    }
+    // Minimum length validation: most LLM keys are at least 30 chars total
+    Ok((body_length >= 20).then_some(length))
+}
+
 fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>, ScanError> {
     if let Some(end) = (!disabled.contains(&RuleId::AwsAccessKeyId))
         .then(|| aws_match(bytes))
@@ -294,6 +485,35 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
     if !disabled.contains(&RuleId::SlackWebhook) {
         if let Some(end) = slack_match(bytes)? {
             return Ok(Some((RuleId::SlackWebhook, end)));
+        }
+    }
+    // LLM provider and AI infrastructure API keys (more specific prefixes first)
+    for (rule, prefixes) in [
+        (RuleId::OpenrouterKey, OPENROUTER_PREFIXES),
+        (RuleId::AnthropicKey, ANTHROPIC_PREFIXES),
+        (RuleId::AlibabaKey, ALIBABA_PREFIXES),
+        (RuleId::BaiduKey, BAIDU_PREFIXES),
+        (RuleId::LangsmithKey, LANGSMITH_PREFIXES),
+        (RuleId::CartesiaKey, CARTESIA_PREFIXES),
+        (RuleId::WandbKey, WANDB_PREFIXES),
+        (RuleId::FirecrawlKey, FIRECRAWL_PREFIXES),
+        (RuleId::ReplicateKey, REPLICATE_PREFIXES),
+        (RuleId::VercelKey, VERCEL_PREFIXES),
+        (RuleId::SupabaseKey, SUPABASE_PREFIXES),
+        (RuleId::CloudflareKey, CLOUDFLARE_PREFIXES),
+        (RuleId::VoyageKey, VOYAGE_PREFIXES),
+        (RuleId::OpenaiKey, OPENAI_PREFIXES),
+        (RuleId::GroqKey, GROQ_PREFIXES),
+        (RuleId::PerplexityKey, PERPLEXITY_PREFIXES),
+        (RuleId::HuggingfaceKey, HUGGINGFACE_PREFIXES),
+        (RuleId::XaiKey, XAI_PREFIXES),
+        (RuleId::GoogleApiKey, GOOGLE_API_PREFIXES),
+    ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
+        if let Some(end) = llm_key_match(bytes, prefixes)? {
+            return Ok(Some((rule, end)));
         }
     }
     if disabled.contains(&RuleId::PrivateKeyMarker) {
@@ -321,7 +541,23 @@ pub(crate) fn detect_line_with_disabled(
         if offset < covered_until {
             continue;
         }
-        if !matches!(byte, b'A' | b'g' | b's' | b'r' | b'h' | b'-') {
+        if !matches!(
+            byte,
+            b'A' | b'b'
+                | b'g'
+                | b's'
+                | b'r'
+                | b'h'
+                | b'p'
+                | b'x'
+                | b'w'
+                | b'l'
+                | b'f'
+                | b'a'
+                | b'v'
+                | b'c'
+                | b'-'
+        ) {
             continue;
         }
         if offset > 0 && is_word(bytes[offset - 1]) && byte != b'-' {

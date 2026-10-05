@@ -42,6 +42,87 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     for marker in PRIVATE_KEY_MARKERS {
         fixtures.push((RuleId::PrivateKeyMarker, marker.to_vec()));
     }
+    // LLM provider API keys
+    fixtures.push((
+        RuleId::OpenaiKey,
+        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::OpenrouterKey,
+        b"sk-or-v1-SyntheticOpenRouterKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::AnthropicKey,
+        b"sk-ant-api03-SyntheticAnthropicKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GroqKey,
+        b"gsk_SyntheticGroqKey1234567890ABCDEFghijklmnop".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::PerplexityKey,
+        b"pplx-SyntheticPerplexityKey1234567890abcdef".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::HuggingfaceKey,
+        b"hf_SyntheticHuggingFaceKey1234567890abcdef".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::XaiKey,
+        b"xai-SyntheticXAIGrokKey1234567890ABCDEFghijklmnopqrstuvwxyz".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GoogleApiKey,
+        b"AIzaSyntheticGoogleApiKey1234567890abcdefg".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::AlibabaKey,
+        b"sk-ws-SyntheticAlibabaQwenKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::BaiduKey,
+        b"bce-v3/ALTAK-SyntheticBaiduErnieKey1234567890".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::WandbKey,
+        b"wandb_SyntheticWandbKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::FirecrawlKey,
+        b"fc-SyntheticFirecrawlKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::LangsmithKey,
+        b"lsv2_pt_SyntheticLangsmithPersonalKey12345".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::LangsmithKey,
+        b"lsv2_sk_SyntheticLangsmithServiceKey12345".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::VoyageKey,
+        b"al-SyntheticVoyageAtlasKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::CartesiaKey,
+        b"sk_car_SyntheticCartesiaKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::ReplicateKey,
+        b"r8_SyntheticReplicateKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::VercelKey,
+        b"vcp_SyntheticVercelPersonalAccessToken".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::SupabaseKey,
+        b"sb_secret_xxxxxxxxxxxxxxxxxxxxxx1234".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::CloudflareKey,
+        b"cfut_SyntheticCloudflareUserToken12345678".to_vec(),
+    ));
     for (rule, value) in fixtures {
         let input = [b"\0\xff value = \"".as_slice(), &value, b"\";\r"].concat();
         let start = 12;
@@ -85,6 +166,27 @@ fn provider_negatives_and_boundaries_are_not_findings() {
         "-----BEGIN RSA PUBLIC KEY-----",
         "-----BEGIN CERTIFICATE-----",
         "-----BEGIN UNKNOWN PRIVATE KEY-----",
+        "sk_short",
+        "sk-or-v1-short",
+        "sk-ant-api03-short",
+        "gsk_short",
+        "pplx-short",
+        "hf_short",
+        "xai-short",
+        "AIzashort",
+        "sk-ws-short",
+        "bce-v3/ALTAK-short",
+        "wandb_short",
+        "fc-short",
+        "lsv2_pt-short",
+        "lsv2_sk-short",
+        "al-short",
+        "pa-short",
+        "sk_car_short",
+        "r8_short",
+        "vcp_short",
+        "sb_secret_short",
+        "cfut_short",
     ] {
         assert!(
             matches(value.as_bytes()).is_empty(),

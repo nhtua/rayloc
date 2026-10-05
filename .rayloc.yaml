@@ -3,3 +3,13 @@ version: "1"
 # Generic fallback in bits/byte; provider rules do not inherit this gate.
 default_entropy_threshold: 4.5
 rules: []
+accepted:
+  - "tkfr9"
+  - "a0bhe"
+  - "hjtkr"
+  - "yd59p"
+  - "769jb"
+  - "bvjcs"
+  - "hjf7d"
+  - "wbn5x"
+  - "2rd9d"
