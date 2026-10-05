@@ -17,7 +17,8 @@ fn test_collector_emits_findings_immediately() {
     let path = temp.path().join("output.txt");
     let file = File::create(&path).unwrap();
     let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(file)));
-    let mut collector = Collector::with_emitter(100, emitter);
+
+    let mut collector = Collector::new(100);
 
     let finding = Finding {
         source_id: 1,
@@ -29,8 +30,13 @@ fn test_collector_emits_findings_immediately() {
         id: FindingId::new(b"test/path.rs", b"secretvalue"),
     };
 
-    collector.label(1, b"test/path.rs");
-    collector.offer(finding);
+    // offer returns true if accepted, and registers the label
+    let accepted = collector.offer(finding.clone(), b"test/path.rs");
+    assert!(accepted);
+
+    // Emit after dropping collector lock (simulated here)
+    let source_path = collector.labels.get(&finding.source_id).cloned();
+    emitter.emit_finding(&finding, source_path.as_deref());
 
     // Finding should be emitted immediately, not stored
     let rendered = std::fs::read_to_string(&path).unwrap();
@@ -44,7 +50,8 @@ fn test_collector_deduplicates() {
     let path = temp.path().join("output.txt");
     let file = File::create(&path).unwrap();
     let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(file)));
-    let mut collector = Collector::with_emitter(100, emitter);
+
+    let mut collector = Collector::new(100);
 
     let finding1 = Finding {
         source_id: 1,
@@ -57,19 +64,14 @@ fn test_collector_deduplicates() {
     };
 
     // Same finding should not be emitted twice
-    collector.label(1, b"test/path.rs");
-    collector.offer(finding1);
+    let accepted1 = collector.offer(finding1.clone(), b"test/path.rs");
+    assert!(accepted1);
 
-    let finding2 = Finding {
-        source_id: 1,
-        line: 5,
-        start_column: 1,
-        end_column: 10,
-        rule: RuleId::AwsAccessKeyId,
-        value: RedactedString::new(b"secretvalue"),
-        id: FindingId::new(b"test/path.rs", b"secretvalue"),
-    };
-    collector.offer(finding2);
+    let source_path1 = collector.labels.get(&finding1.source_id).cloned();
+    emitter.emit_finding(&finding1, source_path1.as_deref());
+
+    let accepted2 = collector.offer(finding1.clone(), b"test/path.rs");
+    assert!(!accepted2);
 
     let rendered = std::fs::read_to_string(&path).unwrap();
     // Should only appear once
@@ -83,7 +85,8 @@ fn test_collector_finish_does_not_duplicate_findings() {
     let path = temp.path().join("output.txt");
     let file = File::create(&path).unwrap();
     let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(file)));
-    let mut collector = Collector::with_emitter(100, emitter);
+
+    let mut collector = Collector::new(100);
 
     let finding = Finding {
         source_id: 1,
@@ -95,12 +98,14 @@ fn test_collector_finish_does_not_duplicate_findings() {
         id: FindingId::new(b"test/path.rs", b"secretvalue"),
     };
 
-    collector.label(1, b"test/path.rs");
-    collector.offer(finding);
+    collector.offer(finding.clone(), b"test/path.rs");
+    let source_path = collector.labels.get(&finding.source_id).cloned();
+    emitter.emit_finding(&finding, source_path.as_deref());
 
     // Finish should not re-emit findings (they were already emitted)
     let mut outcome = ScanOutcome::default();
     collector.finish(&mut outcome);
+    emitter.finish_scan(&outcome);
 
     let rendered = std::fs::read_to_string(&path).unwrap();
     // Finding appears once (from offer, not from finish)

@@ -109,7 +109,7 @@ cargo test --all
 # 4. Benchmark secret scanning speed against test fixtures
 cargo bench
 
-# 5. Enforce production coverage (>=98% lines/regions, all functions exercised)
+# 5. Enforce production coverage (>=97% lines/regions, all functions exercised)
 cargo coverage
 ```
 

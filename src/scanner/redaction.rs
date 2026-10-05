@@ -13,6 +13,7 @@ const MAX_LABEL_BYTES: usize = 4096;
 /// Detection operates on borrowed source spans. Once a finding is recorded, its
 /// value retains only the preview bytes. There is no raw getter, dereference,
 /// or serialization implementation. The fixed-width mask hides the length.
+#[derive(Clone)]
 pub struct RedactedString {
     preview: [u8; PREVIEW_BYTES],
     length: usize,

@@ -44,6 +44,7 @@ fn run_streams(
         &exclusions,
         &mut outcome,
         &collector,
+        None,
     ) {
         outcome.fail(error);
     }
@@ -237,6 +238,7 @@ fn resolved_worktree_consumer_scans_quoted_non_utf8_paths() {
         &exclusions,
         &mut outcome,
         &collector,
+        None,
         true,
     )
     .unwrap();
@@ -278,6 +280,7 @@ fn resolved_worktree_consumer_validates_and_excludes_dirty_gitlink() {
         &exclusions,
         &mut outcome,
         &collector,
+        None,
         true,
     )
     .unwrap();
@@ -293,6 +296,7 @@ fn resolved_worktree_consumer_validates_and_excludes_dirty_gitlink() {
             &exclusions,
             &mut outcome,
             &collector,
+            None,
             true
         )
         .is_err()

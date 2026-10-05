@@ -16,6 +16,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
 use std::{
     ffi::{OsStr, OsString},
     fs,
+    io::{IsTerminal, Write},
     path::Path,
     sync::Mutex,
     time::Instant,
@@ -118,6 +119,7 @@ struct Runner<'a> {
     pool: Option<ThreadPool>,
     workers: Vec<Worker>,
     collector: Mutex<Collector>,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
     outcome: ScanOutcome,
     budget: Budget,
     frames: Vec<Frame>,
@@ -125,6 +127,7 @@ struct Runner<'a> {
     batch_bytes: usize,
     matched: u32,
     scanned: u32,
+    last_progress: Option<std::time::Instant>,
     total_policy: PolicyUsage,
     administration: Vec<Box<Path>>,
     repositories: usize,
@@ -199,10 +202,7 @@ fn scan_scope_with_emitter(
             limits.policy,
         )
         .map_err(policy_error)?;
-        let collector = match emitter {
-            Some(e) => Mutex::new(Collector::with_emitter(MAX_FINDINGS, e)),
-            None => Mutex::new(Collector::new(MAX_FINDINGS)),
-        };
+        let collector = Mutex::new(Collector::new(MAX_FINDINGS));
         let mut runner = Runner {
             registry,
             total_policy: exclusions.usage,
@@ -213,6 +213,7 @@ fn scan_scope_with_emitter(
             pool: None,
             workers: vec![Worker::new()],
             collector,
+            emitter,
             outcome: ScanOutcome::default(),
             budget: Budget::default(),
             frames: Vec::new(),
@@ -220,6 +221,7 @@ fn scan_scope_with_emitter(
             batch_bytes: 0,
             matched: 0,
             scanned: 0,
+            last_progress: None,
             administration: Vec::new(),
             repositories: 0,
             metadata_only: false,
@@ -233,6 +235,11 @@ fn scan_scope_with_emitter(
             runner.outcome.fail(error);
         }
         runner.flush();
+        // Print final newline after progress output
+        let mut stderr = std::io::stderr();
+        if runner.last_progress.is_some() && stderr.is_terminal() {
+            writeln!(stderr, "\r").ok();
+        }
         if pattern.is_some() && runner.matched == 0 && runner.outcome.errors.is_empty() {
             runner.outcome.fail(ScanError::NoGlobMatches);
         }
@@ -534,6 +541,7 @@ impl Runner<'_> {
         let collector = &self.collector;
         let registry = self.registry;
         let root = self.root;
+        let emitter = self.emitter.as_ref();
         let process = |(worker, work): (&mut Worker, &[Work])| {
             let mut outcome = ScanOutcome::default();
             for item in work {
@@ -545,6 +553,7 @@ impl Runner<'_> {
                         item.source_id,
                         registry,
                         collector,
+                        emitter,
                     ),
                 );
             }
@@ -566,7 +575,22 @@ impl Runner<'_> {
         }
         let batch_size = self.batch.len() as u32;
         self.scanned = self.scanned.saturating_add(batch_size);
-        eprintln!("rayloc: scanned {}/{} files", self.scanned, self.matched);
+        // Throttle progress output: only print if stderr is a terminal and
+        // at least 100ms has elapsed since the last progress message.
+        let now = std::time::Instant::now();
+        let should_print = self.last_progress.is_none()
+            || now.duration_since(self.last_progress.unwrap())
+                >= std::time::Duration::from_millis(100);
+        if should_print {
+            // Use \r to overwrite previous progress line (only when terminal)
+            let mut stderr = std::io::stderr();
+            let is_terminal = stderr.is_terminal();
+            if is_terminal {
+                write!(stderr, "\r").ok();
+            }
+            eprint!("rayloc: scanned {}/{} files", self.scanned, self.matched);
+            self.last_progress = Some(now);
+        }
         self.budget.paths -= self.batch_bytes;
         self.batch_bytes = 0;
         self.batch.clear();

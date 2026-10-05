@@ -30,7 +30,6 @@ pub(super) struct Collector {
     entries: BTreeMap<FindingKey, Finding>,
     labels: BTreeMap<u32, Box<str>>,
     limit: usize,
-    emitter: Option<crate::report::emitter::SharedEmitter>,
 }
 
 impl Collector {
@@ -39,22 +38,10 @@ impl Collector {
             entries: BTreeMap::new(),
             labels: BTreeMap::new(),
             limit,
-            emitter: None,
         }
     }
-    #[allow(dead_code)]
-    pub(super) fn with_emitter(
-        limit: usize,
-        emitter: crate::report::emitter::SharedEmitter,
-    ) -> Self {
-        Self {
-            entries: BTreeMap::new(),
-            labels: BTreeMap::new(),
-            limit,
-            emitter: Some(emitter),
-        }
-    }
-    fn offer(&mut self, finding: Finding) {
+    /// Returns true if finding was accepted (not duplicate).
+    fn offer(&mut self, finding: Finding, path: &[u8]) -> bool {
         let key = (
             finding.source_id,
             finding.line,
@@ -64,41 +51,32 @@ impl Collector {
         );
         // Skip duplicates
         if self.entries.contains_key(&key) {
-            return;
+            return false;
         }
         if self.entries.len() == self.limit {
             let Some((&last, _)) = self.entries.last_key_value() else {
-                return;
+                return false;
             };
             if key >= last {
-                return;
+                return false;
             }
             self.entries.pop_last();
         }
-        // Emit immediately if emitter is configured
-        if let Some(ref emitter) = self.emitter {
-            let source_path = self
-                .labels
-                .get(&finding.source_id)
-                .map(|label| label.as_ref());
-            emitter.emit_finding(&finding, source_path);
+        // Register label lazily on first finding for this source
+        if let std::collections::btree_map::Entry::Vacant(e) = self.labels.entry(finding.source_id)
+        {
+            if let Some(label) = safe_label(path) {
+                e.insert(label);
+            }
         }
         self.entries.insert(key, finding);
-    }
-    /// Record a printable path for a source that produced findings.
-    pub(super) fn label(&mut self, source_id: u32, path: &[u8]) {
-        if let Some(label) = safe_label(path) {
-            self.labels.insert(source_id, label);
-        }
+        true
     }
     pub(super) fn finish(mut self, outcome: &mut ScanOutcome) {
         let retained: BTreeSet<u32> = self.entries.keys().map(|key| key.0).collect();
         self.labels.retain(|id, _| retained.contains(id));
         outcome.sources = self.labels;
-        // When emitter is used, findings were already emitted; don't duplicate
-        if self.emitter.is_none() {
-            outcome.findings = self.entries.into_values().collect();
-        }
+        outcome.findings = self.entries.into_values().collect();
         if outcome.stats.findings_detected > self.limit as u64 {
             outcome.fail(ScanError::FindingLimit);
         }
@@ -126,14 +104,10 @@ impl Worker {
         source_id: u32,
         registry: &Registry,
         collector: &Mutex<Collector>,
+        emitter: Option<&crate::report::emitter::SharedEmitter>,
     ) -> ScanOutcome {
         let mut outcome = ScanOutcome::default();
         outcome.stats.files_attempted = 1;
-        // Add label before scanning so findings can reference it
-        collector
-            .lock()
-            .expect("collector lock is not poisoned")
-            .label(source_id, label.as_os_str().as_encoded_bytes());
         match open_regular(path) {
             Err(error) => outcome.fail(error),
             Ok(file) => {
@@ -153,6 +127,7 @@ impl Worker {
                     &mut self.line,
                     &mut self.histogram,
                     collector,
+                    emitter,
                 );
                 match result {
                     Err(error) => outcome.fail(error),
@@ -212,11 +187,15 @@ pub fn scan_file_with_registry_and_emitter(
     emitter: Option<crate::report::emitter::SharedEmitter>,
 ) -> ScanOutcome {
     let started = Instant::now();
-    let collector = match emitter {
-        Some(e) => Mutex::new(Collector::with_emitter(MAX_FINDINGS, e)),
-        None => Mutex::new(Collector::new(MAX_FINDINGS)),
-    };
-    let mut outcome = Worker::new().file(path, label, source_id, registry, &collector);
+    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+    let mut outcome = Worker::new().file(
+        path,
+        label,
+        source_id,
+        registry,
+        &collector,
+        emitter.as_ref(),
+    );
     collector
         .into_inner()
         .expect("collector lock is not poisoned")
@@ -276,6 +255,7 @@ fn scan_record_into(
     registry: &Registry,
     histogram: &mut Histogram,
     collector: &Mutex<Collector>,
+    emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
     add(&mut outcome.stats.lines_scanned, 1)?;
     detect_record(
@@ -288,6 +268,7 @@ fn scan_record_into(
         registry,
         histogram,
         collector,
+        emitter,
     )
 }
 #[allow(clippy::too_many_arguments)]
@@ -301,6 +282,7 @@ pub(super) fn detect_record(
     registry: &Registry,
     histogram: &mut Histogram,
     collector: &Mutex<Collector>,
+    emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
     let mut suppressions = crate::rules::context::Suppressions::default();
     let mut accepted = 0;
@@ -318,18 +300,32 @@ pub(super) fn detect_record(
             if outcome.stats.findings_detected > limits.findings as u64 {
                 outcome.fail(ScanError::FindingLimit);
             }
-            collector
-                .lock()
-                .expect("collector lock is not poisoned")
-                .offer(Finding {
-                    source_id,
-                    line: line_number,
-                    start_column: span.start + 1,
-                    end_column: span.end + 1,
-                    rule,
-                    value: RedactedString::new(&line[span]),
-                    id,
-                });
+            let finding = Finding {
+                source_id,
+                line: line_number,
+                start_column: span.start + 1,
+                end_column: span.end + 1,
+                rule,
+                value: RedactedString::new(&line[span]),
+                id,
+            };
+            let accepted = {
+                let mut c = collector.lock().expect("collector lock is not poisoned");
+                c.offer(finding.clone(), path)
+            };
+            // Emit after dropping collector lock
+            if accepted {
+                if let Some(em) = emitter {
+                    // Resolve source path for emission
+                    let source_path = collector
+                        .lock()
+                        .expect("collector lock not poisoned")
+                        .labels
+                        .get(&finding.source_id)
+                        .cloned();
+                    em.emit_finding(&finding, source_path.as_deref());
+                }
+            }
         });
     suppressions.accepted = accepted;
     merge_suppressions(&mut outcome.stats.suppressions, &suppressions)?;
@@ -400,6 +396,7 @@ fn scan_with_policy(
         &mut Vec::with_capacity(limits.line_bytes.min(READ_BUFFER_BYTES)),
         &mut Histogram::new(),
         &collector,
+        None,
     );
     match result {
         Err(error) => outcome.fail(error),
@@ -424,6 +421,7 @@ fn read_records_into(
     line: &mut Vec<u8>,
     histogram: &mut Histogram,
     collector: &Mutex<Collector>,
+    emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
     line.clear();
     loop {
@@ -435,7 +433,7 @@ fn read_records_into(
         if buffer.is_empty() {
             if !line.is_empty() {
                 scan_record_into(
-                    line, source_id, path, outcome, limits, registry, histogram, collector,
+                    line, source_id, path, outcome, limits, registry, histogram, collector, emitter,
                 )?;
             }
             return Ok(());
@@ -459,7 +457,7 @@ fn read_records_into(
         reader.consume(consumed);
         if newline.is_some() {
             scan_record_into(
-                line, source_id, path, outcome, limits, registry, histogram, collector,
+                line, source_id, path, outcome, limits, registry, histogram, collector, emitter,
             )?;
             line.clear();
         }

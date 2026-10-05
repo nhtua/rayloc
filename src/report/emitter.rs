@@ -4,9 +4,13 @@
 //! discovered, rather than collecting them all and rendering at the end.
 //! `TerminalEmitter` is the thread-safe implementation that writes findings
 //! immediately to stdout and renders the summary at the end of the scan.
+//!
+//! For production use with multiple workers, use `channel_emitter()` which
+//! spawns a printer thread that consumes findings over a channel, ensuring
+//! workers never block on terminal I/O.
 
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 
 use crate::scanner::{Finding, ScanOutcome};
 
@@ -36,6 +40,41 @@ impl Write for ThreadSafeWriter<'_> {
 }
 
 unsafe impl Send for ThreadSafeWriter<'_> {}
+
+/// Message types for the findings channel.
+pub enum FindingMessage {
+    /// A finding to emit with its source path label.
+    Finding(Finding, Option<String>),
+    /// Signal to finish and render the summary.
+    Finish(ScanOutcome),
+}
+
+/// Create a channel-based emitter that spawns a printer thread.
+/// Returns a sender that workers use to send findings.
+///
+/// The printer thread consumes findings and emits them to the provided emitter,
+/// ensuring workers never block on terminal I/O.
+pub fn channel_emitter(
+    emitter: Box<dyn FindingEmitter + Send>,
+) -> (mpsc::Sender<FindingMessage>, std::thread::JoinHandle<()>) {
+    let (tx, rx) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let mut emitter = emitter;
+        emitter.begin_scan();
+        for msg in rx {
+            match msg {
+                FindingMessage::Finding(finding, source_path) => {
+                    emitter.emit_finding(&finding, source_path.as_deref());
+                }
+                FindingMessage::Finish(outcome) => {
+                    emitter.finish_scan(&outcome);
+                    break;
+                }
+            }
+        }
+    });
+    (tx, handle)
+}
 
 /// Trait for emitting findings in real-time.
 pub trait FindingEmitter {
@@ -93,36 +132,33 @@ impl SharedEmitter {
 }
 
 /// Terminal output emitter that streams findings immediately.
-pub struct TerminalEmitter<W: Write + Send + 'static> {
-    output: Arc<Mutex<W>>,
+pub struct TerminalEmitter<W: Write + 'static> {
+    output: W,
 }
 
-impl<W: Write + Send + 'static> TerminalEmitter<W> {
+impl<W: Write + 'static> TerminalEmitter<W> {
     pub fn new(output: W) -> Self {
-        Self {
-            output: Arc::new(Mutex::new(output)),
-        }
+        Self { output }
     }
 }
 
-impl<W: Write + Send + 'static> FindingEmitter for TerminalEmitter<W> {
+impl<W: Write + 'static> FindingEmitter for TerminalEmitter<W> {
     fn begin_scan(&mut self) {
         // No header; summary is rendered at the end
     }
 
     fn emit_finding(&mut self, finding: &Finding, source_path: Option<&str>) {
-        let mut output = self.output.lock().expect("output lock not poisoned");
         let metadata = finding.rule.metadata();
         if let crate::rules::builtin::RuleId::Custom(index, _) = finding.rule {
-            let _ = writeln!(output, "Custom rule #{index}");
+            let _ = writeln!(self.output, "Custom rule #{index}");
         }
         if let Some(path) = source_path {
-            let _ = write!(output, "\n{path}");
+            let _ = write!(self.output, "\n{path}");
         } else {
-            let _ = write!(output, "\nsource #{}", finding.source_id);
+            let _ = write!(self.output, "\nsource #{}", finding.source_id);
         }
         let _ = writeln!(
-            output,
+            self.output,
             ":{}:{}\nRule: {} ({})\nSeverity: {}; {}\nValue: {}\nID: {}",
             finding.line,
             finding.start_column,
@@ -136,7 +172,6 @@ impl<W: Write + Send + 'static> FindingEmitter for TerminalEmitter<W> {
     }
 
     fn finish_scan(&mut self, outcome: &ScanOutcome) {
-        let mut output = self.output.lock().expect("output lock not poisoned");
         let status = match outcome.exit_code() {
             0 if outcome.stats.files_excluded != 0 && outcome.stats.files_attempted == 0 => {
                 "EXCLUDED"
@@ -145,10 +180,10 @@ impl<W: Write + Send + 'static> FindingEmitter for TerminalEmitter<W> {
             1 => "FINDINGS",
             _ => "INCOMPLETE",
         };
-        let _ = writeln!(output);
-        let _ = writeln!(output, "rayloc — {status}");
+        let _ = writeln!(self.output);
+        let _ = writeln!(self.output, "rayloc — {status}");
         let _ = writeln!(
-            output,
+            self.output,
             "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} byte(s) read",
             outcome.stats.findings_detected,
             outcome.findings.len(),
@@ -157,10 +192,14 @@ impl<W: Write + Send + 'static> FindingEmitter for TerminalEmitter<W> {
             outcome.stats.lines_scanned,
             outcome.stats.bytes_read,
         );
-        let _ = writeln!(output, "{} file(s) excluded", outcome.stats.files_excluded);
+        let _ = writeln!(
+            self.output,
+            "{} file(s) excluded",
+            outcome.stats.files_excluded
+        );
         let suppressed = &outcome.stats.suppressions;
         let _ = writeln!(
-            output,
+            self.output,
             "Suppressed: inline={}; placeholder={}; reference={}; checksum={}; generic-filter={}; accepted={}",
             suppressed.inline,
             suppressed.placeholder,
@@ -170,20 +209,20 @@ impl<W: Write + Send + 'static> FindingEmitter for TerminalEmitter<W> {
             suppressed.accepted
         );
         let _ = writeln!(
-            output,
+            self.output,
             "Elapsed: {:.3} ms",
             outcome.elapsed.as_secs_f64() * 1000.0
         );
         for error in &outcome.errors {
-            let _ = writeln!(output, "Error: {error}");
+            let _ = writeln!(self.output, "Error: {error}");
         }
         if outcome.stats.findings_detected > 0 {
-            let _ = writeln!(output, "Remove exposed credentials from source code.");
+            let _ = writeln!(self.output, "Remove exposed credentials from source code.");
             let _ = writeln!(
-                output,
+                self.output,
                 "If a finding is a reviewed false positive, run: rayloc accept <ID>"
             );
         }
-        let _ = output.flush();
+        let _ = self.output.flush();
     }
 }

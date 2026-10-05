@@ -195,11 +195,15 @@ pub fn scan_staged_with_emitter(
 ) -> ScanOutcome {
     let started = Instant::now();
     let mut outcome = ScanOutcome::default();
-    let collector = match emitter {
-        Some(e) => Mutex::new(Collector::with_emitter(MAX_FINDINGS, e)),
-        None => Mutex::new(Collector::new(MAX_FINDINGS)),
-    };
-    if let Err(error) = acquire(cwd, explicit, no_inline, &mut outcome, &collector) {
+    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+    if let Err(error) = acquire(
+        cwd,
+        explicit,
+        no_inline,
+        &mut outcome,
+        &collector,
+        emitter.as_ref(),
+    ) {
         outcome.fail(error);
     }
     collector
@@ -215,6 +219,7 @@ fn acquire(
     no_inline: bool,
     outcome: &mut ScanOutcome,
     collector: &Mutex<Collector>,
+    emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
     let root = git_path(cwd, &["rev-parse", "--show-toplevel"])?;
     let index_path = git_path(cwd, &["rev-parse", "--git-path", "index"])?;
@@ -268,6 +273,7 @@ fn acquire(
         &exclusions,
         outcome,
         collector,
+        emitter,
     )?;
     raw.finish_success()?;
     patch.finish_success()?;
@@ -293,9 +299,10 @@ pub(super) fn consume(
     exclusions: &Exclusions,
     outcome: &mut ScanOutcome,
     collector: &Mutex<Collector>,
+    emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
     consume_resolved(
-        raw, patch, root, empty_blob, registry, exclusions, outcome, collector, false,
+        raw, patch, root, empty_blob, registry, exclusions, outcome, collector, emitter, false,
     )
 }
 #[allow(clippy::too_many_arguments)]
@@ -308,6 +315,7 @@ pub(super) fn consume_resolved(
     exclusions: &Exclusions,
     outcome: &mut ScanOutcome,
     collector: &Mutex<Collector>,
+    emitter: Option<&crate::report::emitter::SharedEmitter>,
     worktree: bool,
 ) -> Result<(), ScanError> {
     let (mut header, mut pathname, mut previous, mut line) =
@@ -341,11 +349,6 @@ pub(super) fn consume_resolved(
             engine::add(&mut outcome.stats.files_attempted, 1)?;
         }
         let label = binding.path();
-        // Add label before scanning so findings can reference it
-        collector
-            .lock()
-            .expect("collector lock is not poisoned")
-            .label(source_id, label);
         let mut parser =
             Parser::new(binding, empty_blob.as_bytes()).map_err(|_| ScanError::GitMetadata)?;
         let mut first = true;
@@ -378,6 +381,7 @@ pub(super) fn consume_resolved(
                                     registry,
                                     &mut histogram,
                                     collector,
+                                    emitter,
                                 )
                             })()
                             .err();
