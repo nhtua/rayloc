@@ -217,7 +217,6 @@ fn runner(root: &ScopeRoot) -> Runner<'_> {
             parallel_threshold: 1,
         },
         limits: LIMITS,
-        pool: None,
         workers: vec![Worker::new()],
         collector: Mutex::new(Collector::new(MAX_FINDINGS)),
         emitter: None,

@@ -12,7 +12,7 @@ use crate::{
     rules::Registry,
 };
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
+use rayon::prelude::*;
 use std::{
     ffi::{OsStr, OsString},
     fs,
@@ -116,7 +116,6 @@ struct Runner<'a> {
     root: &'a ScopeRoot,
     options: ScopeOptions,
     limits: Limits,
-    pool: Option<ThreadPool>,
     workers: Vec<Worker>,
     collector: Mutex<Collector>,
     emitter: Option<crate::report::emitter::SharedEmitter>,
@@ -210,7 +209,6 @@ fn scan_scope_with_emitter(
             root,
             options,
             limits,
-            pool: None,
             workers: vec![Worker::new()],
             collector,
             emitter,
@@ -327,17 +325,10 @@ fn compile_glob(pattern: &str) -> Result<GlobSet, ScanError> {
 }
 impl Runner<'_> {
     fn pool(&mut self, count: usize) -> Result<(), ScanError> {
-        if self.pool.is_none()
+        if self.workers.len() == 1
             && self.options.workers > 1
             && count >= self.options.parallel_threshold
         {
-            self.pool = Some(
-                ThreadPoolBuilder::new()
-                    .num_threads(self.options.workers)
-                    .stack_size(2 * 1024 * 1024)
-                    .build()
-                    .map_err(|_| ScanError::Pool)?,
-            );
             self.workers
                 .extend((1..self.options.workers).map(|_| Worker::new()));
         }
@@ -468,11 +459,7 @@ impl Runner<'_> {
                     Err(_) => Kind::Error,
                 };
             };
-            if let Some(pool) = &self.pool {
-                pool.install(|| batch.par_iter_mut().for_each(classify));
-            } else {
-                batch.iter_mut().for_each(classify);
-            }
+            batch.par_iter_mut().for_each(classify);
         }
         // '/' belongs to directory sorting keys; component order would misorder a.txt vs a/x.
         entries.sort_unstable_by(|a, b| {
@@ -559,17 +546,16 @@ impl Runner<'_> {
             }
             outcome
         };
-        let results: Vec<_> = if let Some(pool) = &self.pool {
-            pool.install(|| {
+        let results: Vec<_> =
+            if self.options.workers > 1 && self.batch.len() >= self.options.parallel_threshold {
                 self.workers
                     .par_iter_mut()
                     .zip(self.batch.par_chunks(lane_length))
                     .map(process)
                     .collect()
-            })
-        } else {
-            vec![process((&mut self.workers[0], &self.batch))]
-        };
+            } else {
+                vec![process((&mut self.workers[0], &self.batch))]
+            };
         for outcome in results {
             engine::merge(&mut self.outcome, outcome);
         }
