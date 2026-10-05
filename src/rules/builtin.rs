@@ -63,6 +63,8 @@ pub enum RuleId {
     HuggingfaceKey,
     XaiKey,
     GoogleApiKey,
+    AlibabaKey,
+    BaiduKey,
     Custom(u16, Severity),
 }
 
@@ -211,6 +213,20 @@ impl RuleId {
                 Confidence::Medium,
                 "https://ai.google.dev/gemini-api/docs/api-key",
             ),
+            Self::AlibabaKey => (
+                "alibaba-key",
+                "Alibaba Cloud API key (Tongyi/Qwen)",
+                Severity::High,
+                Confidence::Medium,
+                "https://www.alibabacloud.com/help/en/model-studio/get-api-key",
+            ),
+            Self::BaiduKey => (
+                "baidu-key",
+                "Baidu API key (Ernie Bot)",
+                Severity::High,
+                Confidence::Medium,
+                "https://cloud.baidu.com/doc/QIANFAN/s/Yl4i8xj2y",
+            ),
         };
         RuleMetadata {
             id,
@@ -248,6 +264,8 @@ const PERPLEXITY_PREFIXES: &[&[u8]] = &[b"pplx-"];
 const HUGGINGFACE_PREFIXES: &[&[u8]] = &[b"hf_"];
 const XAI_PREFIXES: &[&[u8]] = &[b"xai-"];
 const GOOGLE_API_PREFIXES: &[&[u8]] = &[b"AIza", b"AQ."];
+const ALIBABA_PREFIXES: &[&[u8]] = &[b"sk-ws-"];
+const BAIDU_PREFIXES: &[&[u8]] = &[b"bce-v3/ALTAK-"];
 
 fn is_word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
@@ -391,6 +409,8 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
     for (rule, prefixes) in [
         (RuleId::OpenrouterKey, OPENROUTER_PREFIXES),
         (RuleId::AnthropicKey, ANTHROPIC_PREFIXES),
+        (RuleId::AlibabaKey, ALIBABA_PREFIXES),
+        (RuleId::BaiduKey, BAIDU_PREFIXES),
         (RuleId::OpenaiKey, OPENAI_PREFIXES),
         (RuleId::GroqKey, GROQ_PREFIXES),
         (RuleId::PerplexityKey, PERPLEXITY_PREFIXES),
@@ -430,7 +450,7 @@ pub(crate) fn detect_line_with_disabled(
         if offset < covered_until {
             continue;
         }
-        if !matches!(byte, b'A' | b'g' | b's' | b'r' | b'h' | b'p' | b'x' | b'-') {
+        if !matches!(byte, b'A' | b'b' | b'g' | b's' | b'r' | b'h' | b'p' | b'x' | b'-') {
             continue;
         }
         if offset > 0 && is_word(bytes[offset - 1]) && byte != b'-' {

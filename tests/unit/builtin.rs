@@ -75,6 +75,14 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         RuleId::GoogleApiKey,
         b"AIzaSyntheticGoogleApiKey1234567890abcdefg".to_vec(),
     ));
+    fixtures.push((
+        RuleId::AlibabaKey,
+        b"sk-ws-SyntheticAlibabaQwenKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::BaiduKey,
+        b"bce-v3/ALTAK-SyntheticBaiduErnieKey1234567890".to_vec(),
+    ));
     for (rule, value) in fixtures {
         let input = [b"\0\xff value = \"".as_slice(), &value, b"\";\r"].concat();
         let start = 12;
@@ -126,6 +134,8 @@ fn provider_negatives_and_boundaries_are_not_findings() {
         "hf_short",
         "xai-short",
         "AIzashort",
+        "sk-ws-short",
+        "bce-v3/ALTAK-short",
     ] {
         assert!(
             matches(value.as_bytes()).is_empty(),
