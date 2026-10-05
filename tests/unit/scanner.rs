@@ -16,6 +16,15 @@ fn error_categories_are_safe_and_implement_error() {
             ScanError::CounterOverflow,
             "scan counter exceeds supported range",
         ),
+        (ScanError::Discovery, "cannot enumerate selected scope"),
+        (
+            ScanError::ScopeLimit,
+            "selected scope exceeds resource limit",
+        ),
+        (ScanError::GitMetadata, "cannot read tracked scope metadata"),
+        (ScanError::Policy, "cannot load scope ignore policy"),
+        (ScanError::NoGlobMatches, "glob matches no regular files"),
+        (ScanError::Pool, "cannot initialize scan workers"),
     ] {
         assert_eq!(error.to_string(), message);
         let error: &dyn std::error::Error = &error;

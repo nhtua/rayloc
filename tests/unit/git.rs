@@ -77,3 +77,15 @@ fn failed_drainer_start_reaps_the_already_started_child() {
     assert!(child.try_wait().unwrap().is_some());
     assert!(capture(&mut Command::new("/nonexistent/rayloc-fixture"), 10).is_err());
 }
+#[test]
+fn successful_requires_nonzero_exit_and_fails_on_error() {
+    let mut ok = Command::new("sh");
+    ok.args(["-c", "printf output"]);
+    assert_eq!(successful(&mut ok, 64).unwrap(), b"output");
+    let mut fail = Command::new("sh");
+    fail.args(["-c", "printf output; exit 2"]);
+    assert!(matches!(
+        successful(&mut fail, 64),
+        Err(ScanError::GitMetadata)
+    ));
+}

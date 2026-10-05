@@ -138,6 +138,66 @@ fn index_stat_missing_and_invalid_parent_are_distinguished() {
     assert!(index_stamp(&dir.path().join("file/child")).is_err());
 }
 #[test]
+fn head_resolves_symbolic_and_detached_states() {
+    let dir = crate::test_support::TempDir::new();
+    assert!(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(["init", "--quiet"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let root = dir.path();
+    let symbolic = head(root).unwrap();
+    assert_eq!(symbolic.symbolic, b"refs/heads/master\n");
+    assert!(symbolic.commit.is_none());
+    fs::write(root.join("entry"), "fixture").unwrap();
+    assert!(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["add", "."])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args([
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                "base"
+            ])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let attached = head(root).unwrap();
+    assert_eq!(attached.symbolic, b"refs/heads/master\n");
+    assert!(attached.commit.is_some());
+    assert!(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["checkout", "--detach", "HEAD"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let detached = head(root).unwrap();
+    assert!(detached.symbolic.is_empty());
+    assert!(detached.commit.is_some());
+    assert!(head(&dir.path().join("missing")).is_err());
+}
+#[test]
 fn quoted_non_utf8_paths_and_nul_payloads_are_scanned_from_streams() {
     let (old, new) = ("0".repeat(40), "1".repeat(40));
     let secret = concat!("AKIA0123", "456789AB", "CDEF");
@@ -190,6 +250,12 @@ fn source_ids_fail_without_wrapping_or_reusing_an_identifier() {
     assert_eq!(source, u32::MAX);
     assert_eq!(next_source(&mut source), Err(ScanError::CounterOverflow));
     assert_eq!(source, u32::MAX);
+}
+#[test]
+fn scan_staged_wrapper_delegates_to_emitter_variant() {
+    let dir = crate::test_support::TempDir::new();
+    let outcome = scan_staged(dir.path(), None, false);
+    assert_eq!(outcome.exit_code(), 2);
 }
 #[test]
 fn resolved_worktree_consumer_validates_and_excludes_dirty_gitlink() {
