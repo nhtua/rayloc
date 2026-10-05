@@ -42,6 +42,39 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     for marker in PRIVATE_KEY_MARKERS {
         fixtures.push((RuleId::PrivateKeyMarker, marker.to_vec()));
     }
+    // LLM provider API keys
+    fixtures.push((
+        RuleId::OpenaiKey,
+        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::OpenrouterKey,
+        b"sk-or-v1-SyntheticOpenRouterKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::AnthropicKey,
+        b"sk-ant-api03-SyntheticAnthropicKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GroqKey,
+        b"gsk_SyntheticGroqKey1234567890ABCDEFghijklmnop".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::PerplexityKey,
+        b"pplx-SyntheticPerplexityKey1234567890abcdef".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::HuggingfaceKey,
+        b"hf_SyntheticHuggingFaceKey1234567890abcdef".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::XaiKey,
+        b"xai-SyntheticXAIGrokKey1234567890ABCDEFghijklmnopqrstuvwxyz".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GoogleApiKey,
+        b"AIzaSyntheticGoogleApiKey1234567890abcdefg".to_vec(),
+    ));
     for (rule, value) in fixtures {
         let input = [b"\0\xff value = \"".as_slice(), &value, b"\";\r"].concat();
         let start = 12;
@@ -85,6 +118,14 @@ fn provider_negatives_and_boundaries_are_not_findings() {
         "-----BEGIN RSA PUBLIC KEY-----",
         "-----BEGIN CERTIFICATE-----",
         "-----BEGIN UNKNOWN PRIVATE KEY-----",
+        "sk_short",
+        "sk-or-v1-short",
+        "sk-ant-api03-short",
+        "gsk_short",
+        "pplx-short",
+        "hf_short",
+        "xai-short",
+        "AIzashort",
     ] {
         assert!(
             matches(value.as_bytes()).is_empty(),

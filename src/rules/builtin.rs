@@ -55,6 +55,14 @@ pub enum RuleId {
     JoseToken,
     ContextSecret,
     PasswordAssignment,
+    OpenaiKey,
+    OpenrouterKey,
+    AnthropicKey,
+    GroqKey,
+    PerplexityKey,
+    HuggingfaceKey,
+    XaiKey,
+    GoogleApiKey,
     Custom(u16, Severity),
 }
 
@@ -147,6 +155,62 @@ impl RuleId {
                 Confidence::Medium,
                 "https://www.rfc-editor.org/rfc/rfc7468.html",
             ),
+            Self::OpenaiKey => (
+                "openai-key",
+                "OpenAI API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://platform.openai.com/api-keys",
+            ),
+            Self::OpenrouterKey => (
+                "openrouter-key",
+                "OpenRouter API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://openrouter.ai/docs/api_reference/authentication",
+            ),
+            Self::AnthropicKey => (
+                "anthropic-key",
+                "Anthropic API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.anthropic.com/en/api/getting-started-with-the-api",
+            ),
+            Self::GroqKey => (
+                "groq-key",
+                "Groq API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://console.groq.com/docs/api-reference",
+            ),
+            Self::PerplexityKey => (
+                "perplexity-key",
+                "Perplexity API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.perplexity.ai/docs/getting-started",
+            ),
+            Self::HuggingfaceKey => (
+                "huggingface-key",
+                "Hugging Face API token",
+                Severity::High,
+                Confidence::Medium,
+                "https://huggingface.co/docs/hub/security-tokens",
+            ),
+            Self::XaiKey => (
+                "xai-key",
+                "xAI/Grok API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.x.ai/developers/quickstart",
+            ),
+            Self::GoogleApiKey => (
+                "google-api-key",
+                "Google API key (Gemini)",
+                Severity::High,
+                Confidence::Medium,
+                "https://ai.google.dev/gemini-api/docs/api-key",
+            ),
         };
         RuleMetadata {
             id,
@@ -174,6 +238,16 @@ const PRIVATE_KEY_MARKERS: &[&[u8]] = &[
     b"-----BEGIN OPENSSH PRIVATE KEY-----",
     b"-----BEGIN ENCRYPTED PRIVATE KEY-----",
 ];
+
+// LLM provider API key prefixes
+const OPENAI_PREFIXES: &[&[u8]] = &[b"sk-"];
+const OPENROUTER_PREFIXES: &[&[u8]] = &[b"sk-or-v1-"];
+const ANTHROPIC_PREFIXES: &[&[u8]] = &[b"sk-ant-api03-"];
+const GROQ_PREFIXES: &[&[u8]] = &[b"gsk_"];
+const PERPLEXITY_PREFIXES: &[&[u8]] = &[b"pplx-"];
+const HUGGINGFACE_PREFIXES: &[&[u8]] = &[b"hf_"];
+const XAI_PREFIXES: &[&[u8]] = &[b"xai-"];
+const GOOGLE_API_PREFIXES: &[&[u8]] = &[b"AIza", b"AQ."];
 
 fn is_word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
@@ -272,6 +346,23 @@ fn slack_match(bytes: &[u8]) -> Result<Option<usize>, ScanError> {
     Ok((bytes.get(end) != Some(&b'/')).then_some(end))
 }
 
+fn llm_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, ScanError> {
+    let Some(prefix) = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix)) else {
+        return Ok(None);
+    };
+    let body_length = bytes[prefix.len()..]
+        .iter()
+        .take_while(|&&byte| is_word(byte) || byte == b'-' || byte == b'.')
+        .take(MAX_CANDIDATE_BYTES + 1)
+        .count();
+    let length = prefix.len() + body_length;
+    if length > MAX_CANDIDATE_BYTES {
+        return Err(ScanError::CandidateLimit);
+    }
+    // Minimum length validation: most LLM keys are at least 30 chars total
+    Ok((body_length >= 20).then_some(length))
+}
+
 fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>, ScanError> {
     if let Some(end) = (!disabled.contains(&RuleId::AwsAccessKeyId))
         .then(|| aws_match(bytes))
@@ -294,6 +385,24 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
     if !disabled.contains(&RuleId::SlackWebhook) {
         if let Some(end) = slack_match(bytes)? {
             return Ok(Some((RuleId::SlackWebhook, end)));
+        }
+    }
+    // LLM provider API keys (more specific prefixes first to avoid false matches)
+    for (rule, prefixes) in [
+        (RuleId::OpenrouterKey, OPENROUTER_PREFIXES),
+        (RuleId::AnthropicKey, ANTHROPIC_PREFIXES),
+        (RuleId::OpenaiKey, OPENAI_PREFIXES),
+        (RuleId::GroqKey, GROQ_PREFIXES),
+        (RuleId::PerplexityKey, PERPLEXITY_PREFIXES),
+        (RuleId::HuggingfaceKey, HUGGINGFACE_PREFIXES),
+        (RuleId::XaiKey, XAI_PREFIXES),
+        (RuleId::GoogleApiKey, GOOGLE_API_PREFIXES),
+    ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
+        if let Some(end) = llm_key_match(bytes, prefixes)? {
+            return Ok(Some((rule, end)));
         }
     }
     if disabled.contains(&RuleId::PrivateKeyMarker) {
@@ -321,7 +430,7 @@ pub(crate) fn detect_line_with_disabled(
         if offset < covered_until {
             continue;
         }
-        if !matches!(byte, b'A' | b'g' | b's' | b'r' | b'h' | b'-') {
+        if !matches!(byte, b'A' | b'g' | b's' | b'r' | b'h' | b'p' | b'x' | b'-') {
             continue;
         }
         if offset > 0 && is_word(bytes[offset - 1]) && byte != b'-' {
