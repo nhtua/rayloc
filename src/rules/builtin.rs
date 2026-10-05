@@ -69,6 +69,8 @@ pub enum RuleId {
     FirecrawlKey,
     LangsmithKey,
     VoyageKey,
+    CartesiaKey,
+    ReplicateKey,
     Custom(u16, Severity),
 }
 
@@ -259,6 +261,20 @@ impl RuleId {
                 Confidence::Medium,
                 "https://docs.voyageai.com/docs/faq",
             ),
+            Self::CartesiaKey => (
+                "cartesia-key",
+                "Cartesia AI API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://docs.cartesia.ai/use-the-api/api-conventions",
+            ),
+            Self::ReplicateKey => (
+                "replicate-key",
+                "Replicate API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://replicate.com/docs/topics/security/api-tokens",
+            ),
         };
         RuleMetadata {
             id,
@@ -302,6 +318,8 @@ const WANDB_PREFIXES: &[&[u8]] = &[b"wandb_"];
 const FIRECRAWL_PREFIXES: &[&[u8]] = &[b"fc-"];
 const LANGSMITH_PREFIXES: &[&[u8]] = &[b"lsv2_pt_", b"lsv2_sk_"];
 const VOYAGE_PREFIXES: &[&[u8]] = &[b"al-", b"pa-"];
+const CARTESIA_PREFIXES: &[&[u8]] = &[b"sk_car_"];
+const REPLICATE_PREFIXES: &[&[u8]] = &[b"r8_"];
 
 fn is_word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
@@ -449,8 +467,10 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         (RuleId::AlibabaKey, ALIBABA_PREFIXES),
         (RuleId::BaiduKey, BAIDU_PREFIXES),
         (RuleId::LangsmithKey, LANGSMITH_PREFIXES),
+        (RuleId::CartesiaKey, CARTESIA_PREFIXES),
         (RuleId::WandbKey, WANDB_PREFIXES),
         (RuleId::FirecrawlKey, FIRECRAWL_PREFIXES),
+        (RuleId::ReplicateKey, REPLICATE_PREFIXES),
         (RuleId::VoyageKey, VOYAGE_PREFIXES),
         (RuleId::OpenaiKey, OPENAI_PREFIXES),
         (RuleId::GroqKey, GROQ_PREFIXES),

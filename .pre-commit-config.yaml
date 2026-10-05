@@ -1,0 +1,27 @@
+repos:
+  - repo: local
+    hooks:
+      - id: rayloc-staged
+        name: rayloc staged secret scan
+        entry: ./target/debug/rayloc scan --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+        require_serial: true
+        stages: [pre-commit]
+
+      - id: cargo-fmt-check
+        name: cargo fmt check
+        entry: cargo fmt --all -- --check
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: cargo-clippy-check
+        name: cargo clippy check
+        entry: cargo clippy --all-targets --all-features -- -D warnings
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]

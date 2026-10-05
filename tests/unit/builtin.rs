@@ -103,6 +103,14 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         RuleId::VoyageKey,
         b"al-SyntheticVoyageAtlasKey1234567890ABCDEF".to_vec(),
     ));
+    fixtures.push((
+        RuleId::CartesiaKey,
+        b"sk_car_SyntheticCartesiaKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::ReplicateKey,
+        b"r8_SyntheticReplicateKey1234567890ABCDEF".to_vec(),
+    ));
     for (rule, value) in fixtures {
         let input = [b"\0\xff value = \"".as_slice(), &value, b"\";\r"].concat();
         let start = 12;
@@ -162,6 +170,8 @@ fn provider_negatives_and_boundaries_are_not_findings() {
         "lsv2_sk-short",
         "al-short",
         "pa-short",
+        "sk_car_short",
+        "r8_short",
     ] {
         assert!(
             matches(value.as_bytes()).is_empty(),
