@@ -7,7 +7,8 @@ fn clean_findings_and_partial_reports_are_distinct_and_never_leak_values() {
     let mut output = Vec::new();
     render(&ScanOutcome::default(), &mut output).unwrap();
     let text = String::from_utf8(output).unwrap();
-    assert!(text.starts_with("rayloc — CLEAN\n"));
+    // Summary appears at the end after findings (none for clean scan)
+    assert!(text.contains("\nrayloc — CLEAN\n"));
     assert!(!text.contains("Remove exposed"));
     let sentinel = "ghp_SyntheticReportSecret0123456789";
     let input = format!("{sentinel} -----BEGIN PRIVATE KEY-----");
@@ -15,7 +16,8 @@ fn clean_findings_and_partial_reports_are_distinct_and_never_leak_values() {
     let mut output = Vec::new();
     render(&outcome, &mut output).unwrap();
     let text = String::from_utf8(output).unwrap();
-    assert!(text.starts_with("rayloc — FINDINGS\n"));
+    // Summary appears at the end after findings
+    assert!(text.contains("\nrayloc — FINDINGS\n"));
     assert!(text.contains("2 finding(s); 2 retained; 1 of 1 file(s) completed"));
     assert!(text.contains("source #7:1:1"));
     assert!(text.contains("High; Medium confidence"));
@@ -35,7 +37,8 @@ fn clean_findings_and_partial_reports_are_distinct_and_never_leak_values() {
     let mut output = Vec::new();
     render(&outcome, &mut output).unwrap();
     let text = String::from_utf8(output).unwrap();
-    assert!(text.starts_with("rayloc — INCOMPLETE\n"));
+    // Summary appears at the end after findings
+    assert!(text.contains("\nrayloc — INCOMPLETE\n"));
     assert!(text.contains("Error: cannot read selected source"));
     assert!(!text.contains(sentinel));
 }
@@ -103,9 +106,10 @@ fn custom_report_and_excluded_scope_propagate_every_output_error() {
     excluded.stats.files_excluded = 1;
     let mut output = Vec::new();
     render(&excluded, &mut output).unwrap();
+    // Summary appears at the end after findings (none for excluded scan)
     assert!(
         String::from_utf8(output)
             .unwrap()
-            .starts_with("rayloc — EXCLUDED")
+            .contains("\nrayloc — EXCLUDED\n")
     );
 }
