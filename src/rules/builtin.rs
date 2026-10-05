@@ -71,6 +71,9 @@ pub enum RuleId {
     VoyageKey,
     CartesiaKey,
     ReplicateKey,
+    VercelKey,
+    SupabaseKey,
+    CloudflareKey,
     Custom(u16, Severity),
 }
 
@@ -275,6 +278,27 @@ impl RuleId {
                 Confidence::Medium,
                 "https://replicate.com/docs/topics/security/api-tokens",
             ),
+            Self::VercelKey => (
+                "vercel-key",
+                "Vercel API token",
+                Severity::High,
+                Confidence::Medium,
+                "https://vercel.com/docs/accounts/access-tokens",
+            ),
+            Self::SupabaseKey => (
+                "supabase-key",
+                "Supabase API key",
+                Severity::High,
+                Confidence::Medium,
+                "https://supabase.com/docs/guides/getting-started/api-keys",
+            ),
+            Self::CloudflareKey => (
+                "cloudflare-key",
+                "Cloudflare API token",
+                Severity::High,
+                Confidence::Medium,
+                "https://developers.cloudflare.com/fundamentals/api/get-started/token-formats",
+            ),
         };
         RuleMetadata {
             id,
@@ -320,6 +344,9 @@ const LANGSMITH_PREFIXES: &[&[u8]] = &[b"lsv2_pt_", b"lsv2_sk_"];
 const VOYAGE_PREFIXES: &[&[u8]] = &[b"al-", b"pa-"];
 const CARTESIA_PREFIXES: &[&[u8]] = &[b"sk_car_"];
 const REPLICATE_PREFIXES: &[&[u8]] = &[b"r8_"];
+const VERCEL_PREFIXES: &[&[u8]] = &[b"vcp_", b"vci_", b"vca_", b"vcr_", b"vck_"];
+const SUPABASE_PREFIXES: &[&[u8]] = &[b"sb_publishable_", b"sb_secret_"];
+const CLOUDFLARE_PREFIXES: &[&[u8]] = &[b"cfk_", b"cfut_", b"cfat_"];
 
 fn is_word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
@@ -471,6 +498,9 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         (RuleId::WandbKey, WANDB_PREFIXES),
         (RuleId::FirecrawlKey, FIRECRAWL_PREFIXES),
         (RuleId::ReplicateKey, REPLICATE_PREFIXES),
+        (RuleId::VercelKey, VERCEL_PREFIXES),
+        (RuleId::SupabaseKey, SUPABASE_PREFIXES),
+        (RuleId::CloudflareKey, CLOUDFLARE_PREFIXES),
         (RuleId::VoyageKey, VOYAGE_PREFIXES),
         (RuleId::OpenaiKey, OPENAI_PREFIXES),
         (RuleId::GroqKey, GROQ_PREFIXES),
@@ -524,6 +554,8 @@ pub(crate) fn detect_line_with_disabled(
                 | b'l'
                 | b'f'
                 | b'a'
+                | b'v'
+                | b'c'
                 | b'-'
         ) {
             continue;
