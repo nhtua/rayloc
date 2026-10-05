@@ -226,6 +226,7 @@ fn runner(root: &ScopeRoot) -> Runner<'_> {
         batch: Vec::with_capacity(BATCH),
         batch_bytes: 0,
         matched: 0,
+        scanned: 0,
         total_policy: PolicyUsage::default(),
         administration: Vec::new(),
         repositories: 0,

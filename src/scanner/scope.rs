@@ -124,6 +124,7 @@ struct Runner<'a> {
     batch: Vec<Work>,
     batch_bytes: usize,
     matched: u32,
+    scanned: u32,
     total_policy: PolicyUsage,
     administration: Vec<Box<Path>>,
     repositories: usize,
@@ -218,6 +219,7 @@ fn scan_scope_with_emitter(
             batch: Vec::with_capacity(BATCH),
             batch_bytes: 0,
             matched: 0,
+            scanned: 0,
             administration: Vec::new(),
             repositories: 0,
             metadata_only: false,
@@ -562,6 +564,9 @@ impl Runner<'_> {
         for outcome in results {
             engine::merge(&mut self.outcome, outcome);
         }
+        let batch_size = self.batch.len() as u32;
+        self.scanned = self.scanned.saturating_add(batch_size);
+        eprintln!("rayloc: scanned {}/{} files", self.scanned, self.matched);
         self.budget.paths -= self.batch_bytes;
         self.batch_bytes = 0;
         self.batch.clear();
