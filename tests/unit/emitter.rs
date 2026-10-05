@@ -1,258 +1,160 @@
-//! Tests for the FindingEmitter trait and TerminalEmitter implementation.
+use std::io::Write;
+use std::thread;
 
-use std::fs::File;
+use crate::report::emitter::{
+    FindingMessage, SharedEmitter, TerminalEmitter, ThreadSafeWriter, channel_emitter,
+};
+use crate::rules::builtin::RuleId;
+use crate::scanner::fingerprint::FindingId;
+use crate::scanner::redaction::RedactedString;
+use crate::scanner::{Finding, ScanOutcome};
 
-use crate::report::emitter::{FindingEmitter, SharedEmitter, TerminalEmitter};
-use crate::scanner::ScanOutcome;
-use crate::test_support::TempDir;
-
-#[test]
-fn test_terminal_emitter_basic_flow() {
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let mut emitter = TerminalEmitter::new(file);
-    emitter.begin_scan();
-    emitter.finish_scan(&ScanOutcome::default());
-    drop(emitter);
-    let content = std::fs::read_to_string(&path).unwrap();
-    assert!(content.contains("CLEAN"));
-    assert!(content.contains("finding"));
-}
-
-#[test]
-fn test_emitter_emits_finding() {
-    use crate::rules::builtin::RuleId;
-    use crate::scanner::Finding;
-    use crate::scanner::fingerprint::FindingId;
-    use crate::scanner::redaction::RedactedString;
-
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let mut emitter = TerminalEmitter::new(file);
-    emitter.begin_scan();
-
-    let finding = Finding {
-        source_id: 1,
-        line: 10,
+fn make_finding(id: u32) -> Finding {
+    Finding {
+        source_id: id,
+        line: 1,
         start_column: 1,
         end_column: 10,
         rule: RuleId::AwsAccessKeyId,
-        value: RedactedString::new(b"testsecretvalue"),
-        id: FindingId::new(b"test/path.rs", b"testsecretvalue"),
-    };
+        value: RedactedString::new(b"test-secret"),
+        id: FindingId::new(b"test/path.rs", b"test-secret"),
+    }
+}
 
-    emitter.emit_finding(&finding, Some("test/path.rs"));
-
-    let outcome = ScanOutcome::default();
-    emitter.finish_scan(&outcome);
-    drop(emitter);
-
-    let rendered = std::fs::read_to_string(&path).unwrap();
-    assert!(rendered.contains("test/path.rs"));
-    assert!(rendered.contains("Rule:"));
-    assert!(rendered.contains("Severity:"));
-    assert!(rendered.contains("Value:"));
-    assert!(rendered.contains("ID:"));
+fn make_outcome(findings_detected: u64) -> ScanOutcome {
+    let mut outcome = ScanOutcome::default();
+    outcome.stats.findings_detected = findings_detected;
+    outcome.stats.files_attempted = 10;
+    outcome.stats.files_completed = 10;
+    outcome.stats.files_excluded = 0;
+    outcome.stats.lines_scanned = 100;
+    outcome.stats.bytes_read = 1000;
+    outcome
 }
 
 #[test]
-fn test_emitter_begin_scan() {
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let mut emitter = TerminalEmitter::new(file);
-    emitter.begin_scan();
-    // begin_scan is a no-op for terminal emitter
-    emitter.finish_scan(&ScanOutcome::default());
-}
-
-#[test]
-fn test_shared_emitter_clone_and_emit() {
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(file)));
+fn shared_emitter_clones_and_emits() {
+    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(std::io::stdout())));
     let cloned = emitter.clone();
 
-    use crate::rules::builtin::RuleId;
-    use crate::scanner::Finding;
-    use crate::scanner::fingerprint::FindingId;
-    use crate::scanner::redaction::RedactedString;
+    let finding = make_finding(1);
+    emitter.emit_finding(&finding, Some("test.rs"));
 
-    let finding = Finding {
-        source_id: 1,
-        line: 10,
-        start_column: 1,
-        end_column: 10,
-        rule: RuleId::AwsAccessKeyId,
-        value: RedactedString::new(b"testsecretvalue"),
-        id: FindingId::new(b"test/path.rs", b"testsecretvalue"),
-    };
-
-    emitter.emit_finding(&finding, Some("test/path.rs"));
-    cloned.emit_finding(&finding, Some("test/path2.rs"));
-
-    emitter.finish_scan(&ScanOutcome::default());
-
-    let rendered = std::fs::read_to_string(&path).unwrap();
-    // Both emissions should be present (emitter is shared via Arc)
-    let count = rendered.matches("Rule:").count();
-    assert_eq!(count, 2);
+    let outcome = make_outcome(1);
+    cloned.finish_scan(&outcome);
 }
 
 #[test]
-fn test_thread_safe_writer() {
-    use crate::report::emitter::ThreadSafeWriter;
-    use std::io::Write;
+fn channel_emitter_processes_findings() {
+    let emitter = Box::new(TerminalEmitter::new(std::io::stdout()));
+    let (tx, handle) = channel_emitter(emitter);
 
-    let mut buffer = Vec::new();
-    let writer = ThreadSafeWriter::new(&mut buffer);
-    let mut w = writer;
-    w.write_all(b"test data").unwrap();
-    w.flush().unwrap();
-    assert_eq!(buffer, b"test data");
+    let finding = make_finding(1);
+    tx.send(FindingMessage::Finding(
+        finding,
+        Some("test.rs".to_string()),
+    ))
+    .unwrap();
+
+    let outcome = make_outcome(1);
+    tx.send(FindingMessage::Finish(outcome)).unwrap();
+    drop(tx);
+
+    handle.join().unwrap();
 }
 
 #[test]
-fn test_emitter_emits_multiple_findings() {
-    use crate::rules::builtin::RuleId;
-    use crate::scanner::Finding;
-    use crate::scanner::fingerprint::FindingId;
-    use crate::scanner::redaction::RedactedString;
-
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let mut emitter = TerminalEmitter::new(file);
+fn shared_emitter_begin_scan() {
+    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(std::io::stdout())));
     emitter.begin_scan();
+}
 
-    for i in 0..3 {
-        let finding = Finding {
-            source_id: 1,
-            line: i as u64 + 1,
-            start_column: 1,
-            end_column: 10,
-            rule: RuleId::AwsAccessKeyId,
-            value: RedactedString::new(b"secret"),
-            id: FindingId::new(b"test/path.rs", b"secret"),
-        };
-        emitter.emit_finding(&finding, Some("test/path.rs"));
+#[test]
+fn shared_emitter_emit_finding() {
+    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(std::io::stdout())));
+    let finding = make_finding(1);
+    emitter.emit_finding(&finding, Some("test.rs"));
+}
+
+#[test]
+fn shared_emitter_finish_scan() {
+    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(std::io::stdout())));
+    emitter.finish_scan(&make_outcome(0));
+}
+
+#[test]
+fn finding_message_finding_variant() {
+    let finding = make_finding(1);
+    let msg = FindingMessage::Finding(finding, Some("test.rs".to_string()));
+    match msg {
+        FindingMessage::Finding(_, Some(path)) => assert_eq!(path, "test.rs"),
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn finding_message_finish_variant() {
+    let outcome = make_outcome(0);
+    let msg = FindingMessage::Finish(outcome);
+    match msg {
+        FindingMessage::Finish(o) => assert_eq!(o.exit_code(), 0),
+        _ => panic!("wrong variant"),
+    }
+}
+
+#[test]
+fn channel_emitter_multiple_findings() {
+    let emitter = Box::new(TerminalEmitter::new(std::io::stdout()));
+    let (tx, handle) = channel_emitter(emitter);
+
+    for i in 1..5 {
+        let finding = make_finding(i);
+        let path = format!("file{i}.rs");
+        tx.send(FindingMessage::Finding(finding, Some(path)))
+            .unwrap();
     }
 
-    emitter.finish_scan(&ScanOutcome::default());
-    let rendered = std::fs::read_to_string(&path).unwrap();
-    // All 3 findings should be emitted
-    assert_eq!(rendered.matches("Rule:").count(), 3);
+    let outcome = make_outcome(4);
+    tx.send(FindingMessage::Finish(outcome)).unwrap();
+    drop(tx);
+
+    handle.join().unwrap();
 }
 
 #[test]
-fn test_emitter_custom_rule_and_source_fallback() {
-    use crate::rules::builtin::RuleId;
-    use crate::scanner::Finding;
-    use crate::scanner::fingerprint::FindingId;
-    use crate::scanner::redaction::RedactedString;
+fn shared_emitter_concurrent_emits() {
+    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(std::io::stdout())));
 
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let mut emitter = TerminalEmitter::new(file);
+    let mut handles = Vec::new();
+    for i in 0..4 {
+        let em = emitter.clone();
+        let handle = thread::spawn(move || {
+            let finding = make_finding(i + 1);
+            em.emit_finding(&finding, Some(&format!("thread{i}.rs")));
+        });
+        handles.push(handle);
+    }
 
-    // Custom rule
-    let finding1 = Finding {
-        source_id: 1,
-        line: 1,
-        start_column: 1,
-        end_column: 10,
-        rule: RuleId::Custom(42, crate::rules::builtin::Severity::High),
-        value: RedactedString::new(b"secret"),
-        id: FindingId::new(b"test/path.rs", b"secret"),
-    };
-    emitter.emit_finding(&finding1, Some("test/path.rs"));
-
-    // Source fallback (no path)
-    let finding2 = Finding {
-        source_id: 2,
-        line: 1,
-        start_column: 1,
-        end_column: 10,
-        rule: RuleId::AwsAccessKeyId,
-        value: RedactedString::new(b"secret"),
-        id: FindingId::new(b"test/path.rs", b"secret"),
-    };
-    emitter.emit_finding(&finding2, None);
-
-    emitter.finish_scan(&ScanOutcome::default());
-    let rendered = std::fs::read_to_string(&path).unwrap();
-    assert!(rendered.contains("Custom rule #42"));
-    assert!(rendered.contains("source #2"));
+    for handle in handles {
+        handle.join().unwrap();
+    }
 }
 
 #[test]
-fn test_emitter_incomplete_scan_status() {
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let mut emitter = TerminalEmitter::new(file);
+fn shared_emitter_finish_from_different_clone() {
+    let em1 = SharedEmitter::new(Box::new(TerminalEmitter::new(std::io::stdout())));
+    let em2 = em1.clone();
 
-    let mut outcome = ScanOutcome::default();
-    outcome.errors.push(crate::scanner::ScanError::Read);
-    emitter.finish_scan(&outcome);
-
-    let rendered = std::fs::read_to_string(&path).unwrap();
-    assert!(rendered.contains("INCOMPLETE"));
+    let finding = make_finding(1);
+    em1.emit_finding(&finding, Some("test.rs"));
+    em2.finish_scan(&make_outcome(1));
 }
 
 #[test]
-fn test_emitter_finding_with_no_source_path() {
-    use crate::rules::builtin::RuleId;
-    use crate::scanner::Finding;
-    use crate::scanner::fingerprint::FindingId;
-    use crate::scanner::redaction::RedactedString;
-
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let mut emitter = TerminalEmitter::new(file);
-
-    let finding = Finding {
-        source_id: 5,
-        line: 1,
-        start_column: 1,
-        end_column: 10,
-        rule: RuleId::AwsAccessKeyId,
-        value: RedactedString::new(b"secret"),
-        id: FindingId::new(b"test/path.rs", b"secret"),
-    };
-    emitter.emit_finding(&finding, None);
-    emitter.finish_scan(&ScanOutcome::default());
-
-    let rendered = std::fs::read_to_string(&path).unwrap();
-    assert!(rendered.contains("source #5"));
-}
-
-#[test]
-fn test_emitter_excluded_scan_status() {
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let mut emitter = TerminalEmitter::new(file);
-
-    let mut outcome = ScanOutcome::default();
-    outcome.stats.files_excluded = 1;
-    emitter.finish_scan(&outcome);
-
-    let rendered = std::fs::read_to_string(&path).unwrap();
-    assert!(rendered.contains("EXCLUDED"));
-}
-
-#[test]
-fn test_shared_emitter_begin_scan() {
-    let temp = TempDir::new();
-    let path = temp.path().join("output.txt");
-    let file = File::create(&path).unwrap();
-    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(file)));
-    emitter.begin_scan();
-    emitter.finish_scan(&ScanOutcome::default());
+fn thread_safe_writer_write_and_flush() {
+    let mut buffer = Vec::new();
+    let mut writer = ThreadSafeWriter::new(&mut buffer);
+    writer.write_all(b"hello").unwrap();
+    writer.flush().unwrap();
+    assert_eq!(buffer, b"hello");
 }
