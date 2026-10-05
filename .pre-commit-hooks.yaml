@@ -23,3 +23,11 @@
   pass_filenames: false
   always_run: true
   stages: [pre-commit]
+
+- id: cargo-coverage
+  name: cargo coverage
+  entry: cargo coverage
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
