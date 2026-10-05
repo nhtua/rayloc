@@ -1,30 +1,36 @@
 //! Tests for the FindingEmitter trait and TerminalEmitter implementation.
 
-use std::io::Cursor;
+use std::fs::File;
 
 use crate::report::emitter::{FindingEmitter, TerminalEmitter};
 use crate::scanner::ScanOutcome;
+use crate::test_support::TempDir;
 
 #[test]
 fn test_terminal_emitter_basic_flow() {
-    let mut output = Cursor::new(Vec::new());
-    let mut emitter = TerminalEmitter::new(&mut output);
+    let temp = TempDir::new();
+    let path = temp.path().join("output.txt");
+    let file = File::create(&path).unwrap();
+    let mut emitter = TerminalEmitter::new(file);
     emitter.begin_scan();
     emitter.finish_scan(&ScanOutcome::default());
-    let rendered = String::from_utf8(output.into_inner()).unwrap();
-    assert!(rendered.contains("CLEAN"));
-    assert!(rendered.contains("finding"));
+    drop(emitter);
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert!(content.contains("CLEAN"));
+    assert!(content.contains("finding"));
 }
 
 #[test]
 fn test_emitter_emits_finding() {
     use crate::rules::builtin::RuleId;
+    use crate::scanner::Finding;
     use crate::scanner::fingerprint::FindingId;
     use crate::scanner::redaction::RedactedString;
-    use crate::scanner::{Finding, ScanOutcome};
 
-    let mut output = Cursor::new(Vec::new());
-    let mut emitter = TerminalEmitter::new(&mut output);
+    let temp = TempDir::new();
+    let path = temp.path().join("output.txt");
+    let file = File::create(&path).unwrap();
+    let mut emitter = TerminalEmitter::new(file);
     emitter.begin_scan();
 
     let finding = Finding {
@@ -41,8 +47,9 @@ fn test_emitter_emits_finding() {
 
     let outcome = ScanOutcome::default();
     emitter.finish_scan(&outcome);
+    drop(emitter);
 
-    let rendered = String::from_utf8(output.into_inner()).unwrap();
+    let rendered = std::fs::read_to_string(&path).unwrap();
     assert!(rendered.contains("test/path.rs"));
     assert!(rendered.contains("Rule:"));
     assert!(rendered.contains("Severity:"));

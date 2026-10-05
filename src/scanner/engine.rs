@@ -30,13 +30,28 @@ pub(super) struct Collector {
     entries: BTreeMap<FindingKey, Finding>,
     labels: BTreeMap<u32, Box<str>>,
     limit: usize,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
 }
+
 impl Collector {
     pub(super) fn new(limit: usize) -> Self {
         Self {
             entries: BTreeMap::new(),
             labels: BTreeMap::new(),
             limit,
+            emitter: None,
+        }
+    }
+    #[allow(dead_code)]
+    pub(super) fn with_emitter(
+        limit: usize,
+        emitter: crate::report::emitter::SharedEmitter,
+    ) -> Self {
+        Self {
+            entries: BTreeMap::new(),
+            labels: BTreeMap::new(),
+            limit,
+            emitter: Some(emitter),
         }
     }
     fn offer(&mut self, finding: Finding) {
@@ -47,6 +62,10 @@ impl Collector {
             finding.end_column,
             finding.rule,
         );
+        // Skip duplicates
+        if self.entries.contains_key(&key) {
+            return;
+        }
         if self.entries.len() == self.limit {
             let Some((&last, _)) = self.entries.last_key_value() else {
                 return;
@@ -55,6 +74,14 @@ impl Collector {
                 return;
             }
             self.entries.pop_last();
+        }
+        // Emit immediately if emitter is configured
+        if let Some(ref emitter) = self.emitter {
+            let source_path = self
+                .labels
+                .get(&finding.source_id)
+                .map(|label| label.as_ref());
+            emitter.emit_finding(&finding, source_path);
         }
         self.entries.insert(key, finding);
     }
@@ -68,7 +95,10 @@ impl Collector {
         let retained: BTreeSet<u32> = self.entries.keys().map(|key| key.0).collect();
         self.labels.retain(|id, _| retained.contains(id));
         outcome.sources = self.labels;
-        outcome.findings = self.entries.into_values().collect();
+        // When emitter is used, findings were already emitted; don't duplicate
+        if self.emitter.is_none() {
+            outcome.findings = self.entries.into_values().collect();
+        }
         if outcome.stats.findings_detected > self.limit as u64 {
             outcome.fail(ScanError::FindingLimit);
         }
@@ -426,3 +456,7 @@ fn read_records_into(
 #[cfg(test)]
 #[path = "../../tests/unit/engine.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/engine_collector.rs"]
+mod collector_tests;
