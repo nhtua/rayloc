@@ -491,7 +491,21 @@ pub(crate) fn detect_line_with_disabled(
         if offset < covered_until {
             continue;
         }
-        if !matches!(byte, b'A' | b'b' | b'g' | b's' | b'r' | b'h' | b'p' | b'x' | b'w' | b'l' | b'f' | b'a' | b'-' ) {
+        if !matches!(
+            byte,
+            b'A' | b'b'
+                | b'g'
+                | b's'
+                | b'r'
+                | b'h'
+                | b'p'
+                | b'x'
+                | b'w'
+                | b'l'
+                | b'f'
+                | b'a'
+                | b'-'
+        ) {
             continue;
         }
         if offset > 0 && is_word(bytes[offset - 1]) && byte != b'-' {
