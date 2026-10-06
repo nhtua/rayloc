@@ -32,7 +32,10 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
         )?;
     }
     for error in &outcome.errors {
-        writeln!(output, "Error: {error}")?;
+        match &error.path {
+            Some(path) => writeln!(output, "Error: {path} — {}", error.error)?,
+            None => writeln!(output, "Error: {}", error.error)?,
+        }
     }
     // Print summary at the end
     let status = match outcome.exit_code() {

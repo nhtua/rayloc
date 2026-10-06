@@ -109,8 +109,10 @@ impl Worker {
     ) -> ScanOutcome {
         let mut outcome = ScanOutcome::default();
         outcome.stats.files_attempted = 1;
+        let label_string = label.to_string_lossy().into_owned();
+        let label_box: Box<str> = label_string.into();
         match open_regular(path) {
-            Err(error) => outcome.fail(error),
+            Err(error) => outcome.fail_at(error, Some(label_box)),
             Ok(mut file) => {
                 // Binary file detection: sample initial bytes for null bytes
                 let is_binary = match file.metadata() {
@@ -147,7 +149,9 @@ impl Worker {
                     emitter,
                 );
                 match result {
-                    Err(error) => outcome.fail(error),
+                    Err(error) => {
+                        outcome.fail_at(error, Some(label_box));
+                    }
                     Ok(()) if outcome.errors.is_empty() => outcome.stats.files_completed = 1,
                     Ok(()) => {}
                 }
@@ -369,7 +373,7 @@ fn merge_suppressions(
 pub(super) fn merge(outcome: &mut ScanOutcome, source: ScanOutcome) {
     let result = merge_stats(&mut outcome.stats, &source.stats);
     for error in source.errors {
-        outcome.fail(error);
+        outcome.fail_at(error.error, error.path);
     }
     if let Err(error) = result {
         outcome.fail(error);

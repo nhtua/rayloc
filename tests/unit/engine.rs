@@ -1,4 +1,5 @@
 use super::*;
+use crate::scanner::SourceError;
 use std::{
     fs::OpenOptions,
     io::{BufReader, Cursor, Read, Write},
@@ -127,7 +128,10 @@ fn reader_and_candidate_failures_keep_prior_findings_and_prevent_clean_exit() {
     );
     let outcome = scan_reader(&mut Cursor::new(input), 1);
     assert_eq!(outcome.exit_code(), 2);
-    assert_eq!(outcome.errors, [ScanError::CandidateLimit]);
+    assert_eq!(
+        outcome.errors,
+        [SourceError::new(ScanError::CandidateLimit, None)]
+    );
     assert_eq!(outcome.findings.len(), 1);
     assert_eq!(outcome.stats.files_completed, 0);
 
@@ -138,7 +142,7 @@ fn reader_and_candidate_failures_keep_prior_findings_and_prevent_clean_exit() {
     };
     let outcome = scan_reader(&mut reader, 1);
     assert_eq!(outcome.exit_code(), 2);
-    assert_eq!(outcome.errors, [ScanError::Read]);
+    assert_eq!(outcome.errors, [SourceError::new(ScanError::Read, None)]);
     assert_eq!(outcome.findings.len(), 1);
     assert!(!format!("{outcome:?}").contains("sensitive-io-diagnostic"));
 }
@@ -187,7 +191,10 @@ fn line_limit_handles_exact_boundary_newlines_and_fragment_growth() {
     for capacity in [1, 37, 100] {
         let mut reader = BufReader::with_capacity(capacity, Cursor::new(vec![b'0'; 38]));
         let outcome = scan_with_limits(&mut reader, 1, limits);
-        assert_eq!(outcome.errors, [ScanError::LineLimit]);
+        assert_eq!(
+            outcome.errors,
+            [SourceError::new(ScanError::LineLimit, None)]
+        );
         assert_eq!(outcome.exit_code(), 2);
     }
     let mut input = vec![b'0'; READ_BUFFER_BYTES + 1];
@@ -200,7 +207,7 @@ fn line_limit_handles_exact_boundary_newlines_and_fragment_growth() {
     let oversized = vec![b'0'; MAX_LINE_BYTES + 1];
     assert_eq!(
         scan_reader(&mut Cursor::new(oversized), 1).errors,
-        [ScanError::LineLimit]
+        [SourceError::new(ScanError::LineLimit, None)]
     );
 }
 
@@ -217,7 +224,10 @@ fn findings_are_capped_globally_with_exact_counts_and_stable_first_occurrences()
         },
     );
     assert_eq!(outcome.exit_code(), 2);
-    assert_eq!(outcome.errors, [ScanError::FindingLimit]);
+    assert_eq!(
+        outcome.errors,
+        [SourceError::new(ScanError::FindingLimit, None)]
+    );
     assert_eq!(outcome.stats.findings_detected, 3);
     assert_eq!(
         outcome.findings.iter().map(|f| f.line).collect::<Vec<_>>(),
@@ -242,7 +252,10 @@ fn public_scanner_enforces_the_default_ten_thousand_finding_limit() {
     let input = b"-----BEGIN PRIVATE KEY-----\n".repeat(10_002);
     let outcome = scan_reader(&mut Cursor::new(input), 1);
     assert_eq!(outcome.exit_code(), 2);
-    assert_eq!(outcome.errors, [ScanError::FindingLimit]);
+    assert_eq!(
+        outcome.errors,
+        [SourceError::new(ScanError::FindingLimit, None)]
+    );
     assert_eq!(outcome.findings.len(), 10_000);
     assert_eq!(outcome.findings.last().unwrap().line, 10_000);
     assert_eq!(outcome.stats.findings_detected, 10_002);
@@ -282,7 +295,10 @@ fn overflow_is_safe_for_every_scanner_counter() {
         ),
         Ok(())
     );
-    assert_eq!(outcome.errors, [ScanError::CounterOverflow]);
+    assert_eq!(
+        outcome.errors,
+        [SourceError::new(ScanError::CounterOverflow, None)]
+    );
     assert_eq!(outcome.exit_code(), 2);
 
     for input in [b"1".as_slice(), b"1\n"] {
@@ -347,7 +363,13 @@ fn unreadable_regular_files_return_safe_open_errors() {
     if readable_with_current_privileges {
         assert_eq!(outcome.exit_code(), 1);
     } else {
-        assert_eq!(outcome.errors, [ScanError::Open]);
+        assert_eq!(
+            outcome.errors,
+            [SourceError::new(
+                ScanError::Open,
+                Some(path.to_string_lossy().into())
+            )]
+        );
         assert_eq!(outcome.exit_code(), 2);
     }
 }
@@ -358,11 +380,20 @@ fn nonexistent_paths_directories_and_symlinks_are_safe_errors() {
     let sentinel = "ghp_SyntheticSensitivePath0123456789";
     let path = directory.path().join(sentinel);
     let outcome = scan_file(&path, 1);
-    assert_eq!(outcome.errors, [ScanError::Open]);
-    assert!(!format!("{outcome:?}").contains(sentinel));
     assert_eq!(
-        scan_file(directory.path(), 1).errors,
-        [ScanError::NotRegularFile]
+        outcome.errors,
+        [SourceError::new(
+            ScanError::Open,
+            Some(path.to_string_lossy().into())
+        )]
+    );
+    let dir_path = directory.path().to_path_buf();
+    assert_eq!(
+        scan_file(&dir_path, 1).errors,
+        [SourceError::new(
+            ScanError::NotRegularFile,
+            Some(dir_path.to_string_lossy().into())
+        )]
     );
     #[cfg(unix)]
     {
@@ -370,7 +401,13 @@ fn nonexistent_paths_directories_and_symlinks_are_safe_errors() {
         let link = directory.path().join("link");
         fs::write(&file, b"-----BEGIN PRIVATE KEY-----").unwrap();
         std::os::unix::fs::symlink(&file, &link).unwrap();
-        assert_eq!(scan_file(&link, 1).errors, [ScanError::NotRegularFile]);
+        assert_eq!(
+            scan_file(&link, 1).errors,
+            [SourceError::new(
+                ScanError::NotRegularFile,
+                Some(link.to_string_lossy().into())
+            )]
+        );
         assert!(scan_file(&link, 1).findings.is_empty());
     }
 }
@@ -454,10 +491,19 @@ fn reusable_file_buffers_and_worker_failures_preserve_counts() {
     reader.read_to_end(&mut bytes).unwrap();
     assert_eq!(bytes, b"abcdef");
     fs::write(&path, vec![b'x'; MAX_LINE_BYTES + 1]).unwrap();
-    assert_eq!(scan_file(&path, 1).errors, [ScanError::LineLimit]);
+    assert_eq!(
+        scan_file(&path, 1).errors,
+        [SourceError::new(
+            ScanError::LineLimit,
+            Some(path.to_string_lossy().into())
+        )]
+    );
     fs::write(&path, b"ghp_abcdefghijklmnop\n".repeat(MAX_FINDINGS + 1)).unwrap();
     let result = scan_file(&path, 1);
-    assert_eq!(result.errors, [ScanError::FindingLimit]);
+    assert_eq!(
+        result.errors,
+        [SourceError::new(ScanError::FindingLimit, None)]
+    );
     assert_eq!(result.stats.files_completed, 0);
     let mut target = ScanOutcome::default();
     target.stats.files_attempted = u64::MAX;
@@ -465,7 +511,13 @@ fn reusable_file_buffers_and_worker_failures_preserve_counts() {
     source.stats.files_attempted = 1;
     source.fail(ScanError::Read);
     merge(&mut target, source);
-    assert_eq!(target.errors, [ScanError::Read, ScanError::CounterOverflow]);
+    assert_eq!(
+        target.errors,
+        [
+            SourceError::new(ScanError::Read, None),
+            SourceError::new(ScanError::CounterOverflow, None)
+        ]
+    );
     for index in 0..6 {
         let mut target = ScanStats::default();
         let mut source = ScanStats::default();

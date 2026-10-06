@@ -34,6 +34,28 @@ pub enum ScanError {
     Pool,
 }
 
+/// A scan error associated with a specific source path, when known.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct SourceError {
+    pub error: ScanError,
+    pub path: Option<Box<str>>,
+}
+
+impl SourceError {
+    pub fn new(error: ScanError, path: Option<Box<str>>) -> Self {
+        Self { error, path }
+    }
+}
+
+impl std::fmt::Display for SourceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.path {
+            Some(path) => write!(f, "{path} — {}", self.error),
+            None => write!(f, "{}", self.error),
+        }
+    }
+}
+
 impl fmt::Display for ScanError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
@@ -85,7 +107,7 @@ pub struct ScanStats {
 pub struct ScanOutcome {
     pub findings: Vec<Finding>,
     pub sources: std::collections::BTreeMap<u32, Box<str>>,
-    pub errors: Vec<ScanError>,
+    pub errors: Vec<SourceError>,
     pub stats: ScanStats,
     pub elapsed: Duration,
 }
@@ -103,8 +125,13 @@ impl ScanOutcome {
     }
 
     pub(crate) fn fail(&mut self, error: ScanError) {
-        if !self.errors.contains(&error) {
-            self.errors.push(error);
+        self.fail_at(error, None);
+    }
+
+    pub(crate) fn fail_at(&mut self, error: ScanError, path: Option<Box<str>>) {
+        let source_error = SourceError::new(error, path);
+        if !self.errors.contains(&source_error) {
+            self.errors.push(source_error);
         }
     }
 }
