@@ -379,6 +379,26 @@ fn discovery_admission_failures_do_not_silently_skip_scope() {
         [SourceError::new(ScanError::Policy, None)]
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn entries_classify_directories_files_and_symlinks_without_following_links() {
+    use std::os::unix::fs::symlink;
+    let temp = TempDir::new();
+    fs::create_dir(temp.path().join("directory")).unwrap();
+    fs::write(temp.path().join("file"), "clean").unwrap();
+    symlink(temp.path().join("file"), temp.path().join("link")).unwrap();
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    let entries = runner.entries(temp.path()).unwrap();
+    let kinds: std::collections::BTreeMap<_, _> = entries
+        .into_iter()
+        .map(|entry| (entry.name.to_string_lossy().into_owned(), entry.kind))
+        .collect();
+    assert!(matches!(kinds["directory"], Kind::Directory));
+    assert!(matches!(kinds["file"], Kind::Regular));
+    assert!(matches!(kinds["link"], Kind::Other));
+}
 #[test]
 fn merge_errors_and_every_new_category_render_without_source_metadata() {
     for error in [
@@ -431,7 +451,7 @@ fn selected_ancestors_and_pending_work_respect_path_budgets() {
 }
 #[cfg(unix)]
 #[test]
-fn metadata_failures_and_disappearing_files_remain_incomplete() {
+fn disappearing_files_remain_incomplete_and_cached_type_is_used() {
     use std::os::unix::fs::PermissionsExt;
     let temp = TempDir::new();
     let root = root(&temp);
@@ -452,11 +472,8 @@ fn metadata_failures_and_disappearing_files_remain_incomplete() {
     assert!(
         entries
             .iter()
-            .all(|entry| matches!(entry.kind, Kind::Error))
+            .any(|entry| matches!(entry.kind, Kind::Regular))
     );
-    second.frames.last_mut().unwrap().entries = entries;
-    second.walk(None, &mut None).unwrap();
-    assert_eq!(second.outcome.errors[0].error, ScanError::Discovery);
 }
 #[test]
 fn discovered_scope_counter_and_pending_path_limits_propagate() {

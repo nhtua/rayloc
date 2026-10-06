@@ -12,7 +12,6 @@ use crate::{
     rules::Registry,
 };
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use rayon::prelude::*;
 use std::{
     ffi::{OsStr, OsString},
     fs,
@@ -471,33 +470,14 @@ impl Runner<'_> {
                 debug_assert!(entries.capacity() >= old);
             }
             let name = entry.file_name().into_boxed_os_str();
-            self.budget.charge(0, name.len(), self.limits)?;
-            entries.push(Entry {
-                name,
-                kind: Kind::Error,
-            });
-        }
-        self.pool(entries.len(), 0)?;
-        for batch in entries.chunks_mut(BATCH) {
-            let classify = |entry: &mut Entry| {
-                entry.kind = match join(directory, &entry.name)
-                    .and_then(|path| fs::symlink_metadata(path).map_err(|_| ScanError::Discovery))
-                {
-                    Ok(metadata) if metadata.is_dir() => Kind::Directory,
-                    Ok(metadata) if metadata.is_file() => Kind::Regular,
-                    Ok(_) => Kind::Other,
-                    Err(_) => Kind::Error,
-                };
+            let kind = match entry.file_type() {
+                Ok(file_type) if file_type.is_dir() => Kind::Directory,
+                Ok(file_type) if file_type.is_file() => Kind::Regular,
+                Ok(_) => Kind::Other,
+                Err(_) => Kind::Error,
             };
-            if batch.len() >= self.options.parallel_threshold && self.options.workers > 1 {
-                if let Some(pool) = &self.pool {
-                    pool.install(|| batch.par_iter_mut().for_each(classify));
-                } else {
-                    batch.iter_mut().for_each(classify);
-                }
-            } else {
-                batch.iter_mut().for_each(classify);
-            }
+            self.budget.charge(0, name.len(), self.limits)?;
+            entries.push(Entry { name, kind });
         }
         // '/' belongs to directory sorting keys; component order would misorder a.txt vs a/x.
         entries.sort_unstable_by(|a, b| {
