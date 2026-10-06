@@ -45,7 +45,7 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     // LLM provider API keys
     fixtures.push((
         RuleId::OpenaiKey,
-        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(), /* rayloc:ignore */,
+        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(), /* rayloc:ignore */, /* rayloc:ignore */,
     ));
     fixtures.push((
         RuleId::OpenrouterKey,

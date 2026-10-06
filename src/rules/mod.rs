@@ -12,6 +12,7 @@ pub mod builtin;
 pub mod context;
 pub mod entropy;
 mod jose;
+pub(crate) mod stream;
 const PROGRAM_BYTES: usize = 256 * 1024;
 const SET_BYTES: usize = 16 * 1024 * 1024;
 const DFA_BYTES: usize = 256 * 1024;

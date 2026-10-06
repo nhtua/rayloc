@@ -6,6 +6,7 @@ use crate::rules::builtin::RuleId;
 use redaction::RedactedString;
 
 pub mod binary;
+mod chunk;
 pub mod diff;
 pub mod engine;
 pub(crate) mod execution;
@@ -16,6 +17,10 @@ pub mod scope;
 pub mod staged;
 mod tracked;
 pub mod worktree;
+
+#[cfg(test)]
+#[path = "../../tests/unit/chunk.rs"]
+mod chunk_tests;
 
 /// Errors contain fixed categories only, never paths, arguments, or source text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
