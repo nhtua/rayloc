@@ -1,16 +1,18 @@
 //! Bounded pure parsing of Git's raw metadata and unified patches.
 //!
-//! The caller supplies raw NUL records and one LF-framed patch record at a time.
-//! Each record includes its terminator in the 1-MiB cap. This module allocates
-//! nothing: two borrowed raw records (at most 2 MiB), one borrowed patch record
-//! (1 MiB), and constant parser state suffice regardless of stream length.
+//! The caller supplies bounded raw NUL records and patch record fragments. Raw
+//! and structural patch records include their terminator in the 1-MiB cap;
+//! content records stream without a physical-line cap. The parser retains only
+//! bounded structural bytes plus constant state regardless of content length.
 //! Acquisition owns bounded readers, source-ID allocation/order, process success,
 //! and final EOF checks; detection consumes events before reusing record storage.
 //! Blob identities must be known (pinned-tree protocol), not working-tree zero
 //! placeholders. OID width and empty-blob identity are repository-supplied.
 
-/// Maximum record size, including NUL or LF framing.
-pub const MAX_RECORD_BYTES: usize = 1024 * 1024;
+/// Maximum complete raw or structural patch record size, including terminator.
+pub const MAX_METADATA_RECORD_BYTES: usize = 1024 * 1024;
+/// Legacy alias retained for library compatibility.
+pub const MAX_RECORD_BYTES: usize = MAX_METADATA_RECORD_BYTES;
 
 /// Fixed safe categories; no source bytes or paths enter errors.
 #[derive(Debug, PartialEq, Eq)]
@@ -69,7 +71,7 @@ impl<'a> RawBinding<'a> {
         worktree: bool,
         dirty_gitlinks: bool,
     ) -> Result<Self, DiffError> {
-        if header.len() > MAX_RECORD_BYTES || path.len() > MAX_RECORD_BYTES {
+        if header.len() > MAX_METADATA_RECORD_BYTES || path.len() > MAX_METADATA_RECORD_BYTES {
             return Err(DiffError::Limit);
         }
         let header = header
@@ -183,6 +185,16 @@ pub enum Event<'a> {
         payload: &'a [u8],
         starts_run: bool,
     },
+    /// A fragment of one added physical line. `payload` excludes the diff `+`
+    /// indicator and the LF terminator. Columns are payload byte columns.
+    AddedFragment {
+        source_id: u32,
+        new_line: u64,
+        column: u64,
+        payload: &'a [u8],
+        starts_run: bool,
+        ends_line: bool,
+    },
     Boundary,
 }
 /// One logical raw entry, including both sections of a type change.
@@ -207,6 +219,11 @@ pub struct Parser<'a> {
     previous: Option<u8>,
     in_run: bool,
     failed: bool,
+    metadata: Vec<u8>,
+    record_open: bool,
+    record_size: usize,
+    body_indicator: Option<u8>,
+    body_column: u64,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -248,6 +265,11 @@ impl<'a> Parser<'a> {
             previous: None,
             in_run: false,
             failed: false,
+            metadata: Vec::new(),
+            record_open: false,
+            record_size: 0,
+            body_indicator: None,
+            body_column: 1,
         })
     }
 
@@ -266,13 +288,164 @@ impl<'a> Parser<'a> {
         record: &'r [u8],
         mut emit: impl FnMut(Event<'r>),
     ) -> Result<(), DiffError> {
+        if record.len() > MAX_METADATA_RECORD_BYTES {
+            self.failed = true;
+            return Err(DiffError::Limit);
+        }
+        self.fragment(record, true, |event| match event {
+            Event::AddedFragment {
+                source_id,
+                new_line,
+                payload,
+                starts_run,
+                ends_line: true,
+                ..
+            } => emit(Event::Added {
+                source_id,
+                new_line,
+                payload,
+                starts_run,
+            }),
+            Event::Boundary => emit(Event::Boundary),
+            _ => {}
+        })
+    }
+
+    /// Consume one bounded fragment of a patch record. Structural records are
+    /// retained up to the metadata cap; body content is validated and drained
+    /// incrementally. Only the final fragment includes LF.
+    pub fn fragment<'r>(
+        &mut self,
+        fragment: &'r [u8],
+        end_record: bool,
+        mut emit: impl FnMut(Event<'r>),
+    ) -> Result<(), DiffError> {
         if self.failed {
             return Err(DiffError::Invalid);
         }
-        let result = self.consume(record, &mut emit);
+        let result = self.consume_fragment(fragment, end_record, &mut emit);
         if result.is_err() {
             self.failed = true;
         }
+        result
+    }
+
+    fn consume_fragment<'r>(
+        &mut self,
+        fragment: &'r [u8],
+        end_record: bool,
+        emit: &mut impl FnMut(Event<'r>),
+    ) -> Result<(), DiffError> {
+        if fragment.contains(&b'\n')
+            && (!end_record
+                || fragment.iter().filter(|&&b| b == b'\n').count() != 1
+                || fragment.last() != Some(&b'\n'))
+        {
+            return Err(DiffError::Invalid);
+        }
+        if end_record != fragment.ends_with(b"\n") {
+            return Err(DiffError::Invalid);
+        }
+        self.record_size = self
+            .record_size
+            .checked_add(fragment.len())
+            .ok_or(DiffError::Overflow)?;
+        let body = self.phase == Phase::Body
+            && (self.body_indicator.is_some()
+                || ((self.old_left != 0 || self.new_left != 0)
+                    && fragment
+                        .first()
+                        .is_some_and(|b| matches!(b, b'+' | b'-' | b' '))));
+        if body && !self.binding.dirty_gitlink() {
+            let mut payload = fragment;
+            let mut column = self.body_column;
+            let first_fragment = self.body_indicator.is_none();
+            if first_fragment {
+                let (&indicator, rest) = payload.split_first().ok_or(DiffError::Invalid)?;
+                if !matches!(indicator, b'+' | b'-' | b' ') {
+                    return Err(DiffError::Invalid);
+                }
+                if indicator != b'+' {
+                    consume_side(&mut self.old_left, &mut self.old_line, self.old_eof)?;
+                }
+                let new_line = self.new_line;
+                if indicator != b'-' {
+                    consume_side(&mut self.new_left, &mut self.new_line, self.new_eof)?;
+                }
+                self.previous = Some(indicator);
+                self.body_indicator = Some(indicator);
+                if indicator != b'+' {
+                    self.in_run = false;
+                }
+                self.body_column = 1;
+                payload = rest;
+                column = 1;
+                if indicator == b'+' && self.new_mode != 0o160000 {
+                    emit(Event::AddedFragment {
+                        source_id: self.binding.source_id,
+                        new_line,
+                        column,
+                        payload: payload
+                            .strip_suffix(if end_record {
+                                b"\n".as_slice()
+                            } else {
+                                b"".as_slice()
+                            })
+                            .unwrap_or(payload),
+                        starts_run: !self.in_run,
+                        ends_line: end_record,
+                    });
+                    self.in_run = true;
+                }
+            } else if self.body_indicator == Some(b'+') {
+                let bytes = if end_record {
+                    payload.strip_suffix(b"\n").ok_or(DiffError::Invalid)?
+                } else {
+                    payload
+                };
+                let new_line = self.new_line.checked_sub(1).ok_or(DiffError::Overflow)?;
+                emit(Event::AddedFragment {
+                    source_id: self.binding.source_id,
+                    new_line,
+                    column,
+                    payload: bytes,
+                    starts_run: false,
+                    ends_line: end_record,
+                });
+            }
+            let content_len = payload.len().saturating_sub(if end_record { 1 } else { 0 });
+            self.body_column = self
+                .body_column
+                .checked_add(content_len as u64)
+                .ok_or(DiffError::Overflow)?;
+            if end_record {
+                self.body_indicator = None;
+                self.body_column = 1;
+                self.record_size = 0;
+                self.record_open = false;
+                return Ok(());
+            }
+            self.record_open = true;
+            return Ok(());
+        }
+        if self.record_size > MAX_METADATA_RECORD_BYTES {
+            return Err(DiffError::Limit);
+        }
+        self.metadata.extend_from_slice(fragment);
+        if !end_record {
+            self.record_open = true;
+            return Ok(());
+        }
+        let record = std::mem::take(&mut self.metadata);
+        self.record_size = 0;
+        self.record_open = false;
+        let result = self.consume(&record, &mut |event| {
+            if let Event::Boundary = event {
+                emit(Event::Boundary);
+            }
+        });
+        self.metadata = record;
+        self.metadata.clear();
         result
     }
 
@@ -281,7 +454,7 @@ impl<'a> Parser<'a> {
         record: &'r [u8],
         emit: &mut impl FnMut(Event<'r>),
     ) -> Result<(), DiffError> {
-        if record.len() > MAX_RECORD_BYTES {
+        if record.len() > MAX_METADATA_RECORD_BYTES {
             return Err(DiffError::Limit);
         }
         let line = record.strip_suffix(b"\n").ok_or(DiffError::Invalid)?;
@@ -488,6 +661,7 @@ impl<'a> Parser<'a> {
     /// next logical binding or patch EOF; any earlier error makes this fail too.
     pub fn finish(self) -> Result<(), DiffError> {
         if self.failed
+            || self.record_open
             || self.sections == 0
             || self.needs_second_section()
             || !self.complete_section()

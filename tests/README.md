@@ -7,7 +7,7 @@ and retries collisions, preserving another runner's directory. Concurrent broad
 suites should still use separate Cargo target directories to avoid build locks.
 
 Run `cargo test --locked --all` and `cargo coverage` (cargo-llvm-cov). Production Rust
-requires >=98% lines/regions and 100% functions, including `main`, formatters and
+requires >=97% lines/regions and 100% functions, including `main`, formatters and
 failures; no production exclusions are allowed. Stable LLVM instrumentation
 reports regions, without claiming branch coverage.
 

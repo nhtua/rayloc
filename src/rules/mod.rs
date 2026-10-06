@@ -8,11 +8,13 @@ use entropy::Histogram;
 use regex::bytes::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 use regex_syntax::hir::{Class, Hir, HirKind};
 use std::{ops::Range, sync::LazyLock};
+use stream::Candidate;
 pub mod builtin;
 pub mod context;
 pub mod entropy;
-mod jose;
+pub(crate) mod jose;
 pub(crate) mod stream;
+pub(crate) mod window;
 const PROGRAM_BYTES: usize = 256 * 1024;
 const SET_BYTES: usize = 16 * 1024 * 1024;
 const DFA_BYTES: usize = 256 * 1024;
@@ -39,6 +41,8 @@ struct CompiledRule {
     entropy: Option<f64>,
     id: RuleId,
     disabled: bool,
+    whole_line: bool,
+    max_match_bytes: Option<usize>,
 }
 pub struct Registry {
     set: RegexSet,
@@ -49,6 +53,8 @@ pub struct Registry {
     pub default_entropy_threshold: f64,
     pub entropy_thresholds: std::collections::BTreeMap<String, f64>,
 }
+
+const LEGACY_LINE_BYTES: usize = 1024 * 1024;
 pub static BUILTINS: LazyLock<Registry> =
     LazyLock::new(|| Registry::compile(Config::default()).expect("empty policy is valid"));
 fn capture(hir: &Hir, group: usize) -> Option<&Hir> {
@@ -95,6 +101,16 @@ fn alphabet(hir: &Hir, bins: &mut [bool; 256]) {
     }
 }
 impl Registry {
+    /// Run only the provider recognizers, using this registry's disabled rules.
+    #[allow(dead_code)] // Consumed by the line session in Task 5.
+    pub(crate) fn detect_provider_line(
+        &self,
+        bytes: &[u8],
+        emit: impl FnMut(RuleId, Range<usize>),
+    ) -> Result<(), ScanError> {
+        builtin::detect_line_with_disabled(bytes, &self.disabled, emit)
+    }
+
     /// Validate and compile all patterns before reading any selected source.
     pub fn compile(config: Config) -> Result<Self, ConfigError> {
         config.validate()?;
@@ -121,6 +137,12 @@ impl Registry {
                 return Err(ConfigError::Pattern);
             }
             let captured = capture(&hir, rule.group).ok_or(ConfigError::Pattern)?;
+            let whole_line = matches!(window::classify_input(&hir), window::RuleInput::WholeLine);
+            let max_match_bytes = if whole_line {
+                None
+            } else {
+                hir.properties().maximum_len()
+            };
             if let Some(gate) = rule.entropy {
                 let mut bins = [false; 256];
                 alphabet(captured, &mut bins);
@@ -145,6 +167,8 @@ impl Registry {
                 entropy: rule.entropy,
                 id: RuleId::Custom(index as u16 + 1, rule.severity),
                 disabled: config.disabled.contains(&rule.id),
+                whole_line,
+                max_match_bytes,
             });
         }
         let set = RegexSetBuilder::new(config.rules.iter().map(|r| r.pattern.as_str()))
@@ -161,6 +185,68 @@ impl Registry {
             default_entropy_threshold: config.default_entropy_threshold.unwrap_or(4.5),
             entropy_thresholds: config.entropy_thresholds,
         })
+    }
+    /// Whether any enabled custom rule requires the complete physical line.
+    pub(crate) fn requires_whole_line(&self) -> bool {
+        self.custom
+            .iter()
+            .any(|rule| !rule.disabled && rule.whole_line)
+    }
+
+    pub(crate) fn jose_enabled(&self) -> bool {
+        !self.disabled.contains(&RuleId::JoseToken)
+    }
+    pub(crate) fn windowed_rules(
+        &self,
+    ) -> impl Iterator<Item = (usize, &Regex, usize, Option<f64>, RuleId, usize)> {
+        self.custom.iter().enumerate().filter_map(|(index, rule)| {
+            if rule.disabled {
+                return None;
+            }
+            rule.max_match_bytes
+                .map(|max| (index, &rule.regex, rule.group, rule.entropy, rule.id, max))
+        })
+    }
+    pub(crate) fn legacy_line_rules(
+        &self,
+    ) -> impl Iterator<Item = (usize, &Regex, usize, Option<f64>, RuleId)> {
+        self.custom.iter().enumerate().filter_map(|(index, rule)| {
+            (rule.whole_line && !rule.disabled).then_some((
+                index,
+                &rule.regex,
+                rule.group,
+                rule.entropy,
+                rule.id,
+            ))
+        })
+    }
+    pub(crate) fn detect_legacy_line(
+        &self,
+        bytes: &[u8],
+        histogram: &mut Histogram,
+        mut emit: impl FnMut(Candidate<'_>),
+    ) -> Result<(), ScanError> {
+        for (index, regex, group, entropy, id) in self.legacy_line_rules() {
+            for captures in regex.captures_iter(bytes) {
+                let Some(value) = captures.get(group) else {
+                    continue;
+                };
+                if value.len() > MAX_CANDIDATE_BYTES {
+                    return Err(ScanError::CandidateLimit);
+                }
+                if !value.is_empty()
+                    && entropy.is_none_or(|gate| histogram.measure(value.as_bytes()) >= gate)
+                {
+                    emit(Candidate {
+                        rule: id,
+                        span: value.start() as u64..value.end() as u64,
+                        value: value.as_bytes(),
+                        priority: 3u16.saturating_add(index.min(u16::MAX as usize) as u16),
+                    });
+                }
+            }
+        }
+        Ok(())
     }
     /// Per-physical-line byte matching; missing optional captures never emit.
     pub fn detect_line(
@@ -184,6 +270,9 @@ impl Registry {
         suppressions: &mut context::Suppressions,
         mut emit: impl FnMut(RuleId, Range<usize>),
     ) -> Result<(), ScanError> {
+        if bytes.len() > LEGACY_LINE_BYTES && self.requires_whole_line() {
+            return Err(ScanError::RuleWindowLimit);
+        }
         let ignored = self.inline_ignores && context::directive(bytes);
         if ignored {
             context::increment(&mut suppressions.inline)?;

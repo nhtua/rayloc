@@ -1,5 +1,4 @@
 //! Borrowed, bounded payload fragments with physical-line locations.
-#![allow(dead_code)] // The engine begins consuming this contract in Task 5.
 use super::ScanError;
 use std::io::{self, BufRead};
 

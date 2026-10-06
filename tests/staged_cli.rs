@@ -567,7 +567,7 @@ fn unchanged_secrets_and_all_excluded_diffs_are_not_scanned() {
     assert!(check(scan(root, &[]), 0, 0).contains("EXCLUDED"));
 }
 #[test]
-fn large_files_stream_but_overlong_records_return_incomplete() {
+fn large_files_and_single_line_records_are_scanned_completely() {
     let dir = repo();
     let root = dir.path();
     use std::io::Write;
@@ -580,9 +580,17 @@ fn large_files_stream_but_overlong_records_return_incomplete() {
     drop(file);
     git(root, &["add", "large"]);
     check(scan(root, &[]), 1, 1);
-    fs::write(root.join("large"), "x".repeat(1024 * 1024)).unwrap();
-    git(root, &["add", "large"]);
-    check(scan(root, &[]), 2, 0);
+    let mut file = fs::File::create(root.join("large-minified")).unwrap();
+    let block = vec![b'x'; 256 * 1024];
+    for _ in 0..41 {
+        file.write_all(&block).unwrap();
+    }
+    writeln!(file, ",\"{SECRET}\"").unwrap();
+    drop(file);
+    git(root, &["add", "large-minified"]);
+    let text = check(scan(root, &[]), 1, 2);
+    assert!(text.contains("large:11265:1"), "{text}");
+    assert!(text.contains("large-minified:1:"), "{text}");
 }
 #[test]
 fn index_path_becoming_unreadable_during_acquisition_is_incomplete() {

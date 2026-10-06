@@ -143,6 +143,87 @@ fn jose_budgets_and_segment_boundaries_are_enforced() {
 fn accepted(bytes: &[u8]) -> bool {
     valid(bytes).unwrap_or(false)
 }
+
+#[test]
+fn jose_stream_matches_whole_line_at_every_split() {
+    let candidate = token(br#"{"alg":"HS256"}"#, b".e30.AAAA");
+    let input = [b"prefix ".as_slice(), &candidate, b" suffix"].concat();
+    let expected = {
+        let mut spans = Vec::new();
+        detect(&input, |rule, span| {
+            spans.push((rule, (span.start as u64)..(span.end as u64)))
+        })
+        .unwrap();
+        spans
+    };
+    for split in 0..=input.len() {
+        let mut state = JoseState::new();
+        let mut spans = Vec::new();
+        state
+            .push(&input[..split], |candidate| {
+                spans.push((candidate.rule, candidate.span))
+            })
+            .unwrap();
+        state
+            .push(&input[split..], |candidate| {
+                spans.push((candidate.rule, candidate.span))
+            })
+            .unwrap();
+        state
+            .finish(|candidate| spans.push((candidate.rule, candidate.span)))
+            .unwrap();
+        assert_eq!(spans, expected, "split {split}");
+    }
+}
+
+#[test]
+fn jose_stream_caps_only_framed_candidates() {
+    let mut state = JoseState::new();
+    assert_eq!(
+        state.push(
+            &[vec![b'A'; MAX_CANDIDATE_BYTES + 2], b".".to_vec()].concat(),
+            |_| {}
+        ),
+        Ok(())
+    );
+    state.finish(|_| {}).unwrap();
+    let mut state = JoseState::new();
+    let over = [
+        b"AA.".as_slice(),
+        &vec![b'A'; MAX_CANDIDATE_BYTES],
+        b".AAAA",
+    ]
+    .concat();
+    assert_eq!(state.push(&over, |_| {}), Err(ScanError::CandidateLimit));
+}
+
+#[test]
+fn jose_stream_accepts_exact_candidate_limit_and_rejects_one_byte_more() {
+    let header = encode(br#"{"alg":"HS256"}"#);
+    let mut exact = header.clone();
+    exact.extend_from_slice(b".e30.");
+    exact.extend(std::iter::repeat_n(b'A', MAX_CANDIDATE_BYTES - exact.len()));
+    assert_eq!(exact.len(), MAX_CANDIDATE_BYTES);
+    assert!(valid(&exact).unwrap());
+    let mut state = JoseState::new();
+    let mut found = Vec::new();
+    state
+        .push(&exact, |c| found.push((c.span, c.value.len())))
+        .unwrap();
+    assert!(found.is_empty());
+    state
+        .push(b",", |c| found.push((c.span, c.value.len())))
+        .unwrap();
+    assert_eq!(
+        found,
+        [(0..MAX_CANDIDATE_BYTES as u64, MAX_CANDIDATE_BYTES)]
+    );
+
+    let mut over = exact;
+    over.push(b'A');
+    state.reset();
+    assert_eq!(state.push(&over, |_| {}), Err(ScanError::CandidateLimit));
+}
 #[test]
 fn jwe_direct_and_key_wrapping_segment_contracts_are_distinct() {
     for (header, suffix, want) in [

@@ -90,6 +90,58 @@ fn stream_disagreement_truncation_duplicates_and_limits_fail_closed() {
     assert_eq!(out.exit_code(), 0);
     assert_eq!(out.stats.files_excluded, 1);
 }
+
+#[test]
+fn staged_large_added_line_is_scanned_fragment_by_fragment() {
+    let secret = "AKIA0123456789ABCDEF";
+    let payload = format!("{}{}", " ".repeat(10 * 1024 * 1024), secret);
+    let (raw, patch) = streams("minified.js", &payload);
+    let outcome = run_streams(&raw, &patch, b"", Default::default(), EMPTY);
+    assert_eq!(outcome.exit_code(), 1, "{outcome:?}");
+    assert_eq!(outcome.stats.bytes_read, payload.len() as u64);
+    assert_eq!(outcome.stats.lines_scanned, 1);
+    assert_eq!(outcome.stats.files_completed, 1);
+    assert!(outcome.findings.iter().any(|finding| {
+        finding.start_column == payload.len() - secret.len() + 1
+            && finding.end_column == payload.len() + 1
+    }));
+}
+
+#[test]
+fn staged_and_worktree_legacy_errors_keep_source_and_incomplete_completion() {
+    let config =
+        crate::config::parse(b"version: \"1\"\nrules: [{id: legacy, regex: 'prefix.*(SECRET)'}]")
+            .unwrap();
+    let registry = Registry::compile(config).unwrap();
+    let payload = "x".repeat(MAX_LINE_BYTES + 1);
+    let (raw, patch) = streams("large.js", &payload);
+    let root = Path::new("/repo");
+    let exclusions =
+        Exclusions::from_bytes(root, None, PolicyUsage::default(), ACTIVE_POLICY).unwrap();
+    for worktree in [false, true] {
+        let mut outcome = ScanOutcome::default();
+        let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+        consume_resolved(
+            &mut raw.as_slice(),
+            &mut patch.as_slice(),
+            root,
+            EMPTY,
+            &registry,
+            &exclusions,
+            &mut outcome,
+            &collector,
+            None,
+            worktree,
+        )
+        .unwrap();
+        collector.into_inner().unwrap().finish(&mut outcome);
+        assert_eq!(outcome.exit_code(), 2);
+        assert_eq!(outcome.errors[0].error, ScanError::RuleWindowLimit);
+        assert_eq!(outcome.errors[0].path.as_deref(), Some("large.js"));
+        assert_eq!(outcome.stats.files_attempted, 1);
+        assert_eq!(outcome.stats.files_completed, 0);
+    }
+}
 #[test]
 fn all_staged_counter_overflows_keep_error_precedence() {
     use super::super::ScanStats;

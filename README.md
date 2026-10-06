@@ -283,14 +283,21 @@ masked value and an ID for `rayloc accept`.
 - Source snippets, custom rule labels, CLI arguments and Git error output are
   never printed.
 
-**Limits:** 256 KiB reads, 1 MiB per line and per config file, 64 KiB per
-candidate and 10,000 retained findings. Exceeding a limit returns exit 2.
+**Limits:** 256 KiB reader fragments; no built-in physical-line length ceiling;
+1 MiB per config file; 64 KiB per captured candidate; and 10,000 retained
+findings. Existing enabled custom rules that require whole-line matching have a
+1 MiB compatibility limit; exceeding it reports incomplete custom-rule coverage
+with exit 2. Raising a whole-line cap increases memory in proportion to line
+length and still leaves a larger cutoff. See the
+[chunking measurements](docs/research/byte-chunk-scanning-results.md).
 
 ## Performance
 
 See the [measured release baseline](docs/research/release-baseline.md) for numbers
 and methodology. The [parallel scanning results](docs/research/parallel-scanning-results.md)
-record thread-scaling measurements and remaining limits. On the held-out synthetic corpus, rayloc reaches 98% precision
+record thread-scaling measurements and remaining limits. The
+[bounded chunk measurements](docs/research/byte-chunk-scanning-results.md)
+compare streamed minified lines with 1/5/10 MiB whole-line caps. On the held-out synthetic corpus, rayloc reaches 98% precision
 and recall. That corpus is too small to estimate a real-world false-positive rate.
 Staged scans under 5 ms and 500 MB/s per core are goals, not guarantees yet.
 
@@ -323,7 +330,7 @@ cargo bench --locked
 cargo coverage
 ```
 
-`cargo coverage` requires 98% line and region coverage and 100% function coverage.
+`cargo coverage` requires 97% line and region coverage and 100% function coverage.
 Set it up with:
 
 ```sh

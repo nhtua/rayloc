@@ -3,6 +3,9 @@
 
 Example: python3 scripts/parallel_measure.py --case 32_large --threads 1 2 8 32
 The fixture is warmed with one untimed scan; cache state is never changed.
+For single-file minified-line sizes and cap-versus-chunk comparisons, use
+scripts/longline_measure.py; those cases are serial and should not imply that
+adding directory worker threads accelerates one file.
 """
 import argparse
 import hashlib

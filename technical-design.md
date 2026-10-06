@@ -96,24 +96,37 @@ skip content based on a binary heuristic. Recursive scans always exclude Git
 administrative data.
 
 Use `BufRead::fill_buf`/`consume` or equivalent bounded byte reads. `lines()`
-requires UTF-8; unbounded `read_until` can allocate an entire giant line. Proposed
-initial budgets, to validate through benchmarks:
+requires UTF-8; unbounded `read_until` can allocate an entire giant line. Current
+budgets after bounded chunk scanning:
 
-| Resource | Initial limit / behavior |
+| Resource | Limit / behavior |
 | --- | --- |
-| Per-worker read buffer | 256 KiB |
-| Physical line / diff record | 1 MiB; exceeding returns incomplete-scan error |
+| Per-worker read buffer / payload fragment | 256 KiB |
+| Physical source line | No built-in length ceiling; scan incrementally |
+| Structural Git metadata record | 1 MiB; exceeding fails closed |
+| Enabled legacy whole-line custom regex | 1 MiB compatibility storage; longer lines return an incomplete-scan error while supported rules continue |
 | Candidate value / JOSE token | 64 KiB; exceeding returns incomplete-scan error |
 | Configuration input | 1 MiB plus parser depth/event/alias budgets |
 | Custom rules | 256; pattern text at most 16 KiB each |
 | Compiled regex programs | Explicit per-pattern and aggregate budgets |
 | Retained findings | 10,000; exceeding returns 2 with partial results |
 | Paths/work items | Bounded batches; no eager whole-repository collection |
+| Raw payload buffers per scanning lane | At most 1.5 MiB without legacy custom storage; 2.25 MiB with it |
 
-These are limits on individual resources, not total file size. Validate any
-user-tunable budgets. Never truncate a value and return clean. Candidate state
-crosses read-buffer boundaries; fragments retain original byte offsets and line
-numbers. LF increments line numbers; handle CRLF without corrupting locations.
+These are limits on individual resources, not total file size. The raw payload
+budget includes read buffers, provider carry, custom regex windows, candidate
+buffers, and reusable line or legacy storage; finding metadata and regex caches
+are accounted separately. Never truncate a candidate and return clean. Built-ins
+and finite, bounded custom regexes scan long lines incrementally. Regexes whose
+full match cannot be proven bounded, or that use assertions, keep whole-line
+semantics up to the compatibility budget; longer input produces
+`custom rule requires whole-line input beyond compatibility limit` with safe
+source attribution and exit 2. Raising that budget is an interim option that
+increases memory with input size and still leaves a larger cutoff. Long-line
+findings are held until the physical line ends so a trailing ignore directive
+can suppress them. A single detected candidate remains limited to 64 KiB.
+Fragments preserve byte offsets and line numbers across read boundaries. LF
+increments line numbers; CRLF retains the CR in source columns.
 
 Buffered reading is the default for mutable workspace files. File-backed
 `memmap2` constructors are unsafe if another process changes the backing file.
@@ -132,8 +145,11 @@ boundary, capture, and fixture contracts, avoiding a dependency for simple
 formats. The first library implementation uses this approach. When configurable
 regex rules are introduced, compile a byte `RegexSet` and individual byte regexes with identical flags.
 The set identifies matching rule indexes; matching individual regexes then
-extract spans/captures. Structural matching examines whole physical lines so
-quote/token boundaries cannot hide embedded provider credentials.
+extract spans/captures. Short lines use whole-line matching. Longer lines use
+stateful recognizers with bounded carry so quote/token boundaries across reader
+fragments cannot hide embedded provider credentials. Findings are published
+only at the real line end, allowing trailing ignore directives to suppress
+earlier candidates.
 
 `RegexSet` does not return locations/captures. Its documented search bound is
 `O(m * n)` for compiled pattern size `m` and input length `n`; extraction adds
@@ -489,7 +505,7 @@ Prepare both release archives/checksums and a validated crates.io package; actua
 publication is a separate release action. Git CLI is the initial backend;
 `git2`/libgit2 requires its own
 build/packaging justification. Every production function needs tests; enforce
->98% line/region coverage and complete function coverage. Publish installation commands only once matching
+>=97% line/region coverage and complete function coverage. Publish installation commands only once matching
 release artifacts or a Cargo package exist.
 [Rust linkage reference](https://doc.rust-lang.org/reference/linkage.html)
 

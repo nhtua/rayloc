@@ -11,6 +11,10 @@ fn error_categories_are_safe_and_implement_error() {
         ),
         (ScanError::Read, "cannot read selected source"),
         (ScanError::LineLimit, "physical line exceeds scan limit"),
+        (
+            ScanError::RuleWindowLimit,
+            "custom rule requires whole-line input beyond compatibility limit",
+        ),
         (ScanError::CandidateLimit, "candidate exceeds scan limit"),
         (ScanError::FindingLimit, "finding count exceeds scan limit"),
         (

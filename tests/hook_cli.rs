@@ -108,6 +108,63 @@ fn managed_hook_is_executable_idempotent_and_propagates_actual_scan_status() {
     check(run_hook(), 2);
     assert!(!git(root, &["commit", "-qm", "error"]).status.success());
 }
+
+#[test]
+fn long_line_hook_blocks_findings_and_incomplete_legacy_rules_then_allows_clean_commit() {
+    use std::io::Write;
+
+    const CUSTOM_VALUE: &str = "LEGACY_SECRET_SYNTHETIC_VALUE";
+    let dir = repo();
+    let root = dir.path();
+    ok_git(root, &["commit", "--allow-empty", "-qm", "base"]);
+    check(install(root), 0);
+
+    let mut large = fs::File::create(root.join("minified.js")).unwrap();
+    let block = vec![b'x'; 256 * 1024];
+    for _ in 0..41 {
+        large.write_all(&block).unwrap();
+    }
+    writeln!(large, ",\"{SECRET}\"").unwrap();
+    drop(large);
+    ok_git(root, &["add", "minified.js"]);
+    check(git(root, &["commit", "-qm", "finding"]), 1);
+    fs::remove_file(root.join("minified.js")).unwrap();
+    ok_git(root, &["add", "-u", "minified.js"]);
+
+    fs::write(
+        root.join(".rayloc.yaml"),
+        "version: \"1\"\nrules:\n  - id: legacy-rule\n    regex: 'LEGACY_SECRET_[A-Z_]+'\n",
+    )
+    .unwrap();
+    let mut legacy = fs::File::create(root.join("legacy.js")).unwrap();
+    for _ in 0..5 {
+        legacy.write_all(&block).unwrap();
+    }
+    writeln!(legacy, ",\"{CUSTOM_VALUE}\"").unwrap();
+    drop(legacy);
+    ok_git(root, &["add", ".rayloc.yaml", "legacy.js"]);
+    let hook = root.join(".git/hooks/pre-commit");
+    let incomplete = isolated(Command::new(&hook).current_dir(root))
+        .env("PATH", path())
+        .output()
+        .unwrap();
+    check(incomplete, 2);
+    assert!(
+        !git(root, &["commit", "-qm", "incomplete custom rule"])
+            .status
+            .success()
+    );
+
+    fs::write(root.join(".rayloc.yaml"), "version: \"1\"\n").unwrap();
+    let mut clean = fs::File::create(root.join("clean.js")).unwrap();
+    for _ in 0..41 {
+        clean.write_all(&block).unwrap();
+    }
+    clean.write_all(b",\"ordinary value\"\n").unwrap();
+    drop(clean);
+    ok_git(root, &["add", ".rayloc.yaml", "clean.js"]);
+    check(git(root, &["commit", "-qm", "clean large line"]), 0);
+}
 #[test]
 fn active_relative_absolute_and_linked_hooks_paths_are_used_from_nested_callers() {
     for linked in [false, true] {

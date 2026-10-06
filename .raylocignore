@@ -8,3 +8,4 @@ vendor/
 
 # Intentional synthetic test data
 tests/fixtures/**
+tests/unit/**

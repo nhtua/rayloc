@@ -134,11 +134,204 @@ fn parse_binding(binding: RawBinding<'_>, patch: &[u8]) -> Result<Vec<Added>, Di
                 payload,
                 starts_run,
             } => added.push((source_id, new_line, payload.to_vec(), starts_run)),
+            Event::AddedFragment {
+                source_id,
+                new_line,
+                payload,
+                starts_run,
+                ends_line: true,
+                ..
+            } => added.push((source_id, new_line, payload.to_vec(), starts_run)),
+            Event::AddedFragment { .. } => {}
             Event::Boundary => {}
         })?;
     }
     parser.finish()?;
     Ok(added)
+}
+
+fn parse_fragmented(binding: RawBinding<'_>, patch: &[u8]) -> Result<(usize, usize), DiffError> {
+    let mut parser = Parser::new(binding, EMPTY.as_bytes())?;
+    let mut fragments = 0;
+    let mut bytes = 0;
+    let mut start = 0;
+    while start < patch.len() {
+        let end = patch[start..]
+            .iter()
+            .position(|&b| b == b'\n')
+            .map(|n| start + n + 1)
+            .ok_or(DiffError::Invalid)?;
+        let mut at = start;
+        while at < end {
+            let next = (at + crate::scanner::chunk::CHUNK_BYTES).min(end);
+            let final_fragment = next == end;
+            parser.fragment(&patch[at..next], final_fragment, |event| {
+                if let Event::AddedFragment { payload, .. } = event {
+                    assert!(payload.len() <= crate::scanner::chunk::CHUNK_BYTES);
+                    fragments += 1;
+                    bytes += payload.len();
+                }
+            })?;
+            at = next;
+        }
+        start = end;
+    }
+    parser.finish()?;
+    Ok((fragments, bytes))
+}
+
+#[test]
+fn huge_added_deleted_and_context_records_stream_only_added_payload() {
+    let payload = format!(
+        "{}diff --git fake @@ +++ \\\\",
+        "x".repeat(10 * 1024 * 1024)
+    );
+    let add_header = raw("000000", "100644", ZERO, NEW, "A");
+    let add = section(
+        "x",
+        "000000",
+        "100644",
+        ZERO,
+        NEW,
+        &format!("@@ -0,0 +1 @@\n+{payload}\n"),
+    );
+    let (fragments, bytes) = parse_fragmented(
+        RawBinding::parse(9, &add_header, b"x\0", 40).unwrap(),
+        add.as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        fragments,
+        payload.len().div_ceil(crate::scanner::chunk::CHUNK_BYTES)
+    );
+    assert_eq!(bytes, payload.len());
+
+    let modify_header = raw("100644", "100644", OLD, NEW, "M");
+    for (prefix, hunk) in [
+        (&[b'-'][..], b"@@ -1 +0,0 @@\n".as_slice()),
+        (&[b' '][..], b"@@ -1 +1 @@\n".as_slice()),
+    ] {
+        let line = [prefix, payload.as_bytes(), b"\n"].concat();
+        let body = [hunk, &line].concat();
+        let patch = section(
+            "x",
+            "100644",
+            "100644",
+            OLD,
+            NEW,
+            std::str::from_utf8(&body).unwrap(),
+        );
+        assert_eq!(
+            parse_fragmented(
+                RawBinding::parse(9, &modify_header, b"x\0", 40).unwrap(),
+                patch.as_bytes()
+            )
+            .unwrap(),
+            (0, 0)
+        );
+    }
+}
+
+#[test]
+fn fragmented_record_framing_and_partial_eof_fail_closed() {
+    let header = raw("000000", "100644", ZERO, NEW, "A");
+    let mut parser = Parser::new(
+        RawBinding::parse(1, &header, b"x\0", 40).unwrap(),
+        EMPTY.as_bytes(),
+    )
+    .unwrap();
+    assert!(
+        parser
+            .fragment(b"diff --git a/x b/x\n", true, |_| {})
+            .is_ok()
+    );
+    assert!(
+        parser
+            .fragment(b"new file mode 100644", false, |_| {})
+            .is_ok()
+    );
+    assert!(parser.fragment(b"", true, |_| {}).is_err());
+    assert!(parser.fragment(b"index", false, |_| {}).is_err());
+
+    let mut parser = Parser::new(
+        RawBinding::parse(1, &header, b"x\0", 40).unwrap(),
+        EMPTY.as_bytes(),
+    )
+    .unwrap();
+    let index = format!("index {ZERO}..{NEW}\n");
+    for record in [
+        b"diff --git a/x b/x\n".as_slice(),
+        b"new file mode 100644\n",
+        index.as_bytes(),
+        b"--- /dev/null\n",
+        b"+++ b/x\n",
+        b"@@ -0,0 +1 @@\n",
+    ] {
+        parser.record(record, |_| {}).unwrap();
+    }
+    parser.fragment(b"+partial", false, |_| {}).unwrap();
+    assert!(parser.finish().is_err());
+}
+
+#[test]
+fn fragmented_parser_matches_complete_records_at_every_byte_split() {
+    let header = raw("100644", "100644", OLD, NEW, "M");
+    let binding = RawBinding::parse(7, &header, b"x\0", 40).unwrap();
+    let patch = section(
+        "x",
+        "100644",
+        "100644",
+        OLD,
+        NEW,
+        "@@ -1,2 +1,3 @@\n-old\n+first\n context\n+last\n\\ No newline at end of file\n",
+    );
+    let expected = parse_binding(binding, patch.as_bytes()).unwrap();
+    for chunk_size in 1..=17 {
+        let mut parser = Parser::new(binding, EMPTY.as_bytes()).unwrap();
+        let mut actual: Vec<Added> = Vec::new();
+        let mut at = 0;
+        while at < patch.len() {
+            let record_end = patch.as_bytes()[at..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map(|n| at + n + 1)
+                .unwrap();
+            let mut record_added: Option<Added> = None;
+            while at < record_end {
+                let next = (at + chunk_size).min(record_end);
+                let final_fragment = next == record_end;
+                parser
+                    .fragment(&patch.as_bytes()[at..next], final_fragment, |event| {
+                        if let Event::AddedFragment {
+                            source_id,
+                            new_line,
+                            payload,
+                            starts_run,
+                            ..
+                        } = event
+                        {
+                            if let Some((last_id, last_line, last_payload, _last_run)) =
+                                record_added.as_mut()
+                            {
+                                if *last_id == source_id && *last_line == new_line {
+                                    last_payload.extend_from_slice(payload);
+                                    return;
+                                }
+                            }
+                            record_added =
+                                Some((source_id, new_line, payload.to_vec(), starts_run));
+                        }
+                    })
+                    .unwrap();
+                at = next;
+            }
+            if let Some(added) = record_added {
+                actual.push(added);
+            }
+        }
+        parser.finish().unwrap();
+        assert_eq!(actual, expected, "fragment size {chunk_size}");
+    }
 }
 
 #[test]

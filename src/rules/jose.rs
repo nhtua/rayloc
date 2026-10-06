@@ -1,5 +1,6 @@
 //! Bounded compact JOSE framing and protected-header validation, never validity.
 use super::builtin::{MAX_CANDIDATE_BYTES, RuleId};
+use super::stream::Candidate;
 use crate::scanner::ScanError;
 use std::ops::Range;
 const HEADER_BYTES: usize = 8192;
@@ -349,6 +350,108 @@ pub(super) fn detect(
         start = end;
     }
     Ok(())
+}
+
+/// Incremental compact-JOSE recognizer with a hard cap on retained candidate bytes.
+#[allow(dead_code)] // Consumed by the line session in Task 5.
+pub(crate) struct JoseState {
+    offset: u64,
+    start: Option<u64>,
+    len: usize,
+    dots: usize,
+    oversized: bool,
+    bytes: Vec<u8>,
+}
+
+#[allow(dead_code)] // Consumed by the line session in Task 5.
+impl JoseState {
+    pub(crate) fn new() -> Self {
+        Self {
+            offset: 0,
+            start: None,
+            len: 0,
+            dots: 0,
+            oversized: false,
+            bytes: Vec::with_capacity(MAX_CANDIDATE_BYTES),
+        }
+    }
+    pub(crate) fn reset(&mut self) {
+        self.offset = 0;
+        self.start = None;
+        self.len = 0;
+        self.dots = 0;
+        self.oversized = false;
+        self.bytes.clear();
+    }
+    pub(crate) fn push(
+        &mut self,
+        input: &[u8],
+        mut emit: impl FnMut(Candidate<'_>),
+    ) -> Result<(), ScanError> {
+        for &byte in input {
+            let accepted = digit(byte).is_some() || matches!(byte, b'.' | b'=');
+            if accepted {
+                if self.start.is_none()
+                    && (byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+                {
+                    self.start = Some(self.offset);
+                }
+                if self.start.is_some() {
+                    self.len = self.len.checked_add(1).ok_or(ScanError::CandidateLimit)?;
+                    if byte == b'.' {
+                        self.dots += 1;
+                    }
+                    if self.len <= MAX_CANDIDATE_BYTES {
+                        self.bytes.push(byte);
+                    } else {
+                        self.oversized = true;
+                        if self.dots >= 2 {
+                            return Err(ScanError::CandidateLimit);
+                        }
+                    }
+                }
+            } else {
+                self.flush(&mut emit)?;
+            }
+            self.offset = self
+                .offset
+                .checked_add(1)
+                .ok_or(ScanError::CounterOverflow)?;
+        }
+        Ok(())
+    }
+    pub(crate) fn finish(&mut self, mut emit: impl FnMut(Candidate<'_>)) -> Result<(), ScanError> {
+        self.flush(&mut emit)?;
+        self.reset();
+        Ok(())
+    }
+    fn flush(&mut self, emit: &mut impl FnMut(Candidate<'_>)) -> Result<(), ScanError> {
+        if let Some(start) = self.start {
+            if self.dots >= 2 {
+                if self.oversized {
+                    return Err(ScanError::CandidateLimit);
+                }
+                if valid(&self.bytes)? {
+                    let length = u64::try_from(self.len).map_err(|_| ScanError::CounterOverflow)?;
+                    let end = start
+                        .checked_add(length)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    emit(Candidate {
+                        rule: RuleId::JoseToken,
+                        span: start..end,
+                        value: &self.bytes,
+                        priority: 1,
+                    });
+                }
+            }
+        }
+        self.start = None;
+        self.len = 0;
+        self.dots = 0;
+        self.oversized = false;
+        self.bytes.clear();
+        Ok(())
+    }
 }
 #[cfg(test)]
 #[path = "../../tests/unit/jose.rs"]

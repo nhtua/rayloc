@@ -6,7 +6,7 @@ use crate::rules::builtin::RuleId;
 use redaction::RedactedString;
 
 pub mod binary;
-mod chunk;
+pub(crate) mod chunk;
 pub mod diff;
 pub mod engine;
 pub(crate) mod execution;
@@ -15,6 +15,7 @@ mod git;
 pub mod redaction;
 pub mod scope;
 pub mod staged;
+pub(crate) mod stream;
 mod tracked;
 pub mod worktree;
 
@@ -29,6 +30,7 @@ pub enum ScanError {
     NotRegularFile,
     Read,
     LineLimit,
+    RuleWindowLimit,
     CandidateLimit,
     FindingLimit,
     CounterOverflow,
@@ -69,6 +71,9 @@ impl fmt::Display for ScanError {
             Self::NotRegularFile => "selected path is not a regular file",
             Self::Read => "cannot read selected source",
             Self::LineLimit => "physical line exceeds scan limit",
+            Self::RuleWindowLimit => {
+                "custom rule requires whole-line input beyond compatibility limit"
+            }
             Self::CandidateLimit => "candidate exceeds scan limit",
             Self::FindingLimit => "finding count exceeds scan limit",
             Self::CounterOverflow => "scan counter exceeds supported range",

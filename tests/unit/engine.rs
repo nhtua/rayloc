@@ -35,7 +35,7 @@ fn read_records(
         outcome,
         limits,
         registry,
-        &mut Vec::new(),
+        &mut super::super::stream::LineSession::new(),
         &mut Histogram::new(),
         &collector,
         None,
@@ -205,10 +205,9 @@ fn line_limit_handles_exact_boundary_newlines_and_fragment_growth() {
     let exact = vec![b'0'; MAX_LINE_BYTES];
     assert_eq!(scan_reader(&mut Cursor::new(exact), 1).exit_code(), 0);
     let oversized = vec![b'0'; MAX_LINE_BYTES + 1];
-    assert_eq!(
-        scan_reader(&mut Cursor::new(oversized), 1).errors,
-        [SourceError::new(ScanError::LineLimit, None)]
-    );
+    let outcome = scan_reader(&mut Cursor::new(oversized), 1);
+    assert!(outcome.errors.is_empty());
+    assert_eq!(outcome.stats.files_completed, 1);
 }
 
 #[test]
@@ -491,13 +490,9 @@ fn reusable_file_buffers_and_worker_failures_preserve_counts() {
     reader.read_to_end(&mut bytes).unwrap();
     assert_eq!(bytes, b"abcdef");
     fs::write(&path, vec![b'x'; MAX_LINE_BYTES + 1]).unwrap();
-    assert_eq!(
-        scan_file(&path, 1).errors,
-        [SourceError::new(
-            ScanError::LineLimit,
-            Some(path.to_string_lossy().into())
-        )]
-    );
+    let long_clean = scan_file(&path, 1);
+    assert!(long_clean.errors.is_empty());
+    assert_eq!(long_clean.stats.files_completed, 1);
     fs::write(&path, b"ghp_abcdefghijklmnop\n".repeat(MAX_FINDINGS + 1)).unwrap();
     let result = scan_file(&path, 1);
     assert_eq!(
