@@ -1,16 +1,18 @@
 //! Pinned index-tree scanning. Raw and patch streams are consumed in lockstep.
 use super::{
     ScanError, ScanOutcome,
+    chunk::{LineEnd, LineFragment},
     diff::{Event, Parser, RawBinding},
     engine::{self, Collector, MAX_FINDINGS, MAX_LINE_BYTES},
     git::{self, Process},
+    stream::LineSession,
 };
 use crate::{
     config::{
         self,
         ignore::{ACTIVE_POLICY, Exclusions, PolicyUsage},
     },
-    rules::{Registry, entropy::Histogram},
+    rules::Registry,
 };
 use std::{
     ffi::OsString,
@@ -318,11 +320,11 @@ pub(super) fn consume_resolved(
     emitter: Option<&crate::report::emitter::SharedEmitter>,
     worktree: bool,
 ) -> Result<(), ScanError> {
-    let (mut header, mut pathname, mut previous, mut line) =
+    let (mut header, mut pathname, mut previous, mut fragment) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    let mut lookahead = git::record(patch, b'\n', &mut line)?;
+    let mut lookahead = git::record_fragment(patch, &mut fragment)?;
+    let mut record_start = true;
     let mut source_id = 0u32;
-    let mut histogram = Histogram::new();
     while git::record(raw, 0, &mut header)? {
         if !git::record(raw, 0, &mut pathname)? {
             return Err(ScanError::GitMetadata);
@@ -349,39 +351,50 @@ pub(super) fn consume_resolved(
             engine::add(&mut outcome.stats.files_attempted, 1)?;
         }
         let label = binding.path();
+        let source_error_count = outcome.errors.len();
         let mut parser =
             Parser::new(binding, empty_blob.as_bytes()).map_err(|_| ScanError::GitMetadata)?;
+        let mut session = LineSession::new();
+        let mut scan_error = None;
         let mut first = true;
-        while lookahead {
-            if !first && line.starts_with(b"diff --git ") && !parser.needs_second_section() {
+        while let Some(end_record) = lookahead {
+            if record_start
+                && !first
+                && fragment.starts_with(b"diff --git ")
+                && !parser.needs_second_section()
+            {
                 break;
             }
             first = false;
             let mut error = None;
             parser
-                .record(&line, |event| {
-                    if let Event::Added {
+                .fragment(&fragment, end_record, |event| {
+                    if let Event::AddedFragment {
                         source_id,
                         new_line,
+                        column,
                         payload,
+                        ends_line,
                         ..
                     } = event
                     {
-                        if !excluded && error.is_none() {
+                        if !excluded && scan_error.is_none() && error.is_none() {
                             error = (|| {
                                 engine::add(&mut outcome.stats.bytes_read, payload.len())?;
-                                engine::add(&mut outcome.stats.lines_scanned, 1)?;
-                                engine::detect_record(
-                                    payload,
+                                session.push(
+                                    LineFragment {
+                                        payload,
+                                        line: new_line,
+                                        column,
+                                        end: ends_line.then_some(LineEnd::Lf),
+                                    },
                                     source_id,
                                     label,
-                                    new_line,
-                                    outcome,
-                                    engine::LIMITS,
                                     registry,
-                                    &mut histogram,
+                                    outcome,
                                     collector,
                                     emitter,
+                                    engine::LIMITS,
                                 )
                             })()
                             .err();
@@ -392,16 +405,22 @@ pub(super) fn consume_resolved(
                 })
                 .map_err(|_| ScanError::GitMetadata)?;
             if let Some(error) = error {
-                return Err(error);
+                session.abort_line();
+                let source_path = std::str::from_utf8(label)
+                    .ok()
+                    .map(|path| path.to_owned().into_boxed_str());
+                outcome.fail_at(error, source_path);
+                scan_error = Some(error);
             }
-            lookahead = git::record(patch, b'\n', &mut line)?;
+            lookahead = git::record_fragment(patch, &mut fragment)?;
+            record_start = end_record;
         }
         parser.finish().map_err(|_| ScanError::GitMetadata)?;
-        if !excluded {
+        if !excluded && scan_error.is_none() && outcome.errors.len() == source_error_count {
             engine::add(&mut outcome.stats.files_completed, 1)?;
         }
     }
-    if lookahead {
+    if lookahead.is_some() {
         return Err(ScanError::GitMetadata);
     }
     Ok(())

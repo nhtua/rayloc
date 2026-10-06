@@ -5,9 +5,133 @@
 
 use std::{fmt, ops::Range};
 
+use super::{Registry, stream::Candidate};
 use crate::scanner::ScanError;
 
 pub const MAX_CANDIDATE_BYTES: usize = 64 * 1024;
+#[allow(dead_code)] // Consumed by the line session in Task 5.
+const PROVIDER_LOOKAHEAD_BYTES: usize = MAX_CANDIDATE_BYTES;
+
+/// Sliding bounded history keeps detector boundaries real across input fragments.
+#[allow(dead_code)] // Consumed by the line session in Task 5.
+pub(crate) struct ProviderState {
+    window: Vec<u8>,
+    base: u64,
+    next_start: u64,
+    bytes_since_scan: usize,
+}
+
+#[allow(dead_code)] // Consumed by the line session in Task 5.
+impl ProviderState {
+    pub(crate) fn new() -> Self {
+        Self {
+            window: Vec::with_capacity(2 * PROVIDER_LOOKAHEAD_BYTES + 1),
+            base: 0,
+            next_start: 0,
+            bytes_since_scan: 0,
+        }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.window.clear();
+        self.base = 0;
+        self.next_start = 0;
+        self.bytes_since_scan = 0;
+    }
+
+    pub(crate) fn push(
+        &mut self,
+        bytes: &[u8],
+        registry: &Registry,
+        mut emit: impl FnMut(Candidate<'_>),
+    ) -> Result<(), ScanError> {
+        for fragment in bytes.chunks(crate::scanner::chunk::CHUNK_BYTES) {
+            self.window.extend_from_slice(fragment);
+            self.bytes_since_scan = self.bytes_since_scan.saturating_add(fragment.len());
+            if self.bytes_since_scan >= crate::scanner::chunk::CHUNK_BYTES {
+                self.scan(registry, false, &mut emit)?;
+                self.bytes_since_scan = 0;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn finish(
+        &mut self,
+        registry: &Registry,
+        mut emit: impl FnMut(Candidate<'_>),
+    ) -> Result<(), ScanError> {
+        self.scan(registry, true, &mut emit)?;
+        self.reset();
+        Ok(())
+    }
+
+    fn scan(
+        &mut self,
+        registry: &Registry,
+        final_fragment: bool,
+        emit: &mut impl FnMut(Candidate<'_>),
+    ) -> Result<(), ScanError> {
+        let cutoff = if final_fragment {
+            self.window.len()
+        } else {
+            self.window.len().saturating_sub(PROVIDER_LOOKAHEAD_BYTES)
+        };
+        let owned_start = usize::try_from(self.next_start.saturating_sub(self.base))
+            .map_err(|_| ScanError::CounterOverflow)?;
+        if cutoff <= owned_start {
+            return Ok(());
+        }
+        let window = &self.window;
+        let base = self.base;
+        let mut location_error = false;
+        registry.detect_provider_line(window, |rule, span| {
+            if span.start < owned_start || span.start >= cutoff {
+                return;
+            }
+            let Some(start) = u64::try_from(span.start)
+                .ok()
+                .and_then(|value| base.checked_add(value))
+            else {
+                location_error = true;
+                return;
+            };
+            let Some(end) = u64::try_from(span.end)
+                .ok()
+                .and_then(|value| base.checked_add(value))
+            else {
+                location_error = true;
+                return;
+            };
+            emit(Candidate {
+                rule,
+                span: start..end,
+                value: &window[span],
+                priority: 0,
+            });
+        })?;
+        if location_error {
+            return Err(ScanError::CounterOverflow);
+        }
+        let cutoff_bytes = u64::try_from(cutoff).map_err(|_| ScanError::CounterOverflow)?;
+        let next_start = base
+            .checked_add(cutoff_bytes)
+            .ok_or(ScanError::CounterOverflow)?;
+        if !final_fragment {
+            let keep_from = cutoff.saturating_sub(PROVIDER_LOOKAHEAD_BYTES + 1);
+            if keep_from > 0 {
+                let keep_bytes =
+                    u64::try_from(keep_from).map_err(|_| ScanError::CounterOverflow)?;
+                self.base = base
+                    .checked_add(keep_bytes)
+                    .ok_or(ScanError::CounterOverflow)?;
+                self.window.drain(..keep_from);
+            }
+        }
+        self.next_start = next_start;
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Severity {

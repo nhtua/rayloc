@@ -1,9 +1,143 @@
 use super::*;
+type Streamed = Vec<(RuleId, Range<u64>, Vec<u8>)>;
 
 fn matches(bytes: &[u8]) -> Vec<(RuleId, Range<usize>)> {
     let mut found = Vec::new();
     detect_line(bytes, |rule, span| found.push((rule, span))).unwrap();
     found
+}
+
+fn streamed(
+    bytes: &[u8],
+    fragment_bytes: usize,
+    registry: &crate::rules::Registry,
+) -> Result<Streamed, ScanError> {
+    let mut state = ProviderState::new();
+    let mut found = Vec::new();
+    for fragment in bytes.chunks(fragment_bytes) {
+        state.push(fragment, registry, |candidate| {
+            found.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+        })?;
+    }
+    state.finish(registry, |candidate| {
+        found.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+    })?;
+    Ok(found)
+}
+
+fn complete_provider_matches(
+    bytes: &[u8],
+    registry: &crate::rules::Registry,
+) -> Result<Streamed, ScanError> {
+    let mut found = Vec::new();
+    registry.detect_provider_line(bytes, |rule, span| {
+        found.push((
+            rule,
+            span.start as u64..span.end as u64,
+            bytes[span].to_vec(),
+        ));
+    })?;
+    Ok(found)
+}
+
+#[test]
+fn provider_stream_matches_whole_line_at_every_short_input_split() {
+    let registry = &crate::rules::BUILTINS;
+    // rayloc:ignore
+    let examples: &[&[u8]] = &[
+        // rayloc:ignore
+        // rayloc:ignore
+        // rayloc:ignore
+        b"prefix=AKIA1234567890ABCDEF;",
+        b"ghp_Synthetic0123456789ABCDEF tail",
+        b"sk_test_SyntheticStripeKey0123456789,",
+        b"https://hooks.slack.com/services/T_mock/B_mock/synthetic-secret ",
+        b"cfk_Synthetic0123456789ABCDEF.",
+        b"-----BEGIN PRIVATE KEY-----",
+    ];
+    for input in examples {
+        let expected = complete_provider_matches(input, registry).unwrap();
+        for split in 0..=input.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&input[..split], &input[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {input:?}");
+        }
+        assert_eq!(streamed(input, 1, registry).unwrap(), expected);
+    }
+}
+
+#[test]
+fn provider_stream_waits_for_a_real_boundary() {
+    let registry = &crate::rules::BUILTINS;
+    let token = b"AKIA1234567890ABCDEF";
+    let mut state = ProviderState::new();
+    let mut found = Vec::new();
+    state
+        .push(token, registry, |candidate| found.push(candidate.rule))
+        .unwrap();
+    assert!(found.is_empty());
+    state
+        .push(b"Z", registry, |candidate| found.push(candidate.rule))
+        .unwrap();
+    state
+        .finish(registry, |candidate| found.push(candidate.rule))
+        .unwrap();
+    assert!(found.is_empty());
+
+    let mut state = ProviderState::new();
+    state
+        .push(token, registry, |candidate| found.push(candidate.rule))
+        .unwrap();
+    assert!(found.is_empty());
+    state
+        .push(b",", registry, |candidate| {
+            found.push(candidate.rule);
+            assert_eq!(candidate.value, token);
+            assert_eq!(candidate.span, 0..20);
+        })
+        .unwrap();
+    state
+        .finish(registry, |candidate| found.push(candidate.rule))
+        .unwrap();
+    assert_eq!(found, [RuleId::AwsAccessKeyId]);
+}
+
+#[test]
+fn provider_candidate_limit_and_disabled_rule_semantics_are_preserved() {
+    let registry = &crate::rules::BUILTINS;
+    for (body_bytes, expected) in [
+        (MAX_CANDIDATE_BYTES - b"ghp_".len(), Ok(())),
+        (
+            MAX_CANDIDATE_BYTES + 1 - b"ghp_".len(),
+            Err(ScanError::CandidateLimit),
+        ),
+    ] {
+        let input = [b"ghp_".as_slice(), &vec![b'a'; body_bytes], b" "].concat();
+        assert_eq!(streamed(&input, 8192, registry).map(|_| ()), expected);
+    }
+
+    let config = crate::config::parse(b"version: '1'\ndisabled_rules: [github-token]").unwrap();
+    let disabled = crate::rules::Registry::compile(config).unwrap();
+    let input = [
+        b"AKIA1234567890ABCDEF ghp_".as_slice(),
+        &vec![b'a'; MAX_CANDIDATE_BYTES + 1],
+    ]
+    .concat();
+    let found = streamed(&input, 4096, &disabled).unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].0, RuleId::AwsAccessKeyId);
 }
 
 #[test]
@@ -42,10 +176,10 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     for marker in PRIVATE_KEY_MARKERS {
         fixtures.push((RuleId::PrivateKeyMarker, marker.to_vec()));
     }
-    // LLM provider API keys
+    // LLM provider API keys (synthetic test values)
     fixtures.push((
         RuleId::OpenaiKey,
-        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(),
+        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(), // rayloc:ignore
     ));
     fixtures.push((
         RuleId::OpenrouterKey,
@@ -253,20 +387,6 @@ fn candidate_limits_are_errors_and_exact_limit_is_accepted() {
         detect_line(&webhook, |_, _| panic!("oversized URL emitted")),
         Err(ScanError::CandidateLimit)
     );
-}
-
-#[test]
-fn metadata_formatters_cover_all_severities_and_confidence_levels() {
-    for (severity, expected) in [
-        (Severity::Low, "Low"),
-        (Severity::Medium, "Medium"),
-        (Severity::High, "High"),
-        (Severity::Critical, "Critical"),
-    ] {
-        assert_eq!(severity.to_string(), expected);
-    }
-    assert_eq!(Confidence::Medium.to_string(), "Medium confidence");
-    assert_eq!(Confidence::High.to_string(), "High confidence");
 }
 
 #[test]

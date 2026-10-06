@@ -407,8 +407,27 @@ fn raw_known_identity_must_match_file_and_large_sources_stream() {
     drop(file);
     git(root, &["add", "large"]);
     check(scan(root, &[]), 1, 1);
-    fs::write(root.join("large"), "x".repeat(1024 * 1024)).unwrap();
-    check(scan(root, &[]), 2, 0);
+    git(root, &["commit", "-qm", "large source baseline"]);
+    fs::write(root.join("context"), format!("{SECRET}\nstable\n")).unwrap();
+    fs::write(root.join("deleted"), format!("{SECRET}\n")).unwrap();
+    git(root, &["add", "context", "deleted"]);
+    git(root, &["commit", "-qm", "secret context baseline"]);
+
+    fs::write(
+        root.join("context"),
+        format!("{SECRET}\nstable\nadded safe line\n"),
+    )
+    .unwrap();
+    fs::remove_file(root.join("deleted")).unwrap();
+    let mut file = fs::File::create(root.join("minified")).unwrap();
+    for _ in 0..41 {
+        file.write_all(&[b'x'; 256 * 1024]).unwrap();
+    }
+    writeln!(file, ",\"{SECRET}\"").unwrap();
+    drop(file);
+    git(root, &["add", "-A"]);
+    let text = check(scan(root, &[]), 1, 1);
+    assert!(text.contains("minified:1:"), "{text}");
 }
 #[test]
 fn diff_scope_argument_conflicts_fail_without_echoing_values() {

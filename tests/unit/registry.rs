@@ -156,3 +156,36 @@ fn aggregate_compiled_set_budget_rejects_many_individually_valid_programs() {
     );
     assert!(Registry::compile(crate::config::parse(many.as_bytes()).unwrap()).is_err());
 }
+
+#[test]
+fn custom_rule_stream_compatibility_is_classified_from_the_full_expression() {
+    for (pattern, whole) in [
+        ("corp_([a-z]{16})", false),
+        ("corp_([a-z]+)", true),
+        ("prefix.*(SECRET)", true),
+        ("^corp_[a-z]{16}$", true),
+        ("\\bcorp_[a-z]{16}\\b", true),
+    ] {
+        let mut config = Config::default();
+        config.rules.push(crate::config::CustomRule {
+            id: "custom".into(),
+            pattern: pattern.into(),
+            group: 0,
+            entropy: None,
+            severity: builtin::Severity::High,
+        });
+        let registry = Registry::compile(config).unwrap();
+        assert_eq!(registry.requires_whole_line(), whole, "{pattern}");
+    }
+    let mut config = Config::default();
+    config.rules.push(crate::config::CustomRule {
+        id: "custom".into(),
+        pattern: "prefix.*(SECRET)".into(),
+        group: 0,
+        entropy: None,
+        severity: builtin::Severity::High,
+    });
+    config.disabled.push("custom".into());
+    let disabled = Registry::compile(config).unwrap();
+    assert!(!disabled.requires_whole_line());
+}

@@ -6,12 +6,40 @@ fn record_is_bounded_and_requires_terminators() {
     assert_eq!(bytes, b"a\0");
     assert!(record(&mut &b"partial"[..], 0, &mut bytes).is_err());
     assert!(!record(&mut &b""[..], 0, &mut bytes).unwrap());
-    let mut exact = vec![b'x'; MAX_LINE_BYTES];
-    exact[MAX_LINE_BYTES - 1] = b'\n';
+    let mut exact = vec![b'x'; MAX_METADATA_RECORD_BYTES];
+    exact[MAX_METADATA_RECORD_BYTES - 1] = b'\n';
     assert!(record(&mut exact.as_slice(), b'\n', &mut bytes).unwrap());
     exact.push(b'\n');
-    exact[MAX_LINE_BYTES - 1] = b'x';
+    exact[MAX_METADATA_RECORD_BYTES - 1] = b'x';
     assert!(record(&mut exact.as_slice(), b'\n', &mut bytes).is_err());
+}
+
+#[test]
+fn patch_fragments_are_bounded_and_keep_terminators_only_at_record_end() {
+    let size = crate::scanner::chunk::CHUNK_BYTES;
+    let mut input = vec![b'x'; size + 1];
+    input.push(b'\n');
+    let mut reader = input.as_slice();
+    let mut chunk = Vec::new();
+    assert_eq!(
+        record_fragment(&mut reader, &mut chunk).unwrap(),
+        Some(false)
+    );
+    assert_eq!(chunk.len(), size);
+    assert!(!chunk.contains(&b'\n'));
+    assert_eq!(
+        record_fragment(&mut reader, &mut chunk).unwrap(),
+        Some(true)
+    );
+    assert_eq!(chunk, b"x\n");
+    assert_eq!(record_fragment(&mut reader, &mut chunk).unwrap(), None);
+
+    assert!(record_fragment(&mut &b"unterminated"[..], &mut chunk).is_err());
+    assert_eq!(
+        record_fragment(&mut &b"\n"[..], &mut chunk).unwrap(),
+        Some(true)
+    );
+    assert_eq!(chunk, b"\n");
 }
 struct Errors {
     interrupted: bool,

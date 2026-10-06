@@ -38,6 +38,56 @@ fn explicit_file_detects_builtin_and_custom_without_metadata_leaks() {
     assert!(text.contains("\ninput:3:1\n"));
     assert!(output.stderr.is_empty());
 }
+
+#[test]
+fn legacy_custom_rule_long_line_reports_incomplete_with_safe_source() {
+    use std::io::Write;
+
+    const SENTINEL: &str = "LEGACY_SECRET_SYNTHETIC_VALUE";
+    let root = TempDir::new();
+    let input = root.path().join("minified.js");
+    let mut file = fs::File::create(&input).unwrap();
+    let block = vec![b'x'; 256 * 1024];
+    for _ in 0..5 {
+        file.write_all(&block).unwrap();
+    }
+    file.write_all(b",\"").unwrap();
+    file.write_all(SENTINEL.as_bytes()).unwrap();
+    file.write_all(b"\"").unwrap();
+    drop(file);
+    fs::write(
+        root.path().join(".rayloc.yaml"),
+        "version: \"1\"\nrules:\n  - id: legacy-rule\n    regex: 'LEGACY_SECRET_[A-Z_]+'\n",
+    )
+    .unwrap();
+
+    let incomplete = run(&root, &["scan", "minified.js"]);
+    assert_eq!(incomplete.status.code(), Some(2));
+    let stdout = String::from_utf8(incomplete.stdout).unwrap();
+    let stderr = String::from_utf8(incomplete.stderr).unwrap();
+    assert!(stdout.contains("INCOMPLETE"), "{stdout}");
+    assert!(stdout.contains("minified.js"), "{stdout}");
+    assert!(
+        stdout.contains("custom rule requires whole-line input"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains(SENTINEL));
+    assert!(!stderr.contains(SENTINEL));
+
+    fs::write(
+        root.path().join(".rayloc.yaml"),
+        "version: \"1\"\ndisabled_rules: [legacy-rule]\nrules:\n  - id: legacy-rule\n    regex: 'LEGACY_SECRET_[A-Z_]+'\n",
+    )
+    .unwrap();
+    let disabled = run(&root, &["scan", "minified.js"]);
+    assert_eq!(
+        disabled.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&disabled.stdout)
+    );
+    assert!(!String::from_utf8_lossy(&disabled.stdout).contains(SENTINEL));
+}
 #[test]
 fn clean_excluded_and_config_failure_have_correct_exits() {
     let root = TempDir::new();

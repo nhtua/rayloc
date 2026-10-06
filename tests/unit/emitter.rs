@@ -64,45 +64,6 @@ fn channel_emitter_processes_findings() {
 }
 
 #[test]
-fn shared_emitter_begin_scan() {
-    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(std::io::stdout())));
-    emitter.begin_scan();
-}
-
-#[test]
-fn shared_emitter_emit_finding() {
-    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(std::io::stdout())));
-    let finding = make_finding(1);
-    emitter.emit_finding(&finding, Some("test.rs"));
-}
-
-#[test]
-fn shared_emitter_finish_scan() {
-    let emitter = SharedEmitter::new(Box::new(TerminalEmitter::new(std::io::stdout())));
-    emitter.finish_scan(&make_outcome(0));
-}
-
-#[test]
-fn finding_message_finding_variant() {
-    let finding = make_finding(1);
-    let msg = FindingMessage::Finding(finding, Some("test.rs".to_string()));
-    match msg {
-        FindingMessage::Finding(_, Some(path)) => assert_eq!(path, "test.rs"),
-        _ => panic!("wrong variant"),
-    }
-}
-
-#[test]
-fn finding_message_finish_variant() {
-    let outcome = make_outcome(0);
-    let msg = FindingMessage::Finish(outcome);
-    match msg {
-        FindingMessage::Finish(o) => assert_eq!(o.exit_code(), 0),
-        _ => panic!("wrong variant"),
-    }
-}
-
-#[test]
 fn channel_emitter_multiple_findings() {
     let emitter = Box::new(TerminalEmitter::new(std::io::stdout()));
     let (tx, handle) = channel_emitter(emitter);

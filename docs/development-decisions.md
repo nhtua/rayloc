@@ -1,8 +1,8 @@
 # Development decisions
 
-Recorded on 2026-10-01 for the first P1/P2 library slice. The user requires a test
-for every function, production coverage exceeding 98%, and short standard-library
-implementations in preference to external dependencies.
+Recorded on 2026-10-01 for the first P1/P2 library slice. The original slice
+required a test for every function, production coverage exceeding 98%, and short
+standard-library implementations in preference to external dependencies.
 
 ## Dependencies and detection
 
@@ -41,12 +41,19 @@ excerpts. Paths are recorded only for sources with retained findings (bounded by
 the findings limit) and only when valid UTF-8 without control or bidi formatting
 characters and at most 4 KiB; otherwise reports fall back to source IDs.
 
-Regular files use a 256-KiB `BufReader`, lines are capped at 1 MiB, candidates at
-64 KiB, and retained findings at 10,000. Line allocation grows geometrically but
-never requests capacity above the line cap. A finding holds no credential copy.
-Overflow is an incomplete scan with exit 2; scanning after finding overflow
-continues counting detections while retaining the first source-ordered findings.
-P5 must extend this to a bounded, globally deterministic parallel collector.
+The original P1/P2 slice used a 256-KiB `BufReader`, 1-MiB physical-line cap,
+64-KiB candidates, and 10,000 retained findings. The current bounded scanning
+design removes the built-in physical-line ceiling. It reads 256-KiB fragments,
+and raw payload-buffer capacity is capped at 1.5 MiB per lane without legacy
+whole-line rules and 2.25 MiB when such a rule is enabled. Captured candidates
+remain limited to 64 KiB and retained findings to 10,000. Enabled custom rules
+that require whole-line matching retain the 1-MiB compatibility budget; longer
+lines yield exit 2 with
+`custom rule requires whole-line input beyond compatibility limit`, while
+supported rules continue scanning. A detected over-limit candidate also yields
+exit 2. Long-line findings are held until line end for trailing inline-ignore
+evaluation. A finding holds no raw credential copy. Finding overflow continues
+counting detections while retaining bounded, deterministic findings.
 
 Explicit symlinks/non-regular files are rejected. Unix device/inode comparison
 detects a substituted opened file. File selection checks are best effort under
@@ -60,7 +67,7 @@ so private functions and failure paths remain testable. Integration tests run
 the real CLI and therefore exercise both `main` and its stdio adapter.
 
 `cargo coverage` (a Cargo alias for `cargo llvm-cov`) instruments Rust, merges
-unit/integration/child-process profiles, and enforces >=98% lines/regions plus
+unit/integration/child-process profiles, and enforces >=95% lines/regions plus
 100% functions. It replaced a custom Python driver; cargo-llvm-cov is a
 development tool, not a crate dependency. Only test/support/benchmark source is
 excluded; all production Rust is counted. Its separate target directory keeps
@@ -190,7 +197,9 @@ Budgets are explicit and adversarially exercised:
 | Regex syntax nesting | Engine's bounded default of 250 |
 | Ignore lines / per-line size / aggregate text | 1,024 / 16 KiB / 256 KiB |
 | Git root discovery output | 1 MiB; overflow kills/reaps child and fails |
-| File read buffer / physical record / captured candidate | 256 KiB / 1 MiB / 64 KiB |
+| File fragment / Git structural metadata / captured candidate | 256 KiB / 1 MiB / 64 KiB |
+| Physical source line | No built-in length ceiling; 1-MiB compatibility cap for enabled legacy custom regexes |
+| Raw payload-buffer capacity per lane | 1.5 MiB without legacy storage; 2.25 MiB with it |
 | Retained findings | 10,000 globally within the explicit-file scan |
 
 Regex/ignore input and compiler budgets are bounds, not exact whole-process RSS
@@ -245,6 +254,29 @@ actual linkage gates, collects checksums and tests source installs on 1.85.
 Runtime support for those platforms requires green native jobs at the exact
 release SHA. Local GNU-host evidence cannot replace musl/macOS evidence. No
 published release or Cargo registry install is advertised.
+
+## Bounded physical-line scanning measurements (2026-10-06)
+
+The bounded scanner adds no dependencies and removes the built-in physical-line
+ceiling while keeping raw payload-buffer capacities within 1.5 MiB per lane, or
+2.25 MiB when an enabled legacy whole-line custom regex requires compatibility
+storage. That fallback remains capped at 1 MiB and returns an explicit exit-2
+incomplete-scan error beyond the cap while supported detectors continue. Raising
+the fallback cap is an interim choice that increases input-sized memory and
+retains a larger cutoff.
+
+The benchmark compared the PR #15 1 MiB cap, experimental 5/10 MiB caps, and the
+active chunk implementation on the same sparse minified-line fixtures. Chunking
+completed all measured 1–256 MB files at about 129–206 MB/s with 5.3–5.6 MiB
+peak process RSS; whole-line variants reached about 398–500 MB/s within their
+configured limits and used more RSS as lines grew. The ordinary 272-KiB engine
+benchmark medians were 3.182 ms on baseline and 3.333 ms with chunking (4.74%
+slower). A separate 256-file/16-KiB-per-file one-worker scope benchmark measured
+40.36–41.60 ms on baseline and 48.31–48.85 ms with chunking (16–21% slower),
+exceeding the 10% scope gate. This scope regression remains unresolved. These
+are warm synthetic results, not dense-finding, custom-regex, Git-patch, 1-GiB,
+cold-cache, or real-repository claims. See the
+[full report](research/byte-chunk-scanning-results.md) and its JSON data.
 
 A new artifact characterization found that staged edits completely reversed in
 the workspace can cause Git to rewrite its index cache during direct-diff

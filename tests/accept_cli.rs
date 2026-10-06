@@ -123,6 +123,47 @@ fn accepted_id_covers_one_value_in_one_file() {
 }
 
 #[test]
+fn accepted_fingerprint_is_stable_when_source_becomes_a_large_single_line() {
+    use std::io::Write;
+
+    let dir = repo();
+    let root = dir.path();
+    let input = root.join("docs/plan.md");
+    fs::write(&input, LINE).unwrap();
+    let short = run(root, &["scan", "docs/plan.md"]);
+    assert_eq!(short.status.code(), Some(1), "{}", text(&short));
+    let short_ids = ids(&short);
+    assert_eq!(short_ids.len(), 1);
+
+    let mut file = fs::File::create(&input).unwrap();
+    let block = vec![b'x'; 256 * 1024];
+    for _ in 0..41 {
+        file.write_all(&block).unwrap();
+    }
+    write!(file, ", {LINE}").unwrap();
+    drop(file);
+    let large = run(root, &["scan", "docs/plan.md"]);
+    assert_eq!(large.status.code(), Some(1), "{}", text(&large));
+    assert_eq!(
+        ids(&large),
+        short_ids,
+        "large-line ID changed for the same path/value"
+    );
+    assert!(!text(&large).contains("password123"));
+
+    let accepted = run(root, &["accept", &short_ids[0]]);
+    assert_eq!(accepted.status.code(), Some(0), "{}", text(&accepted));
+    let accepted_large = run(root, &["scan", "docs/plan.md"]);
+    assert_eq!(
+        accepted_large.status.code(),
+        Some(0),
+        "{}",
+        text(&accepted_large)
+    );
+    assert!(text(&accepted_large).contains("accepted=1"));
+}
+
+#[test]
 fn accept_rejects_invalid_ids_and_policies_without_echoing() {
     let dir = repo();
     let root = dir.path();

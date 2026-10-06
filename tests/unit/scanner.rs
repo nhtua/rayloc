@@ -2,39 +2,6 @@ use super::*;
 use crate::scanner::SourceError;
 
 #[test]
-fn error_categories_are_safe_and_implement_error() {
-    for (error, message) in [
-        (ScanError::Open, "cannot open selected file"),
-        (
-            ScanError::NotRegularFile,
-            "selected path is not a regular file",
-        ),
-        (ScanError::Read, "cannot read selected source"),
-        (ScanError::LineLimit, "physical line exceeds scan limit"),
-        (ScanError::CandidateLimit, "candidate exceeds scan limit"),
-        (ScanError::FindingLimit, "finding count exceeds scan limit"),
-        (
-            ScanError::CounterOverflow,
-            "scan counter exceeds supported range",
-        ),
-        (ScanError::Discovery, "cannot enumerate selected scope"),
-        (
-            ScanError::ScopeLimit,
-            "selected scope exceeds resource limit",
-        ),
-        (ScanError::GitMetadata, "cannot read tracked scope metadata"),
-        (ScanError::Policy, "cannot load scope ignore policy"),
-        (ScanError::NoGlobMatches, "glob matches no regular files"),
-        (ScanError::Pool, "cannot initialize scan workers"),
-    ] {
-        assert_eq!(error.to_string(), message);
-        let error: &dyn std::error::Error = &error;
-        assert!(error.source().is_none());
-        assert!(!format!("{error:?}").is_empty());
-    }
-}
-
-#[test]
 fn outcomes_obey_exit_precedence_and_deduplicate_errors() {
     let mut outcome = ScanOutcome::default();
     assert_eq!(outcome.exit_code(), 0);

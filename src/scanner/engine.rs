@@ -15,21 +15,23 @@ use std::{
     time::Instant,
 };
 pub const READ_BUFFER_BYTES: usize = 256 * 1024;
+/// Compatibility budget retained for legacy whole-line custom regex rules.
+/// Physical file lines without such a rule are streamed beyond this size.
 pub const MAX_LINE_BYTES: usize = 1024 * 1024;
 pub const MAX_FINDINGS: usize = 10_000;
 #[derive(Clone, Copy)]
 pub(super) struct Limits {
-    line_bytes: usize,
-    findings: usize,
+    pub(super) line_bytes: usize,
+    pub(super) findings: usize,
 }
 pub(super) const LIMITS: Limits = Limits {
-    line_bytes: MAX_LINE_BYTES,
+    line_bytes: usize::MAX,
     findings: MAX_FINDINGS,
 };
 type FindingKey = (u32, u64, usize, usize, crate::rules::builtin::RuleId);
 pub(super) struct Collector {
     entries: BTreeMap<FindingKey, Finding>,
-    labels: BTreeMap<u32, Box<str>>,
+    pub(super) labels: BTreeMap<u32, Box<str>>,
     limit: usize,
 }
 
@@ -42,7 +44,7 @@ impl Collector {
         }
     }
     /// Returns true if finding was accepted (not duplicate).
-    fn offer(&mut self, finding: Finding, path: &[u8]) -> bool {
+    pub(super) fn offer(&mut self, finding: Finding, path: &[u8]) -> bool {
         let key = (
             finding.source_id,
             finding.line,
@@ -87,14 +89,14 @@ impl Collector {
 /// One reusable state per admitted lane, independent of Rayon job splitting.
 pub(super) struct Worker {
     read: Vec<u8>,
-    line: Vec<u8>,
+    line: super::stream::LineSession,
     histogram: Histogram,
 }
 impl Worker {
     pub(super) fn new() -> Self {
         Self {
             read: vec![0; READ_BUFFER_BYTES],
-            line: Vec::with_capacity(READ_BUFFER_BYTES),
+            line: super::stream::LineSession::new(),
             histogram: Histogram::new(),
         }
     }
@@ -267,6 +269,7 @@ pub(super) fn add(counter: &mut u64, amount: usize) -> Result<(), ScanError> {
     Ok(())
 }
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn scan_record_into(
     line: &[u8],
     source_id: u32,
@@ -352,7 +355,7 @@ pub(super) fn detect_record(
     merge_suppressions(&mut outcome.stats.suppressions, &suppressions)?;
     result
 }
-fn merge_suppressions(
+pub(super) fn merge_suppressions(
     target: &mut crate::rules::context::Suppressions,
     source: &crate::rules::context::Suppressions,
 ) -> Result<(), ScanError> {
@@ -414,7 +417,7 @@ fn scan_with_policy(
         &mut outcome,
         limits,
         registry,
-        &mut Vec::with_capacity(limits.line_bytes.min(READ_BUFFER_BYTES)),
+        &mut super::stream::LineSession::new(),
         &mut Histogram::new(),
         &collector,
         None,
@@ -439,50 +442,26 @@ fn read_records_into(
     outcome: &mut ScanOutcome,
     limits: Limits,
     registry: &Registry,
-    line: &mut Vec<u8>,
-    histogram: &mut Histogram,
+    line: &mut super::stream::LineSession,
+    _histogram: &mut Histogram,
     collector: &Mutex<Collector>,
     emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
-    line.clear();
-    loop {
-        let buffer = match reader.fill_buf() {
-            Ok(buffer) => buffer,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            Err(_) => return Err(ScanError::Read),
-        };
-        if buffer.is_empty() {
-            if !line.is_empty() {
-                scan_record_into(
-                    line, source_id, path, outcome, limits, registry, histogram, collector, emitter,
-                )?;
-            }
-            return Ok(());
-        }
-        let newline = buffer.iter().position(|&byte| byte == b'\n');
-        let content = newline.unwrap_or(buffer.len());
-        if content > limits.line_bytes - line.len() {
-            return Err(ScanError::LineLimit);
-        }
-        if line.len() + content > line.capacity() {
-            let capacity = line
-                .capacity()
-                .saturating_mul(2)
-                .max(line.len() + content)
-                .min(limits.line_bytes);
-            line.reserve_exact(capacity - line.len());
-        }
-        line.extend_from_slice(&buffer[..content]);
-        let consumed = content + usize::from(newline.is_some());
-        add(&mut outcome.stats.bytes_read, consumed)?;
-        reader.consume(consumed);
-        if newline.is_some() {
-            scan_record_into(
-                line, source_id, path, outcome, limits, registry, histogram, collector, emitter,
-            )?;
-            line.clear();
-        }
+    let mut progress = super::chunk::ReadProgress::default();
+    let result = super::chunk::visit_line_fragments(reader, &mut progress, |fragment| {
+        line.push(
+            fragment, source_id, path, registry, outcome, collector, emitter, limits,
+        )
+    });
+    outcome.stats.bytes_read = outcome
+        .stats
+        .bytes_read
+        .checked_add(progress.bytes_read)
+        .ok_or(ScanError::CounterOverflow)?;
+    if result.is_err() {
+        line.abort_line();
     }
+    result
 }
 #[cfg(test)]
 #[path = "../../tests/unit/engine.rs"]

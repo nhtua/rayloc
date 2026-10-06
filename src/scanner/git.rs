@@ -1,8 +1,5 @@
 //! Reaped Git children with bounded stdout and concurrently discarded diagnostics.
-use super::{
-    ScanError,
-    engine::{MAX_LINE_BYTES, READ_BUFFER_BYTES},
-};
+use super::{ScanError, diff::MAX_METADATA_RECORD_BYTES, engine::READ_BUFFER_BYTES};
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
     path::Path,
@@ -167,7 +164,7 @@ pub(super) fn record(
         }
         let delimiter = input.iter().position(|&b| b == separator);
         let count = delimiter.map_or(input.len(), |index| index + 1);
-        if count > MAX_LINE_BYTES - bytes.len() {
+        if count > MAX_METADATA_RECORD_BYTES - bytes.len() {
             return Err(ScanError::LineLimit);
         }
         bytes.reserve_exact(count);
@@ -177,6 +174,39 @@ pub(super) fn record(
             return Ok(true);
         }
     }
+}
+
+/// Read one at-most-256-KiB fragment of a patch record. LF is included only
+/// in the final fragment; a partial record at EOF is rejected.
+pub(super) fn record_fragment(
+    reader: &mut impl BufRead,
+    bytes: &mut Vec<u8>,
+) -> Result<Option<bool>, ScanError> {
+    use super::chunk::CHUNK_BYTES;
+    bytes.clear();
+    while bytes.len() < CHUNK_BYTES {
+        let input = match reader.fill_buf() {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => result.map_err(|_| ScanError::GitMetadata)?,
+        };
+        if input.is_empty() {
+            return if bytes.is_empty() {
+                Ok(None)
+            } else {
+                Err(ScanError::GitMetadata)
+            };
+        }
+        let room = CHUNK_BYTES - bytes.len();
+        let delimiter = input.iter().take(room).position(|&b| b == b'\n');
+        let count = delimiter.map_or(input.len().min(room), |index| index + 1);
+        bytes.reserve_exact(count);
+        bytes.extend_from_slice(&input[..count]);
+        reader.consume(count);
+        if delimiter.is_some() {
+            return Ok(Some(true));
+        }
+    }
+    Ok(Some(false))
 }
 #[cfg(test)]
 #[path = "../../tests/unit/git.rs"]

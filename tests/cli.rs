@@ -112,6 +112,91 @@ fn parallel_directory_scan_completes_without_findings() {
 }
 
 #[test]
+fn parallel_chunk_output_is_deterministic() {
+    use std::fs;
+    use std::io::Write;
+
+    const AWS: &str = concat!("AKIA0123", "456789AB", "CDEF");
+    const GITHUB: &str = "ghp_ParallelDeterminismToken0123456789"; // rayloc:ignore
+    let directory = support::TempDir::new();
+    for file_index in 0..101 {
+        let path = directory.path().join(format!("small_{file_index:03}.txt"));
+        let mut file = fs::File::create(path).unwrap();
+        for _ in 0..100 {
+            writeln!(file, "key=\"{AWS}\"").unwrap();
+        }
+    }
+    // Keep a >10 MiB single line in the same worker pool and include two
+    // different rule matches on one line to exercise overlapping candidates.
+    let mut large = fs::File::create(directory.path().join("large.js")).unwrap();
+    let block = vec![b'x'; 256 * 1024];
+    for _ in 0..41 {
+        large.write_all(&block).unwrap();
+    }
+    writeln!(large, ",\"{AWS}\",\"{GITHUB}\"").unwrap();
+    drop(large);
+
+    let scope_root = rayloc::config::discover_scope_root(directory.path()).unwrap();
+    let mut reference = None;
+    for threads in [1, 8, 32] {
+        let outcome = rayloc::scanner::scope::scan_directory_with_options(
+            &scope_root,
+            directory.path(),
+            None,
+            &rayloc::rules::BUILTINS,
+            rayloc::scanner::scope::ScopeOptions {
+                workers: threads,
+                ..Default::default()
+            },
+        );
+        assert_eq!(outcome.exit_code(), 2);
+        assert_eq!(outcome.findings.len(), 10_000);
+        assert_eq!(outcome.stats.findings_detected, 10_102);
+        assert!(!format!("{outcome:?}").contains(AWS));
+        assert!(!format!("{outcome:?}").contains(GITHUB));
+        let mut findings: Vec<_> = outcome
+            .findings
+            .iter()
+            .map(|finding| {
+                format!(
+                    "{}:{}:{}:{}:{}:{}:{}",
+                    finding.source_id,
+                    finding.line,
+                    finding.start_column,
+                    finding.end_column,
+                    finding.rule.metadata().id,
+                    finding.value,
+                    finding.id
+                )
+            })
+            .collect();
+        findings.sort_unstable();
+        let summary = (
+            outcome.stats.files_attempted,
+            outcome.stats.files_completed,
+            outcome.stats.files_excluded,
+            outcome.stats.bytes_read,
+            outcome.stats.lines_scanned,
+            outcome.stats.findings_detected,
+            outcome
+                .errors
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+        );
+        let current = (findings, summary);
+        if let Some(reference) = &reference {
+            assert_eq!(
+                &current, reference,
+                "worker count {threads} changed results"
+            );
+        } else {
+            reference = Some(current);
+        }
+    }
+}
+
+#[test]
 fn executable_entry_point_obeys_help_version_and_error_contracts() {
     for arguments in [
         vec![],
@@ -165,5 +250,49 @@ fn ci_can_disable_inline_ignores_without_leaking_passwords() {
                 .contains("aaaaaaaa")
         );
         assert!(output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn large_single_line_cli_contract() {
+    use std::fs;
+
+    const SECRET: &str = concat!("AKIA0123", "456789AB", "CDEF");
+    let directory = support::TempDir::new();
+    let root = directory.path();
+    let large_path = root.join("minified.bundle");
+    // Generate the fixture incrementally so the test itself does not need a
+    // second 11 MiB allocation. Put the credential after the 10 MiB point.
+    let mut file = fs::File::create(&large_path).unwrap();
+    let block = vec![b'x'; 256 * 1024];
+    for _ in 0..41 {
+        std::io::Write::write_all(&mut file, &block).unwrap();
+    }
+    std::io::Write::write_all(&mut file, b",\"").unwrap();
+    std::io::Write::write_all(&mut file, SECRET.as_bytes()).unwrap();
+    std::io::Write::write_all(&mut file, b"\"").unwrap();
+    drop(file);
+
+    for arguments in [
+        vec!["scan".to_owned(), large_path.display().to_string()],
+        vec!["scan".to_owned(), root.display().to_string()],
+        vec![
+            "scan".to_owned(),
+            "--glob".to_owned(),
+            "*.bundle".to_owned(),
+        ],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+            .args(&arguments)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(output.status.code(), Some(1), "{stdout}{stderr}");
+        assert!(stdout.contains("minified.bundle:1:"), "{stdout}");
+        assert!(stdout.contains("1 finding(s)"), "{stdout}");
+        assert!(!stdout.contains(SECRET), "secret leaked to stdout");
+        assert!(!stderr.contains(SECRET), "secret leaked to stderr");
     }
 }

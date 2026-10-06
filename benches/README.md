@@ -21,6 +21,25 @@ Environment overrides remain `RAYLOC_BENCH_FILES`, `RAYLOC_BENCH_BYTES`,
 `RAYLOC_BENCH_WORKERS`, `RAYLOC_BENCH_THRESHOLD`, `RAYLOC_BENCH_POLICY` (256 custom rules/ignore patterns)
 and `RAYLOC_BENCH_DENSE` (finding-overflow workload).
 
+For long minified single-line inputs and a cap-versus-chunking comparison, use
+`scripts/longline_measure.py`. It writes fixtures with bounded blocks, checks
+finding counts, complete byte counters, exit status and redaction, and reports
+native child peak RSS. Supply one `--binary LABEL=PATH` per immutable build;
+experimental cap-error runs are marked unsupported and are excluded from
+throughput comparisons. Add `--gigabyte` only when an opt-in 1 GiB run is
+intended.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/longline_measure.py \
+  --binary chunk=target/release/rayloc --sizes-mib 1 5 10 64 256 \
+  --samples 15 --output target/longline.json
+```
+
+The [bounded chunk results](../docs/research/byte-chunk-scanning-results.md)
+record the measured sparse minified workload and its limitations. Those results
+do not establish performance for dense findings, custom regexes, Git acquisition
+or a cold cache.
+
 For startup-inclusive file, directory and staged latency plus peak RSS:
 
 ```sh

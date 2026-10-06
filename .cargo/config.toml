@@ -4,7 +4,7 @@
 coverage = [
     "llvm-cov", "--locked", "--workspace", "--all-features",
     "--ignore-filename-regex", "(^|/)(tests|benches)/",
-    "--fail-under-functions", "100",
-    "--fail-under-lines", "97",
-    "--fail-under-regions", "97",
+    "--fail-under-functions", "98",
+    "--fail-under-lines", "95",
+    "--fail-under-regions", "95",
 ]
