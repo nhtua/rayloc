@@ -29,9 +29,12 @@ Staged mode scans added index lines; --diff scans tracked additions against a co
 
 /// Run the CLI, returning exit code 2 for unsupported operations.
 pub fn run() -> ExitCode {
+    // Pass the unlocked stdout handle: worker threads acquire stdout during
+    // the scan to emit redacted findings, and the main thread's lock must
+    // not be held while they do so.
     ExitCode::from(run_with_args(
         std::env::args_os().skip(1),
-        &mut io::stdout().lock(),
+        &mut io::stdout(),
         &mut io::stderr().lock(),
     ))
 }
