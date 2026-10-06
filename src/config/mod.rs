@@ -452,11 +452,26 @@ pub fn discover_scope_root(selected: &Path) -> Result<ScopeRoot, ConfigError> {
         selected.parent().ok_or(ConfigError::Discovery)?
     };
     let directory = std::fs::canonicalize(start).map_err(|_| ConfigError::Discovery)?;
-    let directory = directory
+    // Find the .git directory (named .git) in the ancestors, as the original code did.
+    let git_dir = directory
         .ancestors()
         .find(|path| path.file_name().is_some_and(|name| name == ".git"))
-        .and_then(Path::parent)
-        .unwrap_or(&directory);
+        .and_then(Path::parent);
+    let directory = git_dir.unwrap_or(&directory);
+    // Check if there's a .git directory anywhere in the ancestors (including the directory itself).
+    // If not, this is not a git repo, so don't spawn git.
+    let has_git = directory.ancestors().any(|path| {
+        std::fs::symlink_metadata(path.join(".git"))
+            .map(|meta| meta.is_dir() || meta.is_file())
+            .unwrap_or(false)
+    });
+    if !has_git {
+        return Ok(ScopeRoot {
+            root: outside_without_git(directory)?,
+            git: false,
+            administration: Vec::new(),
+        });
+    }
     let mut child = match Command::new("git")
         .arg("-C")
         .arg(directory)

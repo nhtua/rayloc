@@ -187,6 +187,16 @@ fn oversized_git_discovery_is_an_error_and_child_stderr_is_private() {
         time::{Duration, Instant},
     };
     let root = TempDir::new();
+    assert!(
+        Command::new("git")
+            .args(["init", "--quiet"])
+            .arg(root.path())
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .status()
+            .unwrap()
+            .success()
+    );
     fs::write(root.path().join("input"), "clean").unwrap();
     fs::write(root.path().join("git"), "#!/usr/bin/python3\nimport sys\nsys.stderr.write('private-child-stderr')\nsys.stdout.write('x' * (3 * 1024 * 1024))\n").unwrap();
     fs::set_permissions(root.path().join("git"), fs::Permissions::from_mode(0o755)).unwrap();
@@ -275,6 +285,7 @@ fn git_unavailable_bad_executable_and_invalid_root_output_are_safe() {
     use std::os::unix::fs::PermissionsExt;
     let root = TempDir::new();
     fs::write(root.path().join("input"), "clean").unwrap();
+    // Without a git repo, rayloc should not spawn git and should succeed.
     let command = || {
         let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
         command
@@ -284,6 +295,7 @@ fn git_unavailable_bad_executable_and_invalid_root_output_are_safe() {
         command
     };
     assert_eq!(command().output().unwrap().status.code(), Some(0));
+    // With GIT_DIR set, rayloc should still spawn git and fail.
     assert_eq!(
         command()
             .env("GIT_DIR", "private-git-directory")
@@ -301,6 +313,17 @@ fn git_unavailable_bad_executable_and_invalid_root_output_are_safe() {
             .status
             .code(),
         Some(2)
+    );
+    // Now create a git repo and test fake git executables.
+    assert!(
+        Command::new("git")
+            .args(["init", "--quiet"])
+            .arg(root.path())
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .status()
+            .unwrap()
+            .success()
     );
     fs::write(root.path().join("git"), "not-executable").unwrap();
     assert_eq!(command().output().unwrap().status.code(), Some(2));
@@ -367,6 +390,16 @@ fn both_git_pipes_finish_without_deadlock_and_oversized_stderr_fails_safely() {
         time::{Duration, Instant},
     };
     let root = TempDir::new();
+    assert!(
+        Command::new("git")
+            .args(["init", "--quiet"])
+            .arg(root.path())
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .status()
+            .unwrap()
+            .success()
+    );
     fs::write(root.path().join("input"), "clean").unwrap();
     let script = format!(
         "#!/bin/sh\ni=0\nwhile [ \"$i\" -lt 1024 ]; do printf '%s' '{}' >&2; i=$((i + 1)); done\nprintf '%s\\n' \"$PWD\"\n",
