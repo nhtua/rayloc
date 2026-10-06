@@ -15,11 +15,11 @@ Usage: rayloc [COMMAND | OPTION]
 Options:
   -h, --help       Print help
   -V, --version    Print version
-  --threads N      Scan worker threads (1-64; directory/glob scans)
 
 Commands:
   scan [<file|directory> | --glob <pattern> | --staged | --diff <ref>] [--threads <count>] [--config <file>] [--no-inline-ignores]
                   Scan files, a directory (default: current directory), or a glob
+                  --threads applies to directory and glob scans (1-64)
 
   accept <id>     Accept a reviewed finding by its report ID in the root .rayloc.yaml;
                   the ID covers that value in that file only

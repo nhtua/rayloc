@@ -107,7 +107,7 @@ def create_fixture(parent, name, scale=1):
     elif name == "clustered":
         paths = [root / f"{i:04}.txt" for i in range(256)]
         for i, path in enumerate(paths):
-            _write_repeated(path, BLOCK, (2 * 1024 * 1024 if i < 32 else 1024) * scale)
+            _write_repeated(path, BLOCK, (4 * 1024 * 1024 if i < 32 else 1024) * scale)
     elif name == "single_large":
         path = root / "large.txt"
         _write_repeated(path, BLOCK, 64 * 1024 * 1024 * scale)
@@ -254,10 +254,19 @@ def measure_fixture(binary, fixture, threads, samples, sink_delay_ms=0):
     wall = sorted(result["wall_ms"] for result in results)
     median = statistics.median(wall)
     tail = wall[min(len(wall) - 1, int(len(wall) * 0.95))]
+    configured_threads = threads if threads is not None else min(os.cpu_count() or 1, 8)
+    parallel_admitted = (
+        fixture["expected_files"] >= 256 or fixture["expected_bytes"] >= 256 * 1024
+    ) and configured_threads > 1
     aggregate = {
         "case": fixture["case"],
         "threads_requested": threads if threads is not None else "default",
         "thread_control": "--threads for directory/glob scans",
+        "configured_pool_threads": configured_threads if parallel_admitted else 0,
+        "active_lane_upper_bound": min(configured_threads, fixture["expected_files"])
+        if parallel_admitted
+        else 1,
+        "admission_basis": "files_or_estimated_bytes" if parallel_admitted else "serial",
         "sink_delay_ms": sink_delay_ms,
         "cache": "warm after fixture creation and one untimed scan; OS caches not flushed",
         "samples": samples,

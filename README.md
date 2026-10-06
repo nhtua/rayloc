@@ -289,7 +289,8 @@ candidate and 10,000 retained findings. Exceeding a limit returns exit 2.
 ## Performance
 
 See the [measured release baseline](docs/research/release-baseline.md) for numbers
-and methodology. On the held-out synthetic corpus, rayloc reaches 98% precision
+and methodology. The [parallel scanning results](docs/research/parallel-scanning-results.md)
+record thread-scaling measurements and remaining limits. On the held-out synthetic corpus, rayloc reaches 98% precision
 and recall. That corpus is too small to estimate a real-world false-positive rate.
 Staged scans under 5 ms and 500 MB/s per core are goals, not guarantees yet.
 

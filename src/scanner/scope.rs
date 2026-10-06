@@ -352,14 +352,15 @@ impl Runner<'_> {
             && (count >= self.options.parallel_threshold
                 || estimated_bytes >= self.options.parallel_bytes_threshold)
         {
+            let pool = super::execution::build_pool(self.options.workers, |threads| {
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()
+                    .map_err(|_| ())
+            })?;
             self.workers
                 .extend((1..self.options.workers).map(|_| Worker::new()));
-            self.pool = Some(
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(self.options.workers)
-                    .build()
-                    .map_err(|_| ScanError::Pool)?,
-            );
+            self.pool = Some(pool);
         }
         Ok(())
     }
@@ -568,7 +569,8 @@ impl Runner<'_> {
             }
             outcome
         };
-        let parallel = self.options.workers > 1
+        let parallel = self.pool.is_some()
+            && self.options.workers > 1
             && (self.batch.len() >= self.options.parallel_threshold
                 || estimated_bytes >= self.options.parallel_bytes_threshold);
         let results: Vec<_> = if parallel {

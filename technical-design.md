@@ -459,10 +459,19 @@ nonzero hook status blocks Git. Do not automatically suggest `--no-verify`.
 
 ## 7. Parallelism, dependencies, and packaging
 
-Use one bounded Rayon pool for directory discovery/file batches; avoid nested
-`ignore` parallel traversal and unrestricted Rayon pools. Worker-local counters
-and buffers are reduced after scanning. Sequential iterator bridging can limit
-discovery throughput and does not preserve order; measure it.
+Directory and glob scans use one lazily created, private Rayon pool. `--threads`
+selects 1–64 workers; absent that flag, `RAYON_NUM_THREADS` is honored and the
+automatic default remains at most eight available CPUs. Explicit-file, staged,
+and diff scans keep their existing execution model. Directory work is admitted
+for parallel scanning at 256 files or 256 KiB of estimated input, then files
+are dynamically claimed by lanes so filename order does not pin large files to
+one lane. The byte hint affects scheduling only; verified reads determine
+reported bytes and completion. Discovery classifies entries with
+`DirEntry::file_type()` and preserves deterministic policy/source assignment.
+Avoid nested `ignore` traversal and unrestricted global Rayon use. Revisit
+producer/consumer discovery overlap or asynchronous reporting only when a
+matching workload shows those stages dominate; bounded queues must count queued
+and running paths, findings and output bytes against explicit budgets.
 [Rayon bridge behavior](https://docs.rs/rayon/latest/rayon/iter/trait.ParallelBridge.html)
 
 Prefer short, correct standard-library implementations before adding crates.

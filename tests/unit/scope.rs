@@ -399,6 +399,32 @@ fn entries_classify_directories_files_and_symlinks_without_following_links() {
     assert!(matches!(kinds["file"], Kind::Regular));
     assert!(matches!(kinds["link"], Kind::Other));
 }
+
+#[test]
+fn public_directory_wrappers_scan_with_and_without_an_emitter() {
+    let temp = TempDir::new();
+    fs::write(temp.path().join("file"), "clean").unwrap();
+    let root = root(&temp);
+    let plain = scan_directory(&root, temp.path(), None, &BUILTINS);
+    assert_eq!(plain.stats.files_completed, 1);
+    let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
+        crate::report::emitter::TerminalEmitter::new(Vec::new()),
+    ));
+    let emitted = scan_directory_with_emitter(&root, temp.path(), None, &BUILTINS, emitter);
+    assert_eq!(emitted.stats.files_completed, 1);
+    let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
+        crate::report::emitter::TerminalEmitter::new(Vec::new()),
+    ));
+    let configured = scan_directory_with_options_and_emitter(
+        &root,
+        temp.path(),
+        None,
+        &BUILTINS,
+        ScopeOptions::default(),
+        emitter,
+    );
+    assert_eq!(configured.stats.files_completed, 1);
+}
 #[test]
 fn merge_errors_and_every_new_category_render_without_source_metadata() {
     for error in [

@@ -5,6 +5,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub(crate) const MAX_SCAN_THREADS: usize = 64;
 
+pub(crate) fn build_pool(
+    threads: usize,
+    builder: impl FnOnce(usize) -> Result<rayon::ThreadPool, ()>,
+) -> Result<rayon::ThreadPool, ScanError> {
+    builder(threads).map_err(|_| ScanError::Pool)
+}
+
 pub(crate) fn resolve_threads(
     requested: Option<usize>,
     environment: Option<&OsStr>,

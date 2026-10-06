@@ -2,10 +2,19 @@ use super::*;
 use std::ffi::OsStr;
 
 #[test]
+fn private_pool_creation_failures_map_to_a_fixed_scan_error() {
+    assert!(matches!(build_pool(4, |_| Err(())), Err(ScanError::Pool)));
+}
+
+#[test]
 fn thread_resolution_obeys_precedence_and_bounds() {
     for threads in [1, 8, 32, 64] {
         assert_eq!(
             resolve_threads(Some(threads), Some(OsStr::new("2")), 16),
+            Ok(threads)
+        );
+        assert_eq!(
+            resolve_threads(Some(threads), Some(OsStr::new("invalid")), 16),
             Ok(threads)
         );
         assert_eq!(

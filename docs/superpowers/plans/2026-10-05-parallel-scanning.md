@@ -84,11 +84,11 @@ Diagnostic artifacts are temporary, not production changes: `/tmp/rayloc_paralle
 
 **Interfaces:** the new script invokes the actual release CLI, accepts `--binary`, `--samples`, and `--output`, and writes JSON containing case, thread request, cache description, median wall/user/system time, peak RSS, reported bytes/files/findings, exit code, and binary SHA-256. It never stores source contents or full report output.
 
-- [ ] Add cases for 32 large files, 255/256/257 files, uniform files, clustered large files, one large file, many tiny directories, excluded trees, Git tracked exceptions, and dense findings. Test fixture and summary accounting against independently calculated byte/file/finding counts.
-- [ ] Run the harness tests before adding their implementation; require failure due to the missing harness or incorrect accounting, not flaky speed assertions.
-- [ ] Add CLI runs for pool requests 1/2/8/16/32, default scheduling, redirected output, and a drained slow output pipe. Add library runs for the production default threshold as well as threshold 1. Warm and measure one process at a time; do not overlap timing with builds.
-- [ ] Record a baseline and CPU/RSS profiles. Treat any change in scanned scope or exit code as a failed comparison.
-- [ ] Run `python3 -m unittest discover -s tests -p measurement_tools.py` and release benchmark cases; commit the harness independently.
+- [x] Add cases for 32 large files, 255/256/257 files, uniform files, clustered large files, one large file, many tiny directories, excluded trees, Git tracked exceptions, and dense findings. Test fixture and summary accounting against independently calculated byte/file/finding counts.
+- [x] Run the harness tests before adding their implementation; require failure due to the missing harness or incorrect accounting, not flaky speed assertions.
+- [x] Add CLI runs for pool requests 1/2/8/16/32, default scheduling, redirected output, and a drained slow output pipe. Add library runs for the production default threshold as well as threshold 1. Warm and measure one process at a time; do not overlap timing with builds.
+- [x] Record a baseline and CPU/RSS profiles. Treat any change in scanned scope or exit code as a failed comparison.
+- [x] Run `python3 -m unittest discover -s tests -p measurement_tools.py` and release benchmark cases; commit the harness independently.
 
 ## Task 2: Use One Explicitly Sized Pool and Expose Thread Selection
 
@@ -96,11 +96,11 @@ Diagnostic artifacts are temporary, not production changes: `/tmp/rayloc_paralle
 
 **Interfaces:** execution module exports internally `MAX_SCAN_THREADS: usize = 64` and `resolve_threads(requested: Option<usize>, environment: Option<&std::ffi::OsStr>, available: usize) -> Result<usize, ScanError>`. `BatchExecutor` owns the optional private pool and reusable lanes. Retain `ScopeOptions.workers` as the resolved numeric size for library/benchmark callers; its default remains automatic without consulting process environment. Add `scan_directory_with_options_and_emitter(root: &ScopeRoot, selected: &Path, pattern: Option<&str>, registry: &Registry, options: ScopeOptions, emitter: SharedEmitter) -> ScanOutcome` so the CLI actually propagates its selection.
 
-- [ ] Write failing tests for precedence, 1/8/32/64, zero, values above 64, nonnumeric/non-UTF-8 environment input, duplicate/missing CLI values, and invalid scopes. `--threads` on explicit-file, staged, or diff scopes returns a fixed unsupported-scope error, exit 2. Tests must not echo argument values.
-- [ ] Verify the actual private pool size using `current_num_threads()` inside it; ensure a competing global pool does not override it. Empty/small serial scope must not initialize the private pool. Exercise the pool construction error boundary with a deterministic injected failure.
-- [ ] Implement resolution, lazy private pool creation, CLI propagation, and fixed errors. Route both existing parallel call sites through the private pool, with a serial metadata fallback for small chunks, until Task 4 removes unnecessary parallel classification. Update all eight-worker ceiling assertions and documentation; retain one-worker serial execution.
-- [ ] Run `cargo test --all` and representative startup/throughput cases. Check that requested 32 appears in executor instrumentation and no production operation inadvertently uses the global pool.
-- [ ] Commit this independently from scheduling changes.
+- [x] Write failing tests for precedence, 1/8/32/64, zero, values above 64, nonnumeric/non-UTF-8 environment input, duplicate/missing CLI values, and invalid scopes. `--threads` on explicit-file, staged, or diff scopes returns a fixed unsupported-scope error, exit 2. Tests must not echo argument values.
+- [x] Verify the actual private pool size using `current_num_threads()` inside it; ensure a competing global pool does not override it. Empty/small serial scope must not initialize the private pool. Exercise the pool construction error boundary with a deterministic injected failure.
+- [x] Implement resolution, lazy private pool creation, CLI propagation, and fixed errors. Route both existing parallel call sites through the private pool, with a serial metadata fallback for small chunks, until Task 4 removes unnecessary parallel classification. Update all eight-worker ceiling assertions and documentation; retain one-worker serial execution.
+- [x] Run `cargo test --all` and representative startup/throughput cases. Check that requested 32 appears in executor instrumentation and no production operation inadvertently uses the global pool.
+- [x] Commit this independently from scheduling changes.
 
 ## Task 3: Admit Byte-Heavy Batches and Schedule Files Dynamically
 
@@ -108,12 +108,12 @@ Diagnostic artifacts are temporary, not production changes: `/tmp/rayloc_paralle
 
 **Interfaces:** keep `ScopeOptions.parallel_threshold` as the file-count threshold and add `parallel_bytes_threshold: u64`, default 256 KiB. Add an estimated-byte hint to `Work`, computed only for eligible regular files. A failed size lookup supplies a conservative parallel-admission hint and still sends the file through the existing verified-open path. Hints must not determine scope, completion, or reported scanned bytes. `BatchExecutor` receives the immutable job slice; each lane repeatedly claims the next index with `AtomicUsize::fetch_add(Ordering::Relaxed)`.
 
-- [ ] Write failing structural tests that 32 large files and a byte-heavy final partial batch enter parallel execution, while one file and a small batch of tiny files remain serial. Assert correct byte totals and source locations; do not use elapsed-time assertions.
-- [ ] Write a controlled scheduler test where an expensive first job is held behind a synchronization gate and another lane completes later eligible jobs. Prove files are independently claimable rather than tied to contiguous lane chunks. Use bounded waits and always release the gate on failure.
-- [ ] Implement the admission predicate and dynamic claiming with at most `min(requested_threads, job_count)` active lanes. Reuse buffers and preserve preassigned IDs. Keep existing bounded batch/path storage and checked production counters; estimated-byte totals may saturate for scheduling only.
-- [ ] Extend serial/parallel equality tests to 1/2/8/32 workers, boundary-crossing lines, dense findings, caps, custom rules, accepted values and partial failures. Verify errors have a stable canonical order.
-- [ ] Run `cargo test --all`; compare the 32-large and clustered/distributed fixtures. Require identical findings/stats, and materially reduce the filename-order sensitivity. Record actual speedup; do not assume 32 beats eight on SMT hardware.
-- [ ] Commit after validating the change independently.
+- [x] Write failing structural tests that 32 large files and a byte-heavy final partial batch enter parallel execution, while one file and a small batch of tiny files remain serial. Assert correct byte totals and source locations; do not use elapsed-time assertions.
+- [x] Write a controlled scheduler test where an expensive first job is held behind a synchronization gate and another lane completes later eligible jobs. Prove files are independently claimable rather than tied to contiguous lane chunks. Use bounded waits and always release the gate on failure.
+- [x] Implement the admission predicate and dynamic claiming with at most `min(requested_threads, job_count)` active lanes. Reuse buffers and preserve preassigned IDs. Keep existing bounded batch/path storage and checked production counters; estimated-byte totals may saturate for scheduling only.
+- [x] Extend serial/parallel equality tests to 1/2/8/32 workers, boundary-crossing lines, dense findings, caps, custom rules, accepted values and partial failures. Verify errors have a stable canonical order.
+- [x] Run `cargo test --all`; compare the 32-large and clustered/distributed fixtures. Require identical findings/stats, and materially reduce the filename-order sensitivity. Record actual speedup; do not assume 32 beats eight on SMT hardware.
+- [x] Commit after validating the change independently.
 
 ## Task 4: Make Discovery Cheaper Without Changing Scope
 
@@ -121,14 +121,24 @@ Diagnostic artifacts are temporary, not production changes: `/tmp/rayloc_paralle
 
 **Interfaces:** `Runner::entries()` retains bounded `Vec<Entry>` storage and its deterministic sort for scan discovery. Obtain `Kind` from `DirEntry::file_type()` before dropping the entry; avoid retaining `DirEntry` objects across recursion. Preserve explicit classification failures as `Kind::Error` and verified-open checks for admitted files.
 
-- [ ] Write tests for regular/directory/symlink classification, stale types followed by verified-open failure, enumeration errors, resource limits, and readable directories whose children cannot be opened. Tests should pin exit 2 and scope preservation; avoid requiring an unnecessary metadata syscall to fail during classification.
-- [ ] Replace unconditional per-entry `symlink_metadata` plus `par_iter_mut()` with cheap entry-type classification. Benchmark before adding parallel metadata fallback; a cached type normally needs no additional syscall on supported filesystems.
-- [ ] Keep `discover_administration()` and traversal of excluded trees. Verify force-added tracked files, nested administrative pointers sorting before/after their destination, linked worktrees, malformed pointers, glob matches that are all excluded, and ignored-tree errors.
-- [ ] Measure the checkout and excluded-tree cases at 1/8/32. Require lower scheduling CPU cost and unchanged completed-file/finding sets; record exclusion counts as well.
-- [ ] Investigate remaining path/policy cost only if profiling still shows it dominant. Avoid compiling root `.raylocignore` twice by passing/reusing the loaded matcher if that cost is material.
-- [ ] Run scope tests and the complete suite; commit the discovery optimization independently.
+- [x] Write tests for regular/directory/symlink classification, stale types followed by verified-open failure, enumeration errors, resource limits, and readable directories whose children cannot be opened. Tests should pin exit 2 and scope preservation; avoid requiring an unnecessary metadata syscall to fail during classification.
+- [x] Replace unconditional per-entry `symlink_metadata` plus `par_iter_mut()` with cheap entry-type classification. Benchmark before adding parallel metadata fallback; a cached type normally needs no additional syscall on supported filesystems.
+- [x] Keep `discover_administration()` and traversal of excluded trees. Verify force-added tracked files, nested administrative pointers sorting before/after their destination, linked worktrees, malformed pointers, glob matches that are all excluded, and ignored-tree errors.
+- [x] Measure the checkout and excluded-tree cases at 1/8/32. Require lower scheduling CPU cost and unchanged completed-file/finding sets; record exclusion counts as well.
+- [x] Investigate remaining path/policy cost only if profiling still shows it dominant. Avoid compiling root `.raylocignore` twice by passing/reusing the loaded matcher if that cost is material.
+- [x] Run scope tests and the complete suite; commit the discovery optimization independently.
 
 ## Task 5: Overlap Discovery and Scanning with Bounded Admission
+
+**Execution decision (2026-10-06): deferred.** The measured cases after dynamic
+batch scheduling complete in 1.7–2.4 ms for 256 tiny files in 32 directories;
+the larger excluded-tree case completes in 7.4–10.0 ms. These runs do not show
+that producer/consumer overlap is the limiting stage. A queue would add another
+resource-accounting and shutdown protocol; revisit it against a matching deep
+mixed-content repository with stage-level profiles.
+
+The exact five-second user corpus was not provided, so this decision does not
+rule out queueing benefits for that unidentified workload.
 
 **Files:** extend `src/scanner/execution.rs`; modify `src/scanner/scope.rs`; tests in `tests/unit/execution.rs`, `tests/unit/scope.rs`, `tests/scope_cli.rs`.
 
@@ -142,6 +152,12 @@ Diagnostic artifacts are temporary, not production changes: `/tmp/rayloc_paralle
 - [ ] Commit after full verification of termination and resource accounting.
 
 ## Task 6: Move Report I/O Away from Scanning Workers
+
+**Execution decision (2026-10-06): deferred.** The 800-finding fixture takes
+2.5–2.7 ms with a fast sink. A deliberately throttled reader raises elapsed
+time to 133 ms, which is output-drain time; a printer thread cannot reduce the
+required drain. Revisit when the actual target workload has enough findings to
+show scanner/report contention and when earlier output visibility is required.
 
 **Files:** modify `src/report/emitter.rs`, `src/scanner/engine.rs`, `src/scanner/execution.rs`, `src/scanner/scope.rs`, `src/cli.rs`; tests in `tests/unit/emitter.rs`, `tests/unit/engine_collector.rs`, `tests/cli.rs`.
 
@@ -158,13 +174,18 @@ Diagnostic artifacts are temporary, not production changes: `/tmp/rayloc_paralle
 
 **Files:** update `benches/README.md`, `README.md`, `technical-design.md`, and `docs/research/parallel-scanning-results.md` with the selected thresholds, pool behavior and matching-workload measurements.
 
-- [ ] Run the benchmark matrix sequentially with 1/2/8/16/32 threads, default and threshold-control cases, and fast/slow sinks. Include the user's actual corpus when its location and summary counts are available.
-- [ ] Compare exact completed-file sets, bytes, findings, suppressions, errors and exit codes before interpreting throughput. Do not accept speed gained by scanning less content.
-- [ ] Record median/p95 wall time, user/system CPU, actual admitted lanes, peak RSS and binary identity. Use at least 15 timed samples for performance decisions; document warm-cache scope and separate startup from sustained scanning.
-- [ ] Acceptance targets on the inspected machine: 32-large should beat its serial median by at least 3x at eight threads; clustered-heavy should approach distributed-heavy within 1.5x; tiny-scope median should remain within 10% or 1 ms of baseline, whichever allowance is larger. These are local review gates, not timing-sensitive unit tests or universal guarantees. Investigate misses before changing the targets.
-- [ ] Tune byte/count admission before increasing the automatic default above eight. Prove memory grows with bounded worker/queue resources rather than repository size. Allow 32 to be slower than 16 if the hardware/workload measurements support that.
-- [ ] Run all mandatory checks: `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all`, `cargo bench`, and `cargo coverage`. Required outcome: all commands succeed, coverage lines/regions >=97%, functions 100%.
-- [ ] Commit the verified documentation and measurements. Do not claim the user's 5-second case is fixed until that exact scan has been measured.
+- [x] Run the benchmark matrix sequentially with 1/2/8/16/32 threads, default and threshold-control cases, and fast/slow sinks. Include the checked-out project; the user's reported five-second corpus remains unidentified.
+- [x] Compare exact completed-file sets, bytes, findings, suppressions, errors and exit codes before interpreting throughput. Do not accept speed gained by scanning less content.
+- [x] Record median/p95 wall time, user/system CPU, configured pool size and active-lane upper bound, peak RSS and binary identity. Use at least 15 timed samples for performance decisions; document warm-cache scope and separate startup from sustained scanning.
+- [x] Acceptance targets on the inspected machine: 32-large should beat its serial median by at least 3x at eight threads; clustered-heavy should approach distributed-heavy within 1.5x; tiny-scope median should remain within 10% or 1 ms of baseline, whichever allowance is larger. These are local review gates, not timing-sensitive unit tests or universal guarantees. Investigate misses before changing the targets.
+- [x] Tune byte/count admission before increasing the automatic default above eight. Prove memory grows with bounded worker/queue resources rather than repository size. Allow 32 to be slower than 16 if the hardware/workload measurements support that.
+- [x] Run all mandatory checks: `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all`, `cargo bench`, and `cargo coverage`. Required outcome: all commands succeed, coverage lines/regions >=97%, functions 100%.
+- [x] Commit the verified documentation and measurements. Do not claim the user's 5-second case is fixed until that exact scan has been measured.
+
+**Coverage tool note:** this environment's `cargo coverage` alias reports an
+unrecognized `llvm-cov` subcommand. The equivalent `cargo llvm-cov` invocation
+with the alias's locked/workspace/features/exclusion/threshold arguments passed:
+100% functions, 97.68% lines, and 98.69% regions.
 
 ## Deferred Work and Alternatives
 

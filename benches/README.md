@@ -13,8 +13,9 @@ Compilation, process startup, filesystem, Git and rendering are excluded.
 
 `cargo bench --bench scope` exercises complete rules against real files, one
 supported finding per file, at 8/32/128/256/4096 files, 256/16384-byte content and
-1/2/8 workers. `RAYLOC_BENCH_THRESHOLD` defaults to the production 256-file gate;
-set it to `1` to measure the former always-parallel behavior. Five samples include each scan's worker pool/discovery startup;
+1/2/8 workers. `RAYLOC_BENCH_THRESHOLD` controls the production 256-file gate;
+the CLI also admits parallel scanning at 256 KiB of estimated file content.
+Five samples include each scan's worker pool/discovery startup;
 p95/p99 equal the slowest sample and should not be interpreted as stable tails.
 Environment overrides remain `RAYLOC_BENCH_FILES`, `RAYLOC_BENCH_BYTES`,
 `RAYLOC_BENCH_WORKERS`, `RAYLOC_BENCH_THRESHOLD`, `RAYLOC_BENCH_POLICY` (256 custom rules/ignore patterns)
