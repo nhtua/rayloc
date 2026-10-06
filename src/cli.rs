@@ -185,14 +185,6 @@ fn scan(
             "--threads is supported only for directory and glob scans",
         );
     }
-    let workers = match crate::scanner::execution::resolve_threads(
-        threads,
-        std::env::var_os("RAYON_NUM_THREADS").as_deref(),
-        std::thread::available_parallelism().map_or(1, |n| n.get()),
-    ) {
-        Ok(workers) => workers,
-        Err(_) => return scan_error(errors, "invalid scan thread count"),
-    };
     let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
         crate::report::emitter::TerminalEmitter::new(std::io::stdout()),
     ));
@@ -234,6 +226,24 @@ fn scan(
         Ok(_) => return scan_error(errors, "selected path is not a regular file or directory"),
         Err(_) => return scan_error(errors, "cannot open selected file"),
     };
+    let workers = if metadata.is_file() {
+        if threads.is_some() {
+            return scan_error(
+                errors,
+                "--threads is supported only for directory and glob scans",
+            );
+        }
+        1
+    } else {
+        match crate::scanner::execution::resolve_threads(
+            threads,
+            std::env::var_os("RAYON_NUM_THREADS").as_deref(),
+            std::thread::available_parallelism().map_or(1, |n| n.get()),
+        ) {
+            Ok(workers) => workers,
+            Err(_) => return scan_error(errors, "invalid scan thread count"),
+        }
+    };
     let pattern = match glob.as_ref().map(|pattern| pattern.to_str()) {
         Some(None) => return scan_error(errors, "invalid scope pattern"),
         Some(Some(pattern)) => Some(pattern),
@@ -263,12 +273,6 @@ fn scan(
         outcome.stats.files_excluded = 1;
         outcome
     } else if metadata.is_file() {
-        if threads.is_some() {
-            return scan_error(
-                errors,
-                "--threads is supported only for directory and glob scans",
-            );
-        }
         let label = absolute.strip_prefix(&root.root).unwrap_or(&absolute);
         crate::scanner::engine::scan_file_with_registry_and_emitter(
             &absolute,
