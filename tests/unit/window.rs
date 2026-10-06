@@ -14,6 +14,104 @@ fn classify(pattern: &str) -> RuleInput {
     classify_input(&hir)
 }
 
+#[test]
+fn window_with_chunk_boundary() {
+    // Test a match that spans a chunk boundary
+    let pattern = r"corp_([a-z]{20})";
+    let registry = registry(pattern, 1);
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    let mut found = Vec::new();
+    let mut emit = |c: Candidate<'_>| found.push((c.span, c.value.to_vec()));
+
+    // Build input that crosses chunk boundary
+    let prefix = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES - 10];
+    let match_part = b"corp_abcdefghij";
+    let suffix = b"klmnopqrst";
+
+    // Feed prefix
+    state
+        .push(&prefix, &registry, &mut histogram, &mut emit)
+        .unwrap();
+    // Feed match part (crosses boundary)
+    state
+        .push(match_part, &registry, &mut histogram, &mut emit)
+        .unwrap();
+    // Feed suffix and finish
+    state
+        .push(suffix, &registry, &mut histogram, &mut emit)
+        .unwrap();
+    state.finish(&registry, &mut histogram, &mut emit).unwrap();
+
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].1, b"abcdefghijklmnopqrst");
+}
+
+#[test]
+fn window_with_multiple_matches() {
+    // Test multiple matches on the same line
+    let pattern = r"corp_([a-z]{4})";
+    let registry = registry(pattern, 1);
+    let line = b"corp_abcd corp_efgh corp_ijkl";
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    let mut found = Vec::new();
+    let mut emit = |c: Candidate<'_>| found.push((c.span, c.value.to_vec()));
+    state
+        .push(line, &registry, &mut histogram, &mut emit)
+        .unwrap();
+    state.finish(&registry, &mut histogram, &mut emit).unwrap();
+    assert_eq!(found.len(), 3);
+}
+
+#[test]
+fn window_with_greedy_alternation() {
+    // Test greedy vs lazy alternation
+    let pattern = r"corp_(a{4}|a)";
+    let registry = registry(pattern, 1);
+    let line = b"corp_aaaa";
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    let mut found = Vec::new();
+    let mut emit = |c: Candidate<'_>| found.push((c.span, c.value.to_vec()));
+    state
+        .push(line, &registry, &mut histogram, &mut emit)
+        .unwrap();
+    state.finish(&registry, &mut histogram, &mut emit).unwrap();
+    // Greedy should match aaaa
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].1, b"aaaa");
+}
+
+#[test]
+fn window_with_word_boundary_fails() {
+    // Patterns with word boundaries should be classified as WholeLine
+    let hir = regex_syntax::ParserBuilder::new()
+        .utf8(false)
+        .build()
+        .parse(r"\bcorp_[a-z]{16}\b")
+        .unwrap();
+    assert_eq!(classify_input(&hir), RuleInput::WholeLine);
+}
+
+#[test]
+fn window_state_reset_clears_cursors() {
+    // Test that reset clears cursors
+    let pattern = r"corp_([a-z]{4})";
+    let registry = registry(pattern, 1);
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+
+    state
+        .push(b"corp_abcd", &registry, &mut histogram, |_c| {})
+        .unwrap();
+    state.finish(&registry, &mut histogram, |_c| {}).unwrap();
+
+    // After reset, cursors should be cleared
+    state.reset();
+    assert!(state.cursors.is_empty());
+}
+
 fn registry(pattern: &str, group: usize) -> Registry {
     let mut config = Config::default();
     config.rules.push(crate::config::CustomRule {

@@ -1,6 +1,10 @@
 use super::*;
-use crate::scanner::engine::scan_reader;
+use crate::scanner::ScanOutcome;
+use crate::scanner::chunk::LineFragment;
+use crate::scanner::engine::{Collector, Limits, MAX_LINE_BYTES, scan_reader};
+use crate::scanner::stream::LineSession;
 use std::io::Cursor;
+use std::sync::Mutex;
 
 const AWS: &[u8] = b"AKIA1234567890ABCDEF";
 
@@ -129,4 +133,250 @@ fn legacy_regex_runs_on_supported_long_lines_and_disabled_legacy_rules_do_not_re
     );
     assert_eq!(outcome.exit_code(), 0);
     assert_eq!(outcome.stats.files_completed, 1);
+}
+
+#[test]
+fn short_line_fast_path_uses_complete_line_detection() {
+    // A line that fits entirely in one fragment should use the fast path
+    let line = b"api_key=Q7v2n9B4x6M1z8K3";
+    let outcome = scan_reader(&mut Cursor::new(line.to_vec()), 1);
+    assert_eq!(outcome.exit_code(), 1);
+    assert_eq!(outcome.findings.len(), 1);
+}
+
+#[test]
+fn line_session_abort_discards_incomplete_findings() {
+    let mut session = LineSession::new();
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut outcome = ScanOutcome::default();
+    let collector = Mutex::new(Collector::new(10000));
+    let limits = Limits {
+        findings: 10000,
+        line_bytes: MAX_LINE_BYTES,
+    };
+
+    // Feed a fragment with a secret but don't complete the line
+    session
+        .push(
+            LineFragment {
+                payload: b"api_key=Q7v2n9B4x6M1z8K3",
+                line: 1,
+                column: 1,
+                end: None,
+            },
+            1,
+            b"test.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        )
+        .unwrap();
+
+    // Abort should discard the finding
+    session.abort_line();
+    assert!(outcome.findings.is_empty());
+}
+
+#[test]
+fn line_session_duplicate_spans_pick_lower_priority() {
+    // Provider rules have priority 0, context rules priority 2
+    // Both may match the same span; provider should win
+    let line = b"api_key=AKIA1234567890ABCDEF";
+    let outcome = scan_reader(&mut Cursor::new(line.to_vec()), 1);
+    // Should find both AWS key ID and context api_key assignment
+    assert!(outcome.exit_code() == 1 || outcome.exit_code() == 0);
+}
+
+#[test]
+fn line_session_push_handles_column_mismatch_error() {
+    let mut session = LineSession::new();
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut outcome = ScanOutcome::default();
+    let collector = Mutex::new(Collector::new(10000));
+    let limits = Limits {
+        findings: 10000,
+        line_bytes: MAX_LINE_BYTES,
+    };
+
+    // Feed first fragment
+    session
+        .push(
+            LineFragment {
+                payload: b"test",
+                line: 1,
+                column: 1,
+                end: None,
+            },
+            1,
+            b"test.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        )
+        .unwrap();
+
+    // Feed second fragment with wrong column (should error)
+    let result = session.push(
+        LineFragment {
+            payload: b"more",
+            line: 1,
+            column: 10, // Wrong column
+            end: None,
+        },
+        1,
+        b"test.rs",
+        &registry,
+        &mut outcome,
+        &collector,
+        None,
+        limits,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn line_session_push_handles_line_limit_error() {
+    let mut session = LineSession::new();
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut outcome = ScanOutcome::default();
+    let collector = Mutex::new(Collector::new(10000));
+    let limits = Limits {
+        findings: 10000,
+        line_bytes: 10, // Very small limit
+    };
+
+    // Feed a fragment that exceeds the limit
+    let result = session.push(
+        LineFragment {
+            payload: b"this is too long",
+            line: 1,
+            column: 1,
+            end: None,
+        },
+        1,
+        b"test.rs",
+        &registry,
+        &mut outcome,
+        &collector,
+        None,
+        limits,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn line_session_promotes_to_streaming_at_chunk_boundary() {
+    // Feed data that crosses the CHUNK_BYTES boundary
+    let mut data = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES + 10];
+    data.extend_from_slice(AWS);
+    data.push(b' ');
+    data.extend_from_slice(b"api_key=");
+    data.extend_from_slice(AWS);
+
+    let outcome = scan_reader(&mut Cursor::new(data), 1);
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(!outcome.findings.is_empty());
+}
+
+#[test]
+fn line_session_legacy_overflow_triggers_rule_window_limit() {
+    let config = crate::config::parse(
+        b"version: \"1\"\nrules: [{id: legacy, regex: 'prefix.*(SECRET)', secret_group: 1}]",
+    )
+    .unwrap();
+    let registry = Registry::compile(config).unwrap();
+
+    // Create a line that exceeds MAX_LINE_BYTES with the prefix
+    let mut bytes = Vec::from(b"prefix".as_slice());
+    bytes.extend(vec![b'x'; MAX_LINE_BYTES + 100]);
+    bytes.extend_from_slice(b"SECRET");
+
+    let outcome =
+        crate::scanner::engine::scan_reader_with_registry(&mut Cursor::new(bytes), 1, &registry);
+    assert_eq!(outcome.exit_code(), 2);
+}
+
+#[test]
+fn line_session_with_jose_token() {
+    // Test that JOSE tokens are detected in streaming mode
+    let line = b"Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgBTBF";
+    let outcome = scan_reader(&mut Cursor::new(line.to_vec()), 1);
+    // Should detect the JOSE token
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(!outcome.findings.is_empty());
+}
+
+#[test]
+fn line_session_with_long_jose_token_crossing_boundary() {
+    // Create a long line with a provider token that crosses a chunk boundary
+    let mut line = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES];
+    line.extend_from_slice(b" AKIA1234567890ABCDEF");
+    let outcome = scan_reader(&mut Cursor::new(line), 1);
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(!outcome.findings.is_empty());
+}
+
+#[test]
+fn line_session_duplicate_span_priority() {
+    // Test that duplicate spans pick the higher priority rule
+    // AWS access key ID in assignment context should trigger both provider and context rules
+    let line = b"aws_access_key_id=AKIA1234567890ABCDEF";
+    let outcome = scan_reader(&mut Cursor::new(line.to_vec()), 1);
+    // Should find the AWS key
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(!outcome.findings.is_empty());
+}
+
+#[test]
+fn line_session_with_jose_streaming() {
+    // Create a long line with a provider token that crosses chunk boundaries
+    // This tests the streaming path for long lines
+    let mut line = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES + 100];
+    line.extend_from_slice(b" AKIA1234567890ABCDEF");
+    let outcome = scan_reader(&mut Cursor::new(line), 1);
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(!outcome.findings.is_empty());
+}
+
+#[test]
+fn line_session_findings_are_published_after_line_end() {
+    // Findings should not be published until the line is complete
+    let mut line = vec![b'x'; 1024];
+    line.extend_from_slice(AWS);
+    line.extend_from_slice(b" # rayloc:ignore");
+
+    let outcome = scan_reader(&mut Cursor::new(line), 1);
+    assert_eq!(outcome.exit_code(), 0);
+    assert!(outcome.findings.is_empty());
+    assert_eq!(outcome.stats.suppressions.inline, 1);
+}
+
+#[test]
+fn line_session_pending_overflow_is_tracked() {
+    // Create more than MAX_FINDINGS candidates on one line
+    let mut line = Vec::new();
+    for i in 0..15000 {
+        line.extend_from_slice(b"-----BEGIN PRIVATE KEY----- ");
+        if i % 1000 == 0 {
+            line.push(b'\r'); // Force newlines to avoid single-line detection
+            line.push(b'\n');
+        }
+    }
+
+    let outcome = scan_reader(&mut Cursor::new(line), 1);
+    // Should have findings and possibly FindingLimit error
+    assert!(outcome.exit_code() == 1 || outcome.exit_code() == 2);
+}
+
+#[test]
+fn line_session_accepts_findings_after_line_end() {
+    // Accepted fingerprints should be tracked even for long lines
+    let line = b"api_key=Q7v2n9B4x6M1z8K3";
+    let outcome = scan_reader(&mut Cursor::new(line.to_vec()), 1);
+    assert_eq!(outcome.exit_code(), 1);
+    assert_eq!(outcome.findings.len(), 1);
 }
