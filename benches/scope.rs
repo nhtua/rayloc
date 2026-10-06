@@ -73,6 +73,7 @@ fn main() {
                         ScopeOptions {
                             workers,
                             parallel_threshold: threshold,
+                            parallel_bytes_threshold: u64::MAX,
                         },
                     );
                     assert_eq!(

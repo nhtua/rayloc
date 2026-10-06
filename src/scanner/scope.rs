@@ -56,12 +56,14 @@ const LIMITS: Limits = Limits {
 pub struct ScopeOptions {
     pub workers: usize,
     pub parallel_threshold: usize,
+    pub parallel_bytes_threshold: u64,
 }
 impl Default for ScopeOptions {
     fn default() -> Self {
         Self {
             workers: std::thread::available_parallelism().map_or(1, |n| n.get().min(8)),
             parallel_threshold: 256,
+            parallel_bytes_threshold: 256 * 1024,
         }
     }
 }
@@ -109,6 +111,7 @@ struct Frame {
 struct Work {
     path: Box<Path>,
     source_id: u32,
+    estimated_bytes: u64,
 }
 struct Runner<'a> {
     registry: &'a Registry,
@@ -344,10 +347,11 @@ fn compile_glob(pattern: &str) -> Result<GlobSet, ScanError> {
         .map_err(|_| ScanError::ScopeLimit)
 }
 impl Runner<'_> {
-    fn pool(&mut self, count: usize) -> Result<(), ScanError> {
+    fn pool(&mut self, count: usize, estimated_bytes: u64) -> Result<(), ScanError> {
         if self.workers.len() == 1
             && self.options.workers > 1
-            && count >= self.options.parallel_threshold
+            && (count >= self.options.parallel_threshold
+                || estimated_bytes >= self.options.parallel_bytes_threshold)
         {
             self.workers
                 .extend((1..self.options.workers).map(|_| Worker::new()));
@@ -473,7 +477,7 @@ impl Runner<'_> {
                 kind: Kind::Error,
             });
         }
-        self.pool(entries.len())?;
+        self.pool(entries.len(), 0)?;
         for batch in entries.chunks_mut(BATCH) {
             let classify = |entry: &mut Entry| {
                 entry.kind = match join(directory, &entry.name)
@@ -545,9 +549,11 @@ impl Runner<'_> {
         }
         self.budget.charge(0, path.as_os_str().len(), self.limits)?;
         self.batch_bytes += path.as_os_str().len();
+        let estimated_bytes = fs::metadata(&path).map_or(u64::MAX, |metadata| metadata.len());
         self.batch.push(Work {
             path,
             source_id: self.matched,
+            estimated_bytes,
         });
         Ok(())
     }
@@ -555,10 +561,12 @@ impl Runner<'_> {
         if self.batch.is_empty() {
             return;
         }
-        if let Err(error) = self.pool(self.batch.len()) {
+        let estimated_bytes = self.batch.iter().fold(0_u64, |total, item| {
+            total.saturating_add(item.estimated_bytes)
+        });
+        if let Err(error) = self.pool(self.batch.len(), estimated_bytes) {
             self.outcome.fail(error);
         }
-        let lane_length = self.batch.len().div_ceil(self.workers.len());
         let collector = &self.collector;
         let registry = self.registry;
         let root = self.root;
@@ -580,19 +588,32 @@ impl Runner<'_> {
             }
             outcome
         };
-        let results: Vec<_> =
-            if self.options.workers > 1 && self.batch.len() >= self.options.parallel_threshold {
-                let pool = self.pool.as_ref().expect("pool initialized with lanes");
-                pool.install(|| {
-                    self.workers
-                        .par_iter_mut()
-                        .zip(self.batch.par_chunks(lane_length))
-                        .map(process)
-                        .collect()
-                })
-            } else {
-                vec![process((&mut self.workers[0], &self.batch))]
-            };
+        let parallel = self.options.workers > 1
+            && (self.batch.len() >= self.options.parallel_threshold
+                || estimated_bytes >= self.options.parallel_bytes_threshold);
+        let results: Vec<_> = if parallel {
+            let pool = self.pool.as_ref().expect("pool initialized with lanes");
+            super::execution::dynamic_claim(
+                pool,
+                &mut self.workers,
+                &self.batch,
+                |worker, item, outcome| {
+                    engine::merge(
+                        outcome,
+                        worker.file(
+                            &item.path,
+                            item.path.strip_prefix(&root.root).unwrap_or(&item.path),
+                            item.source_id,
+                            registry,
+                            collector,
+                            emitter,
+                        ),
+                    );
+                },
+            )
+        } else {
+            vec![process((&mut self.workers[0], &self.batch))]
+        };
         for outcome in results {
             engine::merge(&mut self.outcome, outcome);
         }

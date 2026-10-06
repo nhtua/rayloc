@@ -17,6 +17,7 @@ fn scan(temp: &TempDir, limits: Limits) -> ScanOutcome {
         ScopeOptions {
             workers: 1,
             parallel_threshold: 1,
+            parallel_bytes_threshold: 0,
         },
         limits,
     )
@@ -103,7 +104,8 @@ fn glob_input_limits_and_invalid_scopes_are_fixed_errors() {
                 &BUILTINS,
                 ScopeOptions {
                     workers,
-                    parallel_threshold: 1
+                    parallel_threshold: 1,
+                    parallel_bytes_threshold: 0
                 }
             )
             .errors,
@@ -128,7 +130,7 @@ fn serial_parallel_many_files_and_global_overflow_agree() {
         fs::write(temp.path().join(format!("{i:04}")), line.repeat(20)).unwrap();
     }
     let mut baseline = None;
-    for workers in [1, 2, 8] {
+    for workers in [1, 2, 8, 32] {
         let out = scan_directory_with_options(
             &root(&temp),
             temp.path(),
@@ -137,6 +139,7 @@ fn serial_parallel_many_files_and_global_overflow_agree() {
             ScopeOptions {
                 workers,
                 parallel_threshold: 1,
+                parallel_bytes_threshold: 0,
             },
         );
         assert_eq!(
@@ -188,7 +191,8 @@ fn depth_and_selected_ancestor_limits_fail_closed() {
             &BUILTINS,
             ScopeOptions {
                 workers: 1,
-                parallel_threshold: 1
+                parallel_threshold: 1,
+                parallel_bytes_threshold: 0
             },
             Limits { depth: 2, ..LIMITS }
         )
@@ -238,6 +242,7 @@ fn runner(root: &ScopeRoot) -> Runner<'_> {
         options: ScopeOptions {
             workers: 1,
             parallel_threshold: 1,
+            parallel_bytes_threshold: 0,
         },
         limits: LIMITS,
         workers: vec![Worker::new()],
@@ -266,10 +271,11 @@ fn scope_pool_is_lazy_and_uses_the_requested_private_thread_count() {
     let mut runner = runner(&root);
     runner.options.workers = 3;
     runner.options.parallel_threshold = 2;
+    runner.options.parallel_bytes_threshold = 256 * 1024;
     assert!(runner.pool.is_none());
-    runner.pool(1).unwrap();
+    runner.pool(1, 0).unwrap();
     assert!(runner.pool.is_none());
-    runner.pool(2).unwrap();
+    runner.pool(2, 0).unwrap();
     assert_eq!(runner.workers.len(), 3);
     assert_eq!(runner.pool.as_ref().unwrap().current_num_threads(), 3);
     assert_eq!(
@@ -280,6 +286,29 @@ fn scope_pool_is_lazy_and_uses_the_requested_private_thread_count() {
             .install(rayon::current_num_threads),
         3
     );
+}
+
+#[test]
+fn byte_heavy_small_file_batch_admits_workers_below_count_threshold() {
+    let temp = TempDir::new();
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    runner.options.workers = 4;
+    runner.options.parallel_threshold = 256;
+    runner.options.parallel_bytes_threshold = 128 * 1024;
+    let content = vec![b'x'; 16 * 1024];
+    for index in 0..32 {
+        let path = temp.path().join(format!("{index:02}.txt"));
+        fs::write(&path, &content).unwrap();
+        runner
+            .regular(path.into_boxed_path(), true, true, None, &mut None)
+            .unwrap();
+    }
+    assert!(runner.pool.is_none());
+    runner.flush();
+    assert_eq!(runner.pool.as_ref().unwrap().current_num_threads(), 4);
+    assert_eq!(runner.outcome.stats.files_completed, 32);
+    assert_eq!(runner.outcome.stats.bytes_read, (32 * content.len()) as u64);
 }
 #[test]
 fn discovery_admission_failures_do_not_silently_skip_scope() {
@@ -380,6 +409,7 @@ fn selected_ancestors_and_pending_work_respect_path_budgets() {
         ScopeOptions {
             workers: 1,
             parallel_threshold: 1,
+            parallel_bytes_threshold: 0,
         },
         Limits {
             paths: temp.path().as_os_str().len(),
@@ -618,6 +648,7 @@ fn pending_work_flushes_at_the_byte_limit_and_preserves_open_failures() {
         runner.batch.push(Work {
             path: unavailable.clone().into_boxed_path(),
             source_id,
+            estimated_bytes: 0,
         });
     }
     runner.matched = 255;
