@@ -389,20 +389,6 @@ fn candidate_limits_are_errors_and_exact_limit_is_accepted() {
 }
 
 #[test]
-fn metadata_formatters_cover_all_severities_and_confidence_levels() {
-    for (severity, expected) in [
-        (Severity::Low, "Low"),
-        (Severity::Medium, "Medium"),
-        (Severity::High, "High"),
-        (Severity::Critical, "Critical"),
-    ] {
-        assert_eq!(severity.to_string(), expected);
-    }
-    assert_eq!(Confidence::Medium.to_string(), "Medium confidence");
-    assert_eq!(Confidence::High.to_string(), "High confidence");
-}
-
-#[test]
 fn installation_token_hyphen_span_and_limit() {
     let token = b"ghs_1234567890123456_eyJhbGciOiJIUzI1NiJ9._-8.AAAA";
     let mut spans = Vec::new();

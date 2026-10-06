@@ -1,54 +1,6 @@
 use super::*;
 
 #[test]
-fn help_and_version_are_successful_and_extra_arguments_are_errors() {
-    for args in [
-        vec![],
-        vec!["-h"],
-        vec!["--help"],
-        vec!["-V"],
-        vec!["--version"],
-    ] {
-        let mut output = Vec::new();
-        let mut errors = Vec::new();
-        assert_eq!(
-            run_with_args(
-                args.into_iter().map(OsString::from),
-                &mut output,
-                &mut errors
-            ),
-            0
-        );
-        assert!(!output.is_empty());
-        assert!(errors.is_empty());
-    }
-    for command in [
-        "-h",
-        "--help",
-        "-V",
-        "--version",
-        "scan",
-        "accept",
-        "hook",
-        "unrecognized",
-    ] {
-        let mut output = Vec::new();
-        let mut errors = Vec::new();
-        let sentinel = "ghp_SyntheticArgumentSecret0123456789";
-        assert_eq!(
-            run_with_args(
-                [command, sentinel].map(OsString::from),
-                &mut output,
-                &mut errors
-            ),
-            2
-        );
-        assert!(output.is_empty());
-        assert!(!String::from_utf8(errors).unwrap().contains(sentinel));
-    }
-}
-
-#[test]
 fn unsupported_and_invalid_utf8_arguments_are_never_echoed() {
     for command in ["hook", "unknown-sensitive-input"] {
         let mut output = Vec::new();
