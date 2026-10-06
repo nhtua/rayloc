@@ -33,13 +33,15 @@ for label, count, size, option in [
     ("policy", 256, 16384, "RAYLOC_BENCH_POLICY"),
     ("dense", 256, 256, "RAYLOC_BENCH_DENSE"),
 ]:
-    for workers in [1, 8]:
-        environment = dict(os.environ, RAYLOC_BENCH_FILES=str(count),
-                           RAYLOC_BENCH_BYTES=str(size), RAYLOC_BENCH_WORKERS=str(workers))
-        if option:
-            environment[option] = "1"
-        print(f"case={label} workers={workers}", flush=True)
-        measure([benchmark], environment)
+    for threshold in [256, 1]:
+        for workers in [1, 8]:
+            environment = dict(os.environ, RAYLOC_BENCH_FILES=str(count),
+                               RAYLOC_BENCH_BYTES=str(size), RAYLOC_BENCH_WORKERS=str(workers),
+                               RAYLOC_BENCH_THRESHOLD=str(threshold))
+            if option:
+                environment[option] = "1"
+            print(f"case={label} workers={workers} threshold={threshold}", flush=True)
+            measure([benchmark], environment)
 
 # Git's index allocation is separate from rayloc's bounded metadata cursor.
 with tempfile.TemporaryDirectory(prefix="rayloc-scope-measure-") as directory:
