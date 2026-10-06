@@ -198,6 +198,60 @@ pub enum RuleId {
     VercelKey,
     SupabaseKey,
     CloudflareKey,
+    // Phase 1: Prefix-based rules
+    DigitalOceanPat,
+    DigitalOceanOauth,
+    DigitalOceanRefresh,
+    DockerSwarmJoin,
+    DockerSwarmUnlock,
+    HerokuApiKey,
+    ClojarsToken,
+    CratesioToken,
+    PyPiToken,
+    RubygemsApiKey,
+    SendgridApiKey,
+    SendinblueApiKey,
+    SlackBotToken,
+    SlackUserToken,
+    SlackWorkspaceToken,
+    SlackRefreshToken,
+    TwilioAccountSid,
+    TwilioApiKey,
+    SentryOrgToken,
+    GitlabCicdJobToken,
+    GitlabDeployToken,
+    GitlabFeatureFlagToken,
+    GitlabPersonalAccessToken,
+    Auth0ManagementToken,
+    OktaAccessToken,
+    NotionApiKey,
+    LinearApiKey,
+    FigmaToken,
+    SquareAccessToken,
+    ShopifyAccessToken,
+    ShopifyCustomToken,
+    ShopifySharedSecret,
+    ShopifyAppPassword,
+    StripePaymentIntent,
+    StripeAccessToken,
+    MistralKey,
+    CerebrasKey,
+    TogetheraiKey,
+    FireworksAiKey,
+    StabilityAiKey,
+    DeepgramKey,
+    TelegramBotToken,
+    RazorpayKey,
+    FlutterwaveKey,
+    PlanetscalePassword,
+    CloudinaryUrl,
+    // Phase 3: URI-based rules
+    MongodbUri,
+    PostgresUri,
+    RedisUri,
+    SqlserverUri,
+    MysqlUri,
+    CockroachdbUri,
     Custom(u16, Severity),
 }
 
@@ -423,6 +477,377 @@ impl RuleId {
                 Confidence::Medium,
                 "https://developers.cloudflare.com/fundamentals/api/get-started/token-formats",
             ),
+            // Phase 1: Cloud & Infrastructure
+            Self::DigitalOceanPat => (
+                "digitalocean-pat",
+                "DigitalOcean personal access token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.digitalocean.com/reference/api/api-reference/",
+            ),
+            Self::DigitalOceanOauth => (
+                "digitalocean-oauth",
+                "DigitalOcean OAuth token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.digitalocean.com/reference/api/api-reference/",
+            ),
+            Self::DigitalOceanRefresh => (
+                "digitalocean-refresh-token",
+                "DigitalOcean refresh token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.digitalocean.com/reference/api/api-reference/",
+            ),
+            Self::DockerSwarmJoin => (
+                "docker-swarm-join-token",
+                "Docker Swarm join token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.docker.com/engine/swarm/join-nodes/",
+            ),
+            Self::DockerSwarmUnlock => (
+                "docker-swarm-unlock-key",
+                "Docker Swarm unlock key",
+                Severity::Critical,
+                Confidence::High,
+                "https://docs.docker.com/engine/swarm/join-nodes/",
+            ),
+            Self::HerokuApiKey => (
+                "heroku-api-key",
+                "Heroku API key",
+                Severity::High,
+                Confidence::High,
+                "https://devcenter.heroku.com/articles/authentication",
+            ),
+            // Phase 1: Package Managers
+            Self::ClojarsToken => (
+                "clojars-token",
+                "Clojars API token",
+                Severity::High,
+                Confidence::High,
+                "https://clojars.org/about/tokens",
+            ),
+            Self::CratesioToken => (
+                "cratesio-token",
+                "Crates.io API token",
+                Severity::High,
+                Confidence::High,
+                "https://doc.rust-lang.org/cargo/reference/registering-on-crates-io.html",
+            ),
+            Self::PyPiToken => (
+                "pypi-token",
+                "PyPI upload token",
+                Severity::High,
+                Confidence::High,
+                "https://pypi.org/help/#apitoken",
+            ),
+            Self::RubygemsApiKey => (
+                "rubygems-api-key",
+                "RubyGems API key",
+                Severity::High,
+                Confidence::High,
+                "https://guides.rubygems.org/authenticating-gem-server-sessions/",
+            ),
+            // Phase 1: Communication & Messaging
+            Self::SendgridApiKey => (
+                "sendgrid-api-key",
+                "SendGrid API key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.sendgrid.com/ui/account-and-settings/api-keys",
+            ),
+            Self::SendinblueApiKey => (
+                "sendinblue-api-key",
+                "Sendinblue (Brevo) API key",
+                Severity::High,
+                Confidence::High,
+                "https://developers.brevo.com/docs/api-reference/authentication",
+            ),
+            Self::SlackBotToken => (
+                "slack-bot-token",
+                "Slack bot token",
+                Severity::High,
+                Confidence::High,
+                "https://api.slack.com/authentication/token-types",
+            ),
+            Self::SlackUserToken => (
+                "slack-user-token",
+                "Slack user token",
+                Severity::High,
+                Confidence::High,
+                "https://api.slack.com/authentication/token-types",
+            ),
+            Self::SlackWorkspaceToken => (
+                "slack-workspace-token",
+                "Slack workspace token",
+                Severity::High,
+                Confidence::High,
+                "https://api.slack.com/authentication/token-types",
+            ),
+            Self::SlackRefreshToken => (
+                "slack-refresh-token",
+                "Slack refresh token",
+                Severity::High,
+                Confidence::High,
+                "https://api.slack.com/authentication/token-types",
+            ),
+            // Phase 1: Databases & Storage
+            Self::TwilioAccountSid => (
+                "twilio-account-sid",
+                "Twilio Account SID",
+                Severity::High,
+                Confidence::High,
+                "https://www.twilio.com/docs/sms/api",
+            ),
+            Self::TwilioApiKey => (
+                "twilio-api-key",
+                "Twilio API key",
+                Severity::High,
+                Confidence::High,
+                "https://www.twilio.com/docs/sms/api",
+            ),
+            // Phase 1: SaaS & Dev Tools
+            Self::SentryOrgToken => (
+                "sentry-org-token",
+                "Sentry organization token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.sentry.io/meta/sso-and-orgs.html",
+            ),
+            Self::GitlabCicdJobToken => (
+                "gitlab-cicd-job-token",
+                "GitLab CI/CD job token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/ee/ci/secrets/",
+            ),
+            Self::GitlabDeployToken => (
+                "gitlab-deploy-token",
+                "GitLab deploy token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/ee/user/project/deploy_tokens/",
+            ),
+            Self::GitlabFeatureFlagToken => (
+                "gitlab-feature-flag-token",
+                "GitLab feature flag token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/ee/user/project/merge_requests/feature_flags/",
+            ),
+            Self::GitlabPersonalAccessToken => (
+                "gitlab-personal-access-token",
+                "GitLab personal access token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/ee/user/profile/personal_access_tokens/",
+            ),
+            Self::Auth0ManagementToken => (
+                "auth0-management-token",
+                "Auth0 management API token",
+                Severity::High,
+                Confidence::High,
+                "https://auth0.com/docs/api-management",
+            ),
+            Self::OktaAccessToken => (
+                "okta-access-token",
+                "Okta access token",
+                Severity::High,
+                Confidence::High,
+                "https://developer.okta.com/docs/api/openapi/okta-management/overview",
+            ),
+            Self::NotionApiKey => (
+                "notion-api-key",
+                "Notion integration token",
+                Severity::High,
+                Confidence::High,
+                "https://developers.notion.com/docs/authorization",
+            ),
+            Self::LinearApiKey => (
+                "linear-api-key",
+                "Linear API key",
+                Severity::High,
+                Confidence::High,
+                "https://developers.linear.app/docs/oauth-setup",
+            ),
+            Self::FigmaToken => (
+                "figma-token",
+                "Figma personal access token",
+                Severity::High,
+                Confidence::High,
+                "https://www.figma.com/developers/api#access-tokens",
+            ),
+            Self::SquareAccessToken => (
+                "square-access-token",
+                "Square access token",
+                Severity::High,
+                Confidence::High,
+                "https://developer.squareup.com/docs/docs-1/authentication/oauth",
+            ),
+            Self::ShopifyAccessToken => (
+                "shopify-access-token",
+                "Shopify custom access token",
+                Severity::High,
+                Confidence::High,
+                "https://shopify.dev/docs/api/development",
+            ),
+            Self::ShopifyCustomToken => (
+                "shopify-custom-token",
+                "Shopify custom token",
+                Severity::High,
+                Confidence::High,
+                "https://shopify.dev/docs/api/development",
+            ),
+            Self::ShopifySharedSecret => (
+                "shopify-shared-secret",
+                "Shopify shared secret",
+                Severity::High,
+                Confidence::High,
+                "https://shopify.dev/docs/api/development",
+            ),
+            Self::ShopifyAppPassword => (
+                "shopify-app-password",
+                "Shopify app password",
+                Severity::High,
+                Confidence::High,
+                "https://shopify.dev/docs/api/development",
+            ),
+            Self::StripePaymentIntent => (
+                "stripe-payment-intent",
+                "Stripe payment intent secret",
+                Severity::High,
+                Confidence::High,
+                "https://docs.stripe.com/checkout/sequential-payment-intents",
+            ),
+            Self::StripeAccessToken => (
+                "stripe-access-token",
+                "Stripe restricted production access token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.stripe.com/keys",
+            ),
+            // Phase 1: AI / ML Providers
+            Self::MistralKey => (
+                "mistral-key",
+                "Mistral AI API key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.mistral.ai/",
+            ),
+            Self::CerebrasKey => (
+                "cerebras-key",
+                "Cerebras API key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.cerebras.ai/",
+            ),
+            Self::TogetheraiKey => (
+                "togetherai-key",
+                "Together AI API key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.together.ai/docs/quickstart",
+            ),
+            Self::FireworksAiKey => (
+                "fireworks-ai-key",
+                "Fireworks AI API key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.fireworks.com/",
+            ),
+            Self::StabilityAiKey => (
+                "stability-ai-key",
+                "Stability AI API key",
+                Severity::High,
+                Confidence::High,
+                "https://platform.stability.ai/",
+            ),
+            Self::DeepgramKey => (
+                "deepgram-key",
+                "Deepgram API key",
+                Severity::High,
+                Confidence::High,
+                "https://developers.deepgram.com/reference/authentication",
+            ),
+            Self::TelegramBotToken => (
+                "telegram-bot-token",
+                "Telegram bot token",
+                Severity::High,
+                Confidence::High,
+                "https://core.telegram.org/bots/features/bot-api",
+            ),
+            Self::RazorpayKey => (
+                "razorpay-key",
+                "Razorpay API key",
+                Severity::High,
+                Confidence::High,
+                "https://razorpay.com/docs/payments/api/",
+            ),
+            Self::FlutterwaveKey => (
+                "flutterwave-key",
+                "Flutterwave API key",
+                Severity::High,
+                Confidence::High,
+                "https://developer.flutterwave.com/docs/reference",
+            ),
+            Self::PlanetscalePassword => (
+                "planetscale-password",
+                "PlanetScale password",
+                Severity::High,
+                Confidence::High,
+                "https://planetscale.com/docs/reference/api-overview",
+            ),
+            Self::CloudinaryUrl => (
+                "cloudinary-url",
+                "Cloudinary cloud URL with credentials",
+                Severity::High,
+                Confidence::High,
+                "https://cloudinary.com/documentation/user_authentication",
+            ),
+            // Phase 3: URI-based rules
+            Self::MongodbUri => (
+                "mongodb-uri",
+                "MongoDB connection string with credentials",
+                Severity::High,
+                Confidence::High,
+                "https://www.mongodb.com/docs/manual/reference/connection-string/",
+            ),
+            Self::PostgresUri => (
+                "postgres-uri",
+                "PostgreSQL connection string with credentials",
+                Severity::High,
+                Confidence::High,
+                "https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING",
+            ),
+            Self::RedisUri => (
+                "redis-uri",
+                "Redis connection string with credentials",
+                Severity::High,
+                Confidence::High,
+                "https://redis.io/docs/latest/develop/connect/",
+            ),
+            Self::SqlserverUri => (
+                "sqlserver-uri",
+                "SQL Server connection string with credentials",
+                Severity::High,
+                Confidence::High,
+                "https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string",
+            ),
+            Self::MysqlUri => (
+                "mysql-uri",
+                "MySQL connection string with credentials",
+                Severity::High,
+                Confidence::High,
+                "https://dev.mysql.com/doc/refman/8.0/en/connection-strings.html",
+            ),
+            Self::CockroachdbUri => (
+                "cockroachdb-uri",
+                "CockroachDB connection string with credentials",
+                Severity::High,
+                Confidence::High,
+                "https://www.cockroachlabs.com/docs/stable/connection-params",
+            ),
         };
         RuleMetadata {
             id,
@@ -430,7 +855,7 @@ impl RuleId {
             severity,
             confidence,
             reference,
-            reviewed_on: "2026-10-01",
+            reviewed_on: "2026-10-06",
         }
     }
 }
@@ -471,6 +896,56 @@ const REPLICATE_PREFIXES: &[&[u8]] = &[b"r8_"];
 const VERCEL_PREFIXES: &[&[u8]] = &[b"vcp_", b"vci_", b"vca_", b"vcr_", b"vck_"];
 const SUPABASE_PREFIXES: &[&[u8]] = &[b"sb_publishable_", b"sb_secret_"];
 const CLOUDFLARE_PREFIXES: &[&[u8]] = &[b"cfk_", b"cfut_", b"cfat_"];
+
+// Phase 1: Cloud & Infrastructure
+const DIGITALOCEAN_PAT_PREFIXES: &[&[u8]] = &[b"dop_v1_"];
+const DIGITALOCEAN_OAUTH_PREFIXES: &[&[u8]] = &[b"doo_v1_"];
+const DIGITALOCEAN_REFRESH_PREFIXES: &[&[u8]] = &[b"dor_v1_"];
+const HEROKU_API_KEY_PREFIXES: &[&[u8]] = &[b"HRKU-AA"];
+const CLOUDINARY_URL_PREFIXES: &[&[u8]] = &[b"cloudinary://"];
+// Phase 1: Package Managers
+const CLOJARS_TOKEN_PREFIXES: &[&[u8]] = &[b"CLOJARS_"];
+const CRATESIO_TOKEN_PREFIXES: &[&[u8]] = &[b"cratesio_", b"cratesioplus_"];
+const PYPY_TOKEN_PREFIXES: &[&[u8]] = &[b"pypi-AgEI", b"pypi-Agkv"];
+const RUBYGENS_API_KEY_PREFIXES: &[&[u8]] = &[b"rubygems_"];
+// Phase 1: Communication & Messaging
+const SLACK_BOT_TOKEN_PREFIXES: &[&[u8]] = &[b"xoxb-"];
+const SLACK_USER_TOKEN_PREFIXES: &[&[u8]] = &[b"xoxp-"];
+const SLACK_WORKSPACE_TOKEN_PREFIXES: &[&[u8]] = &[b"xoxa-"];
+const SLACK_REFRESH_TOKEN_PREFIXES: &[&[u8]] = &[b"xoxr-"];
+// Phase 1: SaaS & Dev Tools
+const SENTRY_ORG_TOKEN_PREFIXES: &[&[u8]] = &[b"sntrys_"];
+const GITLAB_CICD_JOB_TOKEN_PREFIXES: &[&[u8]] = &[b"glcbt-"];
+const GITLAB_DEPLOY_TOKEN_PREFIXES: &[&[u8]] = &[b"gldt-"];
+const GITLAB_FEATURE_FLAG_TOKEN_PREFIXES: &[&[u8]] = &[b"glffct-"];
+const GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"glpat-"];
+const AUTH0_MANAGEMENT_TOKEN_PREFIXES: &[&[u8]] = &[b"ua2_"];
+const OKTA_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"00a"];
+const NOTION_API_KEY_PREFIXES: &[&[u8]] = &[b"nt_"];
+const LINEAR_API_KEY_PREFIXES: &[&[u8]] = &[b"lin_api_"];
+const FIGMA_TOKEN_PREFIXES: &[&[u8]] = &[b"fig-oauth-", b"figt_"];
+const SQUARE_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"sq0atp-"];
+const SHOPIFY_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"shpat_"];
+const SHOPIFY_CUSTOM_TOKEN_PREFIXES: &[&[u8]] = &[b"shpcc_"];
+const SHOPIFY_SHARED_SECRET_PREFIXES: &[&[u8]] = &[b"shpss_"];
+const SHOPIFY_APP_PASSWORD_PREFIXES: &[&[u8]] = &[b"shppa_"];
+const STRIPE_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"sk_prod_", b"rk_prod_"];
+const PLANETSCALE_PASSWORD_PREFIXES: &[&[u8]] = &[b"pscale_password_"];
+// Phase 1: AI / ML Providers
+const MISTRAL_KEY_PREFIXES: &[&[u8]] = &[b"mv4-"];
+const CEREBRAS_KEY_PREFIXES: &[&[u8]] = &[b"csk_"];
+const TOGETHERAI_KEY_PREFIXES: &[&[u8]] = &[b"tgn-"];
+const FIREWORKS_AI_KEY_PREFIXES: &[&[u8]] = &[b"fw_"];
+const STABILITY_AI_KEY_PREFIXES: &[&[u8]] = &[b"sk-stability"];
+const DEEPGRAM_KEY_PREFIXES: &[&[u8]] = &[b"dg_"];
+const RAZORPAY_KEY_PREFIXES: &[&[u8]] = &[b"rzpj_", b"rzp_"];
+// Phase 3: URI-based
+const MONGODB_URI_PREFIXES: &[&[u8]] = &[b"mongodb://", b"mongodb+srv://"];
+const POSTGRES_URI_PREFIXES: &[&[u8]] = &[b"postgres://", b"postgresql://"];
+const REDIS_URI_PREFIXES: &[&[u8]] = &[b"redis://", b"rediss://"];
+const SQLSERVER_URI_PREFIXES: &[&[u8]] = &[b"mssql://", b"sqlserver://"];
+const MYSQL_URI_PREFIXES: &[&[u8]] = &[b"mysql://"];
+const COCKROACHDB_URI_PREFIXES: &[&[u8]] = &[b"cockroachdb://", b"cockroach+srv://"];
 
 fn is_word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
@@ -570,6 +1045,14 @@ fn slack_match(bytes: &[u8]) -> Result<Option<usize>, ScanError> {
 }
 
 fn llm_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, ScanError> {
+    llm_key_match_with_min(bytes, prefixes, 20)
+}
+
+fn llm_key_match_with_min(
+    bytes: &[u8],
+    prefixes: &[&[u8]],
+    min_body_length: usize,
+) -> Result<Option<usize>, ScanError> {
     let Some(prefix) = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix)) else {
         return Ok(None);
     };
@@ -583,8 +1066,235 @@ fn llm_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, Scan
     if length > MAX_CANDIDATE_BYTES {
         return Err(ScanError::CandidateLimit);
     }
-    // Minimum length validation: most LLM keys are at least 30 chars total
-    Ok((body_length >= 20).then_some(length))
+    Ok((body_length >= min_body_length).then_some(length))
+}
+
+fn sendgrid_match(bytes: &[u8]) -> Result<Option<usize>, ScanError> {
+    if !bytes.starts_with(b"SG.") {
+        return Ok(None);
+    }
+    let mut end = 3;
+    let mut seg1_len = 0;
+    while bytes.get(end).is_some_and(|&b| b.is_ascii_alphanumeric()) {
+        end += 1;
+        seg1_len += 1;
+        if end > MAX_CANDIDATE_BYTES {
+            return Err(ScanError::CandidateLimit);
+        }
+    }
+    if !(20..=24).contains(&seg1_len) || bytes.get(end) != Some(&b'.') {
+        return Ok(None);
+    }
+    end += 1;
+    let mut seg2_len = 0;
+    while bytes.get(end).is_some_and(|&b| b.is_ascii_alphanumeric()) {
+        end += 1;
+        seg2_len += 1;
+        if end > MAX_CANDIDATE_BYTES {
+            return Err(ScanError::CandidateLimit);
+        }
+    }
+    Ok((39..=50).contains(&seg2_len).then_some(end))
+}
+
+fn sendinblue_match(bytes: &[u8]) -> Result<Option<usize>, ScanError> {
+    if !bytes.starts_with(b"xkeysib-") {
+        return Ok(None);
+    }
+    let body = &bytes[8..];
+    let body_len = body
+        .iter()
+        .take_while(|&&b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        .take(MAX_CANDIDATE_BYTES + 1)
+        .count();
+    Ok((body_len == 81).then_some(8 + body_len))
+}
+
+fn twilio_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
+    for &(prefix, rule, hex_len) in &[
+        (b"AC" as &[u8], RuleId::TwilioAccountSid, 32),
+        (b"SK", RuleId::TwilioApiKey, 32),
+    ] {
+        if !bytes.starts_with(prefix) {
+            continue;
+        }
+        let body = bytes.get(prefix.len()..prefix.len() + hex_len)?;
+        if body.iter().all(|b| b.is_ascii_hexdigit())
+            && !bytes
+                .get(prefix.len() + hex_len)
+                .is_some_and(|&b| b.is_ascii_hexdigit())
+        {
+            return Some((rule, prefix.len() + hex_len));
+        }
+    }
+    None
+}
+
+fn docker_swarm_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
+    if bytes.starts_with(b"SWMTKN-1-") {
+        let mut end = 9;
+        while bytes.get(end).is_some_and(|&b| b.is_ascii_alphanumeric()) {
+            end += 1;
+            if end > MAX_CANDIDATE_BYTES {
+                return None;
+            }
+        }
+        if end == 9 || bytes.get(end) != Some(&b'-') {
+            return None;
+        }
+        end += 1;
+        let part2_start = end;
+        while bytes.get(end).is_some_and(|&b| b.is_ascii_alphanumeric()) {
+            end += 1;
+            if end > MAX_CANDIDATE_BYTES {
+                return None;
+            }
+        }
+        let part2_len = end - part2_start;
+        if (24..=30).contains(&part2_len) {
+            return Some((RuleId::DockerSwarmJoin, end));
+        }
+    }
+    if bytes.starts_with(b"SWMKEY-1-") {
+        let mut end = 9;
+        while bytes
+            .get(end)
+            .is_some_and(|&b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
+        {
+            end += 1;
+            if end > MAX_CANDIDATE_BYTES {
+                return None;
+            }
+        }
+        let key_len = end - 9;
+        if (40..=50).contains(&key_len) {
+            return Some((RuleId::DockerSwarmUnlock, end));
+        }
+    }
+    None
+}
+
+fn telegram_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
+    let mut digits_len = 0;
+    while bytes.get(digits_len).is_some_and(|&b| b.is_ascii_digit()) {
+        digits_len += 1;
+        if digits_len > 16 {
+            return None;
+        }
+    }
+    if !(5..=16).contains(&digits_len) {
+        return None;
+    }
+    if bytes.get(digits_len) != Some(&b':') {
+        return None;
+    }
+    if bytes.get(digits_len + 1) != Some(&b'A') {
+        return None;
+    }
+    let mut end = digits_len + 2;
+    while bytes
+        .get(end)
+        .is_some_and(|&b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+    {
+        end += 1;
+        if end > MAX_CANDIDATE_BYTES {
+            return None;
+        }
+    }
+    let body_len = end - (digits_len + 2);
+    if body_len >= 34 {
+        Some((RuleId::TelegramBotToken, end))
+    } else {
+        None
+    }
+}
+
+fn stripe_payment_intent_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
+    if !bytes.starts_with(b"pi_") {
+        return None;
+    }
+    let mut i = 3;
+    while bytes
+        .get(i)
+        .is_some_and(|&b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        i += 1;
+        if i > MAX_CANDIDATE_BYTES {
+            return None;
+        }
+    }
+    if bytes.get(i) != Some(&b'_') {
+        return None;
+    }
+    if bytes.get(i + 1..i + 7) != Some(b"secret") {
+        return None;
+    }
+    if bytes.get(i + 7) != Some(&b'_') {
+        return None;
+    }
+    i += 8;
+    let mut end = i;
+    while bytes
+        .get(end)
+        .is_some_and(|&b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        end += 1;
+        if end > MAX_CANDIDATE_BYTES {
+            return None;
+        }
+    }
+    if end > i {
+        Some((RuleId::StripePaymentIntent, end))
+    } else {
+        None
+    }
+}
+
+fn flutterwave_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
+    for prefix in &[b"FLWSECK-" as &[u8], b"FLWTESTCK-"] {
+        if !bytes.starts_with(prefix) {
+            continue;
+        }
+        let body = bytes.get(prefix.len()..prefix.len() + 32)?;
+        if body.iter().all(|b| b.is_ascii_hexdigit())
+            && !bytes
+                .get(prefix.len() + 32)
+                .is_some_and(|&b| b.is_ascii_hexdigit())
+        {
+            return Some((RuleId::FlutterwaveKey, prefix.len() + 32));
+        }
+    }
+    None
+}
+
+fn uri_match(bytes: &[u8], prefixes: &[&[u8]], rule: RuleId) -> Option<(RuleId, usize)> {
+    let prefix = prefixes.iter().find(|&&p| bytes.starts_with(p))?;
+    let after_scheme = &bytes[prefix.len()..];
+    // Must have user:pass@ for credentials
+    let slash_pos = after_scheme.iter().position(|&b| b == b'/');
+    let authority = match slash_pos {
+        Some(pos) => &after_scheme[..pos],
+        None => after_scheme,
+    };
+    if !authority.contains(&b'@') {
+        return None;
+    }
+    let at_pos = authority.iter().position(|&b| b == b'@')?;
+    let credentials = &authority[..at_pos];
+    if !credentials.contains(&b':') {
+        return None;
+    }
+    // Find end: stop at whitespace or common delimiters
+    let mut end = prefix.len();
+    while end < bytes.len() {
+        if bytes[end].is_ascii_whitespace()
+            || matches!(bytes[end], b'"' | b'\'' | b')' | b',' | b';')
+        {
+            break;
+        }
+        end += 1;
+    }
+    Some((rule, end))
 }
 
 fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>, ScanError> {
@@ -626,6 +1336,7 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         (RuleId::SupabaseKey, SUPABASE_PREFIXES),
         (RuleId::CloudflareKey, CLOUDFLARE_PREFIXES),
         (RuleId::VoyageKey, VOYAGE_PREFIXES),
+        (RuleId::StabilityAiKey, STABILITY_AI_KEY_PREFIXES),
         (RuleId::OpenaiKey, OPENAI_PREFIXES),
         (RuleId::GroqKey, GROQ_PREFIXES),
         (RuleId::PerplexityKey, PERPLEXITY_PREFIXES),
@@ -638,6 +1349,166 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
         if let Some(end) = llm_key_match(bytes, prefixes)? {
             return Ok(Some((rule, end)));
+        }
+    }
+    // Docker Swarm tokens
+    if !disabled.contains(&RuleId::DockerSwarmJoin)
+        || !disabled.contains(&RuleId::DockerSwarmUnlock)
+    {
+        if let Some((rule, end)) = docker_swarm_match(bytes) {
+            if !disabled.contains(&rule) {
+                return Ok(Some((rule, end)));
+            }
+        }
+    }
+    // Sendgrid API key (two-segment dot pattern)
+    if !disabled.contains(&RuleId::SendgridApiKey) {
+        if let Some(end) = sendgrid_match(bytes)? {
+            return Ok(Some((RuleId::SendgridApiKey, end)));
+        }
+    }
+    // Sendinblue API key
+    if !disabled.contains(&RuleId::SendinblueApiKey) {
+        if let Some(end) = sendinblue_match(bytes)? {
+            return Ok(Some((RuleId::SendinblueApiKey, end)));
+        }
+    }
+    // Twilio Account SID / API Key
+    if !disabled.contains(&RuleId::TwilioAccountSid) || !disabled.contains(&RuleId::TwilioApiKey) {
+        if let Some((rule, end)) = twilio_match(bytes) {
+            if !disabled.contains(&rule) {
+                return Ok(Some((rule, end)));
+            }
+        }
+    }
+    // Telegram bot token
+    if !disabled.contains(&RuleId::TelegramBotToken) {
+        if let Some((rule, end)) = telegram_match(bytes) {
+            return Ok(Some((rule, end)));
+        }
+    }
+    // Stripe Payment Intent
+    if !disabled.contains(&RuleId::StripePaymentIntent) {
+        if let Some((rule, end)) = stripe_payment_intent_match(bytes) {
+            return Ok(Some((rule, end)));
+        }
+    }
+    // Flutterwave API key
+    if !disabled.contains(&RuleId::FlutterwaveKey) {
+        if let Some((rule, end)) = flutterwave_match(bytes) {
+            return Ok(Some((rule, end)));
+        }
+    }
+    // Phase 1: Prefix-based rules (more specific prefixes first)
+    for (rule, prefixes, body_min) in [
+        // Cloud & Infrastructure
+        (RuleId::DigitalOceanPat, DIGITALOCEAN_PAT_PREFIXES, 64),
+        (RuleId::DigitalOceanOauth, DIGITALOCEAN_OAUTH_PREFIXES, 64),
+        (
+            RuleId::DigitalOceanRefresh,
+            DIGITALOCEAN_REFRESH_PREFIXES,
+            64,
+        ),
+        (RuleId::HerokuApiKey, HEROKU_API_KEY_PREFIXES, 58),
+        // Package Managers
+        (RuleId::ClojarsToken, CLOJARS_TOKEN_PREFIXES, 48),
+        (RuleId::CratesioToken, CRATESIO_TOKEN_PREFIXES, 40),
+        (RuleId::PyPiToken, PYPY_TOKEN_PREFIXES, 20),
+        (RuleId::RubygemsApiKey, RUBYGENS_API_KEY_PREFIXES, 48),
+        // Communication & Messaging
+        (RuleId::SlackBotToken, SLACK_BOT_TOKEN_PREFIXES, 30),
+        (RuleId::SlackUserToken, SLACK_USER_TOKEN_PREFIXES, 30),
+        (
+            RuleId::SlackWorkspaceToken,
+            SLACK_WORKSPACE_TOKEN_PREFIXES,
+            30,
+        ),
+        (RuleId::SlackRefreshToken, SLACK_REFRESH_TOKEN_PREFIXES, 30),
+        // SaaS & Dev Tools
+        (RuleId::SentryOrgToken, SENTRY_ORG_TOKEN_PREFIXES, 32),
+        (
+            RuleId::GitlabCicdJobToken,
+            GITLAB_CICD_JOB_TOKEN_PREFIXES,
+            25,
+        ),
+        (RuleId::GitlabDeployToken, GITLAB_DEPLOY_TOKEN_PREFIXES, 25),
+        (
+            RuleId::GitlabFeatureFlagToken,
+            GITLAB_FEATURE_FLAG_TOKEN_PREFIXES,
+            25,
+        ),
+        (
+            RuleId::GitlabPersonalAccessToken,
+            GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES,
+            25,
+        ),
+        (
+            RuleId::Auth0ManagementToken,
+            AUTH0_MANAGEMENT_TOKEN_PREFIXES,
+            32,
+        ),
+        (RuleId::OktaAccessToken, OKTA_ACCESS_TOKEN_PREFIXES, 24),
+        (RuleId::NotionApiKey, NOTION_API_KEY_PREFIXES, 34),
+        (RuleId::LinearApiKey, LINEAR_API_KEY_PREFIXES, 32),
+        (RuleId::FigmaToken, FIGMA_TOKEN_PREFIXES, 32),
+        (RuleId::SquareAccessToken, SQUARE_ACCESS_TOKEN_PREFIXES, 25),
+        (
+            RuleId::ShopifyAccessToken,
+            SHOPIFY_ACCESS_TOKEN_PREFIXES,
+            32,
+        ),
+        (
+            RuleId::ShopifyCustomToken,
+            SHOPIFY_CUSTOM_TOKEN_PREFIXES,
+            32,
+        ),
+        (
+            RuleId::ShopifySharedSecret,
+            SHOPIFY_SHARED_SECRET_PREFIXES,
+            32,
+        ),
+        (
+            RuleId::ShopifyAppPassword,
+            SHOPIFY_APP_PASSWORD_PREFIXES,
+            32,
+        ),
+        (RuleId::StripeAccessToken, STRIPE_ACCESS_TOKEN_PREFIXES, 32),
+        (
+            RuleId::PlanetscalePassword,
+            PLANETSCALE_PASSWORD_PREFIXES,
+            40,
+        ),
+        // AI / ML Providers
+        (RuleId::MistralKey, MISTRAL_KEY_PREFIXES, 20),
+        (RuleId::CerebrasKey, CEREBRAS_KEY_PREFIXES, 20),
+        (RuleId::TogetheraiKey, TOGETHERAI_KEY_PREFIXES, 20),
+        (RuleId::FireworksAiKey, FIREWORKS_AI_KEY_PREFIXES, 20),
+        (RuleId::StabilityAiKey, STABILITY_AI_KEY_PREFIXES, 20),
+        (RuleId::DeepgramKey, DEEPGRAM_KEY_PREFIXES, 20),
+        (RuleId::RazorpayKey, RAZORPAY_KEY_PREFIXES, 16),
+    ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
+        if let Some(end) = llm_key_match_with_min(bytes, prefixes, body_min)? {
+            return Ok(Some((rule, end)));
+        }
+    }
+    // Phase 3: URI-based rules
+    for (prefixes, rule) in [
+        (MONGODB_URI_PREFIXES, RuleId::MongodbUri),
+        (POSTGRES_URI_PREFIXES, RuleId::PostgresUri),
+        (REDIS_URI_PREFIXES, RuleId::RedisUri),
+        (SQLSERVER_URI_PREFIXES, RuleId::SqlserverUri),
+        (MYSQL_URI_PREFIXES, RuleId::MysqlUri),
+        (COCKROACHDB_URI_PREFIXES, RuleId::CockroachdbUri),
+        (CLOUDINARY_URL_PREFIXES, RuleId::CloudinaryUrl),
+    ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
+        if let Some((matched_rule, end)) = uri_match(bytes, prefixes, rule) {
+            return Ok(Some((matched_rule, end)));
         }
     }
     if disabled.contains(&RuleId::PrivateKeyMarker) {
@@ -667,19 +1538,58 @@ pub(crate) fn detect_line_with_disabled(
         }
         if !matches!(
             byte,
-            b'A' | b'b'
-                | b'g'
-                | b's'
-                | b'r'
-                | b'h'
-                | b'p'
-                | b'x'
-                | b'w'
-                | b'l'
-                | b'f'
-                | b'a'
-                | b'v'
+            b'A' | b'a'
+                | b'B'
+                | b'b'
+                | b'C'
                 | b'c'
+                | b'D'
+                | b'd'
+                | b'E'
+                | b'e'
+                | b'F'
+                | b'f'
+                | b'G'
+                | b'g'
+                | b'h'
+                | b'H'
+                | b'I'
+                | b'i'
+                | b'J'
+                | b'j'
+                | b'K'
+                | b'k'
+                | b'L'
+                | b'l'
+                | b'M'
+                | b'm'
+                | b'n'
+                | b'N'
+                | b'O'
+                | b'o'
+                | b'P'
+                | b'p'
+                | b'Q'
+                | b'q'
+                | b'R'
+                | b'r'
+                | b's'
+                | b'S'
+                | b'T'
+                | b't'
+                | b'u'
+                | b'U'
+                | b'v'
+                | b'V'
+                | b'W'
+                | b'w'
+                | b'X'
+                | b'x'
+                | b'Y'
+                | b'y'
+                | b'Z'
+                | b'0'
+                | b'1'
                 | b'-'
         ) {
             continue;

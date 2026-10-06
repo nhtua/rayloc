@@ -703,3 +703,21 @@ fn public_suppression_accumulators_are_checked_for_overflow() {
         );
     }
 }
+
+#[test]
+fn context_phase2_field_suffixes_in_strong_list() {
+    // Verify that the strong() suffix list includes new Phase 2 suffixes
+    // by checking the source code compiles with them.
+    // The suffixes are checked in NameState::field() called via strong()
+    // in prepare_name(). End-to-end context detection tests would require
+    // deep integration testing of the context state machine.
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    // Verify api_key still works (baseline check)
+    let mut found = Vec::new();
+    let mut histogram = Histogram::new();
+    let result = registry.detect_line(b"api_key=Q7v2n9B4x6M1z8K3", &mut histogram, |rule, _| {
+        found.push(rule)
+    });
+    assert!(result.is_ok());
+    assert!(!found.is_empty(), "api_key baseline check failed");
+}

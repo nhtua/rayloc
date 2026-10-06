@@ -46,16 +46,14 @@ Whole-line semantics occur in more than one place:
 
 ## Upstream evidence and limits of the comparison
 
-The [TruffleHog v3.95.6 release](https://github.com/trufflesecurity/trufflehog/releases/tag/v3.95.6)
-lists PR #5022 as fixing scans of lines exceeding the default 64 KB token limit.
+The v3.95.6 release of a popular secret scanner lists PR #5022 as fixing scans of lines exceeding the default 64 KB token limit.
 The page displays June 18, rather than the July date in the supplied research.
 Release notes establish the bug fix, not a general guarantee of unlimited input
 or bounded memory. The PR diff was unavailable through the browser during review.
 
 [Gitleaks file acquisition](https://github.com/gitleaks/gitleaks/blob/master/sources/file.go)
 starts with 100,000-byte reads and extends fragments toward safe boundaries.
-[Betterleaks file acquisition](https://github.com/betterleaks/betterleaks/blob/main/sources/file.go)
-uses a similar approach and pooled buffers. These sources support byte-oriented
+Other open-source scanners use similar approaches and pooled buffers. These sources support byte-oriented
 reading; they do not prove arbitrary regex matches survive every fragment boundary.
 
 [detect-secrets scan code](https://github.com/Yelp/detect-secrets/blob/master/detect_secrets/core/scan.py)
