@@ -1,4 +1,5 @@
 use super::*;
+use crate::scanner::SourceError;
 use crate::{rules::BUILTINS, test_support::TempDir};
 fn root(temp: &TempDir) -> ScopeRoot {
     ScopeRoot {
@@ -36,7 +37,10 @@ fn bounded_scope_rejects_frontier_paths_depth_and_policy_overflow() {
             ..LIMITS
         },
     ] {
-        assert_eq!(scan(&temp, limits).errors, [ScanError::ScopeLimit]);
+        assert_eq!(
+            scan(&temp, limits).errors,
+            [SourceError::new(ScanError::ScopeLimit, None)]
+        );
     }
     fs::write(temp.path().join(".gitignore"), "*.env").unwrap();
     for limits in [
@@ -56,10 +60,16 @@ fn bounded_scope_rejects_frontier_paths_depth_and_policy_overflow() {
             ..LIMITS
         },
     ] {
-        assert_eq!(scan(&temp, limits).errors, [ScanError::ScopeLimit]);
+        assert_eq!(
+            scan(&temp, limits).errors,
+            [SourceError::new(ScanError::ScopeLimit, None)]
+        );
     }
     fs::write(temp.path().join(".gitignore"), "[z-a]").unwrap();
-    assert_eq!(scan(&temp, LIMITS).errors, [ScanError::Policy]);
+    assert_eq!(
+        scan(&temp, LIMITS).errors,
+        [SourceError::new(ScanError::Policy, None)]
+    );
     assert!(matches!(
         join(Path::new("/"), OsStr::new(&"x".repeat(MAX_PATH_BYTES))),
         Err(ScanError::ScopeLimit)
@@ -97,17 +107,17 @@ fn glob_input_limits_and_invalid_scopes_are_fixed_errors() {
                 }
             )
             .errors,
-            [ScanError::ScopeLimit]
+            [SourceError::new(ScanError::ScopeLimit, None)]
         );
     }
     assert_eq!(
         scan_directory(&root(&temp), &temp.path().join("missing"), None, &BUILTINS).errors,
-        [ScanError::Discovery]
+        [SourceError::new(ScanError::Discovery, None)]
     );
     let other = TempDir::new();
     assert_eq!(
         scan_directory(&root(&temp), other.path(), None, &BUILTINS).errors,
-        [ScanError::Discovery]
+        [SourceError::new(ScanError::Discovery, None)]
     );
 }
 #[test]
@@ -129,7 +139,10 @@ fn serial_parallel_many_files_and_global_overflow_agree() {
                 parallel_threshold: 1,
             },
         );
-        assert_eq!(out.errors, [ScanError::FindingLimit]);
+        assert_eq!(
+            out.errors,
+            [SourceError::new(ScanError::FindingLimit, None)]
+        );
         assert_eq!(out.stats.findings_detected, 12000);
         assert_eq!(out.findings.len(), 10000);
         assert_eq!(out.stats.files_completed, 300);
@@ -165,7 +178,7 @@ fn depth_and_selected_ancestor_limits_fail_closed() {
     fs::write(temp.path().join("a/b/key"), "ghp_abcdefghijklmnop").unwrap();
     assert_eq!(
         scan(&temp, Limits { depth: 1, ..LIMITS }).errors,
-        [ScanError::ScopeLimit]
+        [SourceError::new(ScanError::ScopeLimit, None)]
     );
     assert_eq!(
         scan_scope(
@@ -180,11 +193,11 @@ fn depth_and_selected_ancestor_limits_fail_closed() {
             Limits { depth: 2, ..LIMITS }
         )
         .errors,
-        [ScanError::ScopeLimit]
+        [SourceError::new(ScanError::ScopeLimit, None)]
     );
     fs::write(temp.path().join("a/.gitignore"), "[z-a]").unwrap();
     let result = scan(&temp, LIMITS);
-    assert_eq!(result.errors, [ScanError::Policy]);
+    assert_eq!(result.errors, [SourceError::new(ScanError::Policy, None)]);
 }
 #[cfg(unix)]
 #[test]
@@ -204,8 +217,18 @@ fn permission_failures_preserve_partial_findings_even_in_ignored_trees() {
     }
     assert_eq!(result.exit_code(), 2);
     assert_eq!(result.stats.findings_detected, 1);
-    assert!(result.errors.contains(&ScanError::Open));
-    assert!(result.errors.contains(&ScanError::Discovery));
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|e| e.error == ScanError::Open && e.path.is_some())
+    );
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|e| e.error == ScanError::Discovery)
+    );
 }
 fn runner(root: &ScopeRoot) -> Runner<'_> {
     Runner {
@@ -298,7 +321,10 @@ fn discovery_admission_failures_do_not_silently_skip_scope() {
         Err(ScanError::ScopeLimit)
     ));
     fs::write(temp.path().join(".raylocignore"), "[z-a]").unwrap();
-    assert_eq!(scan(&temp, LIMITS).errors, [ScanError::Policy]);
+    assert_eq!(
+        scan(&temp, LIMITS).errors,
+        [SourceError::new(ScanError::Policy, None)]
+    );
 }
 #[test]
 fn merge_errors_and_every_new_category_render_without_source_metadata() {
@@ -336,7 +362,7 @@ fn selected_ancestors_and_pending_work_respect_path_budgets() {
             ..LIMITS
         },
     );
-    assert_eq!(out.errors, [ScanError::ScopeLimit]);
+    assert_eq!(out.errors, [SourceError::new(ScanError::ScopeLimit, None)]);
     let mut runner = runner(&root);
     runner.limits.paths = temp.path().as_os_str().len() + 1;
     assert_eq!(
@@ -361,7 +387,8 @@ fn metadata_failures_and_disappearing_files_remain_incomplete() {
     fs::remove_file(temp.path().join("key")).unwrap();
     first.walk(None, &mut None).unwrap();
     first.flush();
-    assert_eq!(first.outcome.errors, [ScanError::Open]);
+    assert_eq!(first.outcome.errors[0].error, ScanError::Open);
+    assert!(first.outcome.errors[0].path.is_some());
     fs::write(temp.path().join("key"), "clean").unwrap();
     let mut second = runner(&root);
     second.enter(temp.path().into(), true, true, false).unwrap();
@@ -375,7 +402,7 @@ fn metadata_failures_and_disappearing_files_remain_incomplete() {
     );
     second.frames.last_mut().unwrap().entries = entries;
     second.walk(None, &mut None).unwrap();
-    assert_eq!(second.outcome.errors, [ScanError::Discovery]);
+    assert_eq!(second.outcome.errors[0].error, ScanError::Discovery);
 }
 #[test]
 fn discovered_scope_counter_and_pending_path_limits_propagate() {
@@ -543,7 +570,10 @@ fn malformed_nested_pointer_fails_before_admitting_scan_work() {
     fs::write(temp.path().join("nested/.git"), "gitdir: absent\n").unwrap();
     fs::write(temp.path().join("key"), "ghp_abcdefghijklmnop").unwrap();
     let outcome = scan(&temp, LIMITS);
-    assert_eq!(outcome.errors, [ScanError::Discovery]);
+    assert_eq!(
+        outcome.errors,
+        [SourceError::new(ScanError::Discovery, None)]
+    );
     assert_eq!(outcome.exit_code(), 2);
     assert_eq!(outcome.stats.files_attempted, 0);
     assert!(outcome.findings.is_empty());
@@ -573,7 +603,8 @@ fn pending_work_flushes_at_the_byte_limit_and_preserves_open_failures() {
         .regular(temp.path().join("key").into(), true, true, None, &mut None)
         .unwrap();
     assert_eq!(runner.outcome.stats.files_attempted, 255);
-    assert_eq!(runner.outcome.errors, [ScanError::Open]);
+    assert_eq!(runner.outcome.errors[0].error, ScanError::Open);
+    assert!(runner.outcome.errors[0].path.is_some());
     assert_eq!(runner.batch.len(), 1);
     runner.flush();
     assert_eq!(runner.outcome.stats.files_attempted, 256);
@@ -589,7 +620,8 @@ fn directory_workers_preserve_prior_findings_on_app_header_budget_failure() {
     let app = format!("ghs_1234_{}.e30.c2ln", "A".repeat(11000));
     fs::write(temp.path().join("z"), app).unwrap();
     let result = scan(&temp, LIMITS);
-    assert_eq!(result.errors, [ScanError::CandidateLimit]);
+    assert_eq!(result.errors[0].error, ScanError::CandidateLimit);
+    assert!(result.errors[0].path.is_some());
     assert_eq!(result.stats.files_attempted, 2);
     assert_eq!(result.stats.files_completed, 1);
     assert_eq!(result.findings.len(), 1);

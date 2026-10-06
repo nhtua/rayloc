@@ -1,4 +1,5 @@
 use super::*;
+use crate::scanner::SourceError;
 
 #[test]
 fn error_categories_are_safe_and_implement_error() {
@@ -54,7 +55,10 @@ fn outcomes_obey_exit_precedence_and_deduplicate_errors() {
     outcome.fail(ScanError::FindingLimit);
     assert_eq!(
         outcome.errors,
-        vec![ScanError::Read, ScanError::FindingLimit]
+        vec![
+            SourceError::new(ScanError::Read, None),
+            SourceError::new(ScanError::FindingLimit, None)
+        ]
     );
     assert_eq!(outcome.exit_code(), 2);
     let debug = format!("{outcome:?}");
