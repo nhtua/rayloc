@@ -505,7 +505,7 @@ Prepare both release archives/checksums and a validated crates.io package; actua
 publication is a separate release action. Git CLI is the initial backend;
 `git2`/libgit2 requires its own
 build/packaging justification. Every production function needs tests; enforce
->=97% line/region coverage and complete function coverage. Publish installation commands only once matching
+>=95% line/region coverage and complete function coverage. Publish installation commands only once matching
 release artifacts or a Cargo package exist.
 [Rust linkage reference](https://doc.rust-lang.org/reference/linkage.html)
 

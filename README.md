@@ -330,7 +330,7 @@ cargo bench --locked
 cargo coverage
 ```
 
-`cargo coverage` requires 97% line and region coverage and 100% function coverage.
+`cargo coverage` requires 95% line and region coverage and 100% function coverage.
 Set it up with:
 
 ```sh

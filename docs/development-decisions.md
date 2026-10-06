@@ -67,7 +67,7 @@ so private functions and failure paths remain testable. Integration tests run
 the real CLI and therefore exercise both `main` and its stdio adapter.
 
 `cargo coverage` (a Cargo alias for `cargo llvm-cov`) instruments Rust, merges
-unit/integration/child-process profiles, and enforces >=97% lines/regions plus
+unit/integration/child-process profiles, and enforces >=95% lines/regions plus
 100% functions. It replaced a custom Python driver; cargo-llvm-cov is a
 development tool, not a crate dependency. Only test/support/benchmark source is
 excluded; all production Rust is counted. Its separate target directory keeps

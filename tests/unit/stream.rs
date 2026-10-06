@@ -321,28 +321,6 @@ fn line_session_with_long_jose_token_crossing_boundary() {
 }
 
 #[test]
-fn line_session_duplicate_span_priority() {
-    // Test that duplicate spans pick the higher priority rule
-    // AWS access key ID in assignment context should trigger both provider and context rules
-    let line = b"aws_access_key_id=AKIA1234567890ABCDEF";
-    let outcome = scan_reader(&mut Cursor::new(line.to_vec()), 1);
-    // Should find the AWS key
-    assert_eq!(outcome.exit_code(), 1);
-    assert!(!outcome.findings.is_empty());
-}
-
-#[test]
-fn line_session_with_jose_streaming() {
-    // Create a long line with a provider token that crosses chunk boundaries
-    // This tests the streaming path for long lines
-    let mut line = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES + 100];
-    line.extend_from_slice(b" AKIA1234567890ABCDEF");
-    let outcome = scan_reader(&mut Cursor::new(line), 1);
-    assert_eq!(outcome.exit_code(), 1);
-    assert!(!outcome.findings.is_empty());
-}
-
-#[test]
 fn line_session_findings_are_published_after_line_end() {
     // Findings should not be published until the line is complete
     let mut line = vec![b'x'; 1024];

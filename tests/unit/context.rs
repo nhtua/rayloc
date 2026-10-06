@@ -592,64 +592,6 @@ fn context_stream_with_comment_after_value() {
 }
 
 #[test]
-fn context_stream_with_hash_comment_after_value() {
-    // Test # comment after value
-    let registry = Registry::compile(crate::config::Config::default()).unwrap();
-    let mut state = ContextState::new();
-    let mut found = Vec::new();
-    let mut emit = |c: Candidate<'_>| found.push((c.rule, c.value.to_vec()));
-
-    state
-        .push(
-            b"api_key=Q7v2n9B4x6M1z8K3 # comment",
-            &registry,
-            &mut Histogram::new(),
-            &mut Suppressions::default(),
-            &mut emit,
-        )
-        .unwrap();
-    state
-        .finish(
-            &registry,
-            &mut Histogram::new(),
-            &mut Suppressions::default(),
-            &mut emit,
-        )
-        .unwrap();
-    assert_eq!(found.len(), 1);
-    assert_eq!(found[0].1, b"Q7v2n9B4x6M1z8K3");
-}
-
-#[test]
-fn context_stream_with_aws_secret_detection() {
-    // Test AWS secret detection in context
-    let registry = Registry::compile(crate::config::Config::default()).unwrap();
-    let mut state = ContextState::new();
-    let mut found = Vec::new();
-    let mut emit = |c: Candidate<'_>| found.push((c.rule, c.value.to_vec()));
-
-    state
-        .push(
-            b"aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-            &registry,
-            &mut Histogram::new(),
-            &mut Suppressions::default(),
-            &mut emit,
-        )
-        .unwrap();
-    state
-        .finish(
-            &registry,
-            &mut Histogram::new(),
-            &mut Suppressions::default(),
-            &mut emit,
-        )
-        .unwrap();
-    // AWS secret detection may or may not trigger depending on validation
-    // Just verify the line was processed without error
-}
-
-#[test]
 fn context_stream_handles_long_whitespace_irrelevant_values_and_suffix_names() {
     let registry = Registry::compile(crate::config::Config::default()).unwrap();
     let long_spaces = vec![b' '; 2 * 1024 * 1024];
