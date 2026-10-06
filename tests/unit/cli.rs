@@ -77,6 +77,30 @@ fn unsupported_and_invalid_utf8_arguments_are_never_echoed() {
     }
 }
 
+#[test]
+fn thread_option_requires_one_value_and_only_supports_directory_scopes() {
+    for args in [
+        vec!["scan", "--threads"],
+        vec!["scan", "--threads", "x"],
+        vec!["scan", "--threads", "0"],
+        vec!["scan", "--threads", "65"],
+        vec!["scan", "--threads", "1", "--threads", "2"],
+        vec!["scan", "--threads", "1", "--staged"],
+        vec!["scan", "--threads", "1", "--diff", "HEAD"],
+    ] {
+        let mut errors = Vec::new();
+        assert_eq!(
+            run_with_args(
+                args.into_iter().map(OsString::from),
+                &mut Vec::new(),
+                &mut errors
+            ),
+            2
+        );
+        assert!(!String::from_utf8(errors).unwrap().contains("HEAD"));
+    }
+}
+
 struct FailingWriter;
 
 impl Write for FailingWriter {

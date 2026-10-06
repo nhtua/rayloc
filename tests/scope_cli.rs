@@ -6,14 +6,20 @@ use std::{
 use support::TempDir;
 
 fn run(root: &TempDir, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_rayloc"))
+    run_with_threads_env(root, args, None)
+}
+fn run_with_threads_env(root: &TempDir, args: &[&str], value: Option<&str>) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
+    command
         .current_dir(root.path())
         .args(args)
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .unwrap()
+        .env_remove("GIT_INDEX_FILE");
+    if let Some(value) = value {
+        command.env("RAYON_NUM_THREADS", value);
+    }
+    command.output().unwrap()
 }
 fn git(root: &TempDir, args: &[&str]) {
     assert!(
@@ -34,6 +40,44 @@ fn secret(root: &TempDir, path: &str) {
     let path = root.path().join(path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, "ghp_abcdefghijklmnop\n").unwrap();
+}
+
+#[test]
+fn directory_thread_option_is_supported_but_file_scope_rejects_it() {
+    let root = TempDir::new();
+    secret(&root, "nested/key");
+    let output = run(&root, &["scan", "--threads", "32", "."]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output).contains("1 finding(s)"));
+    assert!(!text(&output).contains("abcdefghijklmnop"));
+
+    let output = run(&root, &["scan", "--threads", "2", "nested/key"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("--threads is supported only for directory and glob scans")
+    );
+}
+
+#[test]
+fn thread_environment_only_applies_to_directory_scans_and_file_option_is_validated_early() {
+    let root = TempDir::new();
+    fs::write(root.path().join("input.txt"), "ordinary content\n").unwrap();
+    let output = run_with_threads_env(&root, &["scan", "input.txt"], Some("invalid"));
+    assert_eq!(output.status.code(), Some(0));
+
+    let output = run_with_threads_env(&root, &["scan", "."], Some("invalid"));
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid scan thread count"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("invalid\""));
+
+    fs::write(root.path().join(".raylocignore"), "input.txt\n").unwrap();
+    let output = run(&root, &["scan", "--threads", "2", "input.txt"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("--threads is supported only for directory and glob scans")
+    );
 }
 
 #[test]

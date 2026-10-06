@@ -8,6 +8,7 @@ use redaction::RedactedString;
 pub mod binary;
 pub mod diff;
 pub mod engine;
+pub(crate) mod execution;
 pub mod fingerprint;
 mod git;
 pub mod redaction;

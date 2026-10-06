@@ -289,9 +289,27 @@ candidate and 10,000 retained findings. Exceeding a limit returns exit 2.
 ## Performance
 
 See the [measured release baseline](docs/research/release-baseline.md) for numbers
-and methodology. On the held-out synthetic corpus, rayloc reaches 98% precision
+and methodology. The [parallel scanning results](docs/research/parallel-scanning-results.md)
+record thread-scaling measurements and remaining limits. On the held-out synthetic corpus, rayloc reaches 98% precision
 and recall. That corpus is too small to estimate a real-world false-positive rate.
 Staged scans under 5 ms and 500 MB/s per core are goals, not guarantees yet.
+
+To compare directory-scan thread counts on your own machine, build the release
+binary and run the sequential, warm-cache measurement harness:
+
+Directory and glob scans accept `--threads N` (1–64). If omitted, rayloc reads
+`RAYON_NUM_THREADS`, then falls back to at most eight available CPUs. Explicit
+files, staged scans and diff scans do not use this setting.
+
+```sh
+cargo build --release --locked
+python3 scripts/parallel_measure.py --case 32_large --include-default \
+  --threads 1 2 8 16 32 --samples 15 --output target/parallel-scan.json
+```
+
+The harness checks completed files, excluded files, scanned bytes, findings,
+exit status and credential redaction for every sample. See the [benchmark guide](benches/README.md)
+for fixture definitions and cache limitations.
 
 ## Contributing
 

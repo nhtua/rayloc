@@ -17,8 +17,9 @@ Options:
   -V, --version    Print version
 
 Commands:
-  scan [<file|directory> | --glob <pattern> | --staged | --diff <ref>] [--config <file>] [--no-inline-ignores]
+  scan [<file|directory> | --glob <pattern> | --staged | --diff <ref>] [--threads <count>] [--config <file>] [--no-inline-ignores]
                   Scan files, a directory (default: current directory), or a glob
+                  --threads applies to directory and glob scans (1-64)
 
   accept <id>     Accept a reviewed finding by its report ID in the root .rayloc.yaml;
                   the ID covers that value in that file only
@@ -97,6 +98,7 @@ fn scan(
     let mut glob = None;
     let mut staged = false;
     let mut reference = None;
+    let mut threads: Option<usize> = None;
     while let Some(arg) = args.next() {
         if !positional && arg == "--" {
             positional = true;
@@ -121,6 +123,19 @@ fn scan(
         }
         if !positional && arg == "--no-inline-ignores" {
             no_inline = true;
+            continue;
+        }
+        if !positional && arg == "--threads" {
+            if threads.is_some() {
+                return scan_error(errors, "invalid scan thread count");
+            }
+            let Some(value) = args.next() else {
+                return scan_error(errors, "invalid scan thread count");
+            };
+            threads = match value.to_str().and_then(|s| s.parse::<usize>().ok()) {
+                Some(value) => Some(value),
+                None => return scan_error(errors, "invalid scan thread count"),
+            };
             continue;
         }
         if !positional && arg == "--config" {
@@ -164,6 +179,12 @@ fn scan(
         }
         path = Some(arg);
     }
+    if threads.is_some() && (staged || reference.is_some()) {
+        return scan_error(
+            errors,
+            "--threads is supported only for directory and glob scans",
+        );
+    }
     let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
         crate::report::emitter::TerminalEmitter::new(std::io::stdout()),
     ));
@@ -204,6 +225,24 @@ fn scan(
         Ok(metadata) if metadata.is_file() || metadata.is_dir() => metadata,
         Ok(_) => return scan_error(errors, "selected path is not a regular file or directory"),
         Err(_) => return scan_error(errors, "cannot open selected file"),
+    };
+    let workers = if metadata.is_file() {
+        if threads.is_some() {
+            return scan_error(
+                errors,
+                "--threads is supported only for directory and glob scans",
+            );
+        }
+        1
+    } else {
+        match crate::scanner::execution::resolve_threads(
+            threads,
+            std::env::var_os("RAYON_NUM_THREADS").as_deref(),
+            std::thread::available_parallelism().map_or(1, |n| n.get()),
+        ) {
+            Ok(workers) => workers,
+            Err(_) => return scan_error(errors, "invalid scan thread count"),
+        }
     };
     let pattern = match glob.as_ref().map(|pattern| pattern.to_str()) {
         Some(None) => return scan_error(errors, "invalid scope pattern"),
@@ -248,11 +287,15 @@ fn scan(
         } else {
             absolute.as_path()
         };
-        crate::scanner::scope::scan_directory_with_emitter(
+        crate::scanner::scope::scan_directory_with_options_and_emitter(
             &root,
             selected,
             pattern,
             &registry,
+            crate::scanner::scope::ScopeOptions {
+                workers,
+                ..Default::default()
+            },
             emitter.clone(),
         )
     };

@@ -17,6 +17,7 @@ fn scan(temp: &TempDir, limits: Limits) -> ScanOutcome {
         ScopeOptions {
             workers: 1,
             parallel_threshold: 1,
+            parallel_bytes_threshold: 0,
         },
         limits,
     )
@@ -94,7 +95,7 @@ fn glob_input_limits_and_invalid_scopes_are_fixed_errors() {
     assert!(compile_glob(r"./a\{b\}").unwrap().is_match("a{b}"));
     assert!(compile_glob("{a,b}").unwrap().is_match("b"));
     let temp = TempDir::new();
-    for workers in [0, 9] {
+    for workers in [0, 65] {
         assert_eq!(
             scan_directory_with_options(
                 &root(&temp),
@@ -103,7 +104,8 @@ fn glob_input_limits_and_invalid_scopes_are_fixed_errors() {
                 &BUILTINS,
                 ScopeOptions {
                     workers,
-                    parallel_threshold: 1
+                    parallel_threshold: 1,
+                    parallel_bytes_threshold: 0
                 }
             )
             .errors,
@@ -128,7 +130,7 @@ fn serial_parallel_many_files_and_global_overflow_agree() {
         fs::write(temp.path().join(format!("{i:04}")), line.repeat(20)).unwrap();
     }
     let mut baseline = None;
-    for workers in [1, 2, 8] {
+    for workers in [1, 2, 8, 32] {
         let out = scan_directory_with_options(
             &root(&temp),
             temp.path(),
@@ -137,6 +139,7 @@ fn serial_parallel_many_files_and_global_overflow_agree() {
             ScopeOptions {
                 workers,
                 parallel_threshold: 1,
+                parallel_bytes_threshold: 0,
             },
         );
         assert_eq!(
@@ -188,7 +191,8 @@ fn depth_and_selected_ancestor_limits_fail_closed() {
             &BUILTINS,
             ScopeOptions {
                 workers: 1,
-                parallel_threshold: 1
+                parallel_threshold: 1,
+                parallel_bytes_threshold: 0
             },
             Limits { depth: 2, ..LIMITS }
         )
@@ -238,9 +242,11 @@ fn runner(root: &ScopeRoot) -> Runner<'_> {
         options: ScopeOptions {
             workers: 1,
             parallel_threshold: 1,
+            parallel_bytes_threshold: 0,
         },
         limits: LIMITS,
         workers: vec![Worker::new()],
+        pool: None,
         collector: Mutex::new(Collector::new(MAX_FINDINGS)),
         emitter: None,
         outcome: ScanOutcome::default(),
@@ -256,6 +262,53 @@ fn runner(root: &ScopeRoot) -> Runner<'_> {
         repositories: 0,
         metadata_only: false,
     }
+}
+
+#[test]
+fn scope_pool_is_lazy_and_uses_the_requested_private_thread_count() {
+    let temp = TempDir::new();
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    runner.options.workers = 3;
+    runner.options.parallel_threshold = 2;
+    runner.options.parallel_bytes_threshold = 256 * 1024;
+    assert!(runner.pool.is_none());
+    runner.pool(1, 0).unwrap();
+    assert!(runner.pool.is_none());
+    runner.pool(2, 0).unwrap();
+    assert_eq!(runner.workers.len(), 3);
+    assert_eq!(runner.pool.as_ref().unwrap().current_num_threads(), 3);
+    assert_eq!(
+        runner
+            .pool
+            .as_ref()
+            .unwrap()
+            .install(rayon::current_num_threads),
+        3
+    );
+}
+
+#[test]
+fn byte_heavy_small_file_batch_admits_workers_below_count_threshold() {
+    let temp = TempDir::new();
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    runner.options.workers = 4;
+    runner.options.parallel_threshold = 256;
+    runner.options.parallel_bytes_threshold = 128 * 1024;
+    let content = vec![b'x'; 16 * 1024];
+    for index in 0..32 {
+        let path = temp.path().join(format!("{index:02}.txt"));
+        fs::write(&path, &content).unwrap();
+        runner
+            .regular(path.into_boxed_path(), true, true, None, &mut None)
+            .unwrap();
+    }
+    assert!(runner.pool.is_none());
+    runner.flush();
+    assert_eq!(runner.pool.as_ref().unwrap().current_num_threads(), 4);
+    assert_eq!(runner.outcome.stats.files_completed, 32);
+    assert_eq!(runner.outcome.stats.bytes_read, (32 * content.len()) as u64);
 }
 #[test]
 fn discovery_admission_failures_do_not_silently_skip_scope() {
@@ -326,6 +379,52 @@ fn discovery_admission_failures_do_not_silently_skip_scope() {
         [SourceError::new(ScanError::Policy, None)]
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn entries_classify_directories_files_and_symlinks_without_following_links() {
+    use std::os::unix::fs::symlink;
+    let temp = TempDir::new();
+    fs::create_dir(temp.path().join("directory")).unwrap();
+    fs::write(temp.path().join("file"), "clean").unwrap();
+    symlink(temp.path().join("file"), temp.path().join("link")).unwrap();
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    let entries = runner.entries(temp.path()).unwrap();
+    let kinds: std::collections::BTreeMap<_, _> = entries
+        .into_iter()
+        .map(|entry| (entry.name.to_string_lossy().into_owned(), entry.kind))
+        .collect();
+    assert!(matches!(kinds["directory"], Kind::Directory));
+    assert!(matches!(kinds["file"], Kind::Regular));
+    assert!(matches!(kinds["link"], Kind::Other));
+}
+
+#[test]
+fn public_directory_wrappers_scan_with_and_without_an_emitter() {
+    let temp = TempDir::new();
+    fs::write(temp.path().join("file"), "clean").unwrap();
+    let root = root(&temp);
+    let plain = scan_directory(&root, temp.path(), None, &BUILTINS);
+    assert_eq!(plain.stats.files_completed, 1);
+    let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
+        crate::report::emitter::TerminalEmitter::new(Vec::new()),
+    ));
+    let emitted = scan_directory_with_emitter(&root, temp.path(), None, &BUILTINS, emitter);
+    assert_eq!(emitted.stats.files_completed, 1);
+    let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
+        crate::report::emitter::TerminalEmitter::new(Vec::new()),
+    ));
+    let configured = scan_directory_with_options_and_emitter(
+        &root,
+        temp.path(),
+        None,
+        &BUILTINS,
+        ScopeOptions::default(),
+        emitter,
+    );
+    assert_eq!(configured.stats.files_completed, 1);
+}
 #[test]
 fn merge_errors_and_every_new_category_render_without_source_metadata() {
     for error in [
@@ -356,6 +455,7 @@ fn selected_ancestors_and_pending_work_respect_path_budgets() {
         ScopeOptions {
             workers: 1,
             parallel_threshold: 1,
+            parallel_bytes_threshold: 0,
         },
         Limits {
             paths: temp.path().as_os_str().len(),
@@ -377,7 +477,7 @@ fn selected_ancestors_and_pending_work_respect_path_budgets() {
 }
 #[cfg(unix)]
 #[test]
-fn metadata_failures_and_disappearing_files_remain_incomplete() {
+fn disappearing_files_remain_incomplete_and_cached_type_is_used() {
     use std::os::unix::fs::PermissionsExt;
     let temp = TempDir::new();
     let root = root(&temp);
@@ -398,11 +498,8 @@ fn metadata_failures_and_disappearing_files_remain_incomplete() {
     assert!(
         entries
             .iter()
-            .all(|entry| matches!(entry.kind, Kind::Error))
+            .any(|entry| matches!(entry.kind, Kind::Regular))
     );
-    second.frames.last_mut().unwrap().entries = entries;
-    second.walk(None, &mut None).unwrap();
-    assert_eq!(second.outcome.errors[0].error, ScanError::Discovery);
 }
 #[test]
 fn discovered_scope_counter_and_pending_path_limits_propagate() {
@@ -594,6 +691,7 @@ fn pending_work_flushes_at_the_byte_limit_and_preserves_open_failures() {
         runner.batch.push(Work {
             path: unavailable.clone().into_boxed_path(),
             source_id,
+            estimated_bytes: 0,
         });
     }
     runner.matched = 255;

@@ -14,6 +14,8 @@ fn main() {
         std::env::var("RAYLOC_BENCH_BYTES").map_or(vec![256, 16384], |v| vec![v.parse().unwrap()]);
     let lanes =
         std::env::var("RAYLOC_BENCH_WORKERS").map_or(vec![1, 2, 8], |v| vec![v.parse().unwrap()]);
+    let threshold =
+        std::env::var("RAYLOC_BENCH_THRESHOLD").map_or(256, |value| value.parse().unwrap());
     let dense = std::env::var_os("RAYLOC_BENCH_DENSE").is_some();
     let complex = std::env::var_os("RAYLOC_BENCH_POLICY").is_some();
     let custom = complex.then(|| {
@@ -70,7 +72,8 @@ fn main() {
                         registry,
                         ScopeOptions {
                             workers,
-                            parallel_threshold: 1,
+                            parallel_threshold: threshold,
+                            parallel_bytes_threshold: u64::MAX,
                         },
                     );
                     assert_eq!(
@@ -95,7 +98,7 @@ fn main() {
                 times.sort_by(f64::total_cmp);
                 let seconds = times[2];
                 println!(
-                    "scope: files={count} bytes_each={} workers={workers} samples=5 median_ms={:.3} p95_ms={:.3} p99_ms={:.3} MB/s={:.2}",
+                    "scope: files={count} bytes_each={} workers={workers} parallel_threshold={threshold} samples=5 median_ms={:.3} p95_ms={:.3} p99_ms={:.3} MB/s={:.2}",
                     content.len(),
                     seconds * 1000.0,
                     times[4] * 1000.0,
