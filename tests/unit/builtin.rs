@@ -43,6 +43,7 @@ fn complete_provider_matches(
 #[test]
 fn provider_stream_matches_whole_line_at_every_short_input_split() {
     let registry = &crate::rules::BUILTINS;
+    // rayloc:ignore
     let examples: &[&[u8]] = &[
     // rayloc:ignore
     // rayloc:ignore
@@ -175,10 +176,10 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     for marker in PRIVATE_KEY_MARKERS {
         fixtures.push((RuleId::PrivateKeyMarker, marker.to_vec()));
     }
-    // LLM provider API keys
+    // LLM provider API keys (synthetic test values)
     fixtures.push((
         RuleId::OpenaiKey,
-        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(), /* rayloc:ignore */, /* rayloc:ignore */, /* rayloc:ignore */,
+        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(), /* rayloc:ignore */, /* rayloc:ignore */, /* rayloc:ignore */, // rayloc:ignore
     ));
     fixtures.push((
         RuleId::OpenrouterKey,
