@@ -1,6 +1,7 @@
 //! Bounded byte readers and one deterministic, globally capped collector.
 use super::{
     Finding, ScanError, ScanOutcome, ScanStats,
+    binary::detect_binary,
     fingerprint::FindingId,
     redaction::{RedactedString, safe_label},
 };
@@ -8,7 +9,7 @@ use crate::rules::{BUILTINS, Registry, entropy::Histogram};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
-    io::{self, BufRead, Read},
+    io::{self, BufRead, Read, Seek, SeekFrom},
     path::Path,
     sync::Mutex,
     time::Instant,
@@ -110,7 +111,23 @@ impl Worker {
         outcome.stats.files_attempted = 1;
         match open_regular(path) {
             Err(error) => outcome.fail(error),
-            Ok(file) => {
+            Ok(mut file) => {
+                // Binary file detection: sample initial bytes for null bytes
+                let is_binary = match file.metadata() {
+                    Ok(metadata) => {
+                        let result = detect_binary(&mut file, metadata.len());
+                        if !result {
+                            let _ = file.seek(SeekFrom::Start(0));
+                        }
+                        result
+                    }
+                    Err(_) => false,
+                };
+                if is_binary {
+                    outcome.stats.files_excluded = 1;
+                    return outcome;
+                }
+
                 let mut reader = BufferedFile {
                     file,
                     storage: &mut self.read,
