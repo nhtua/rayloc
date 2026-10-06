@@ -176,8 +176,10 @@ def measure_once(binary, fixture, threads, sink_delay_ms=0):
     if threads is None:
         environment.pop("RAYON_NUM_THREADS", None)
     else:
-        environment["RAYON_NUM_THREADS"] = str(threads)
+        environment.pop("RAYON_NUM_THREADS", None)
     command = [str(binary), "scan", str(fixture["selected"])]
+    if threads is not None:
+        command.extend(["--threads", str(threads)])
     started = time.perf_counter_ns()
     child = subprocess.Popen(command, cwd=fixture["root"], env=environment,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
@@ -255,7 +257,7 @@ def measure_fixture(binary, fixture, threads, samples, sink_delay_ms=0):
     aggregate = {
         "case": fixture["case"],
         "threads_requested": threads if threads is not None else "default",
-        "thread_control": "RAYON_NUM_THREADS; implementation file-lane cap applies",
+        "thread_control": "--threads for directory/glob scans",
         "sink_delay_ms": sink_delay_ms,
         "cache": "warm after fixture creation and one untimed scan; OS caches not flushed",
         "samples": samples,
@@ -287,7 +289,7 @@ def main():
                         help="pause while draining each output chunk to simulate a slow sink")
     args = parser.parse_args()
     if (args.samples < 1 or args.scale < 1 or not 0 <= args.sink_delay_ms <= 1000
-            or any(not 1 <= item <= 256 for item in args.threads)):
+            or any(not 1 <= item <= 64 for item in args.threads)):
         parser.error("samples, scale, and requested thread counts must be positive and bounded")
     binary = args.binary.resolve()
     if not binary.is_file():

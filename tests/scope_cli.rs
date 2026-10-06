@@ -37,6 +37,23 @@ fn secret(root: &TempDir, path: &str) {
 }
 
 #[test]
+fn directory_thread_option_is_supported_but_file_scope_rejects_it() {
+    let root = TempDir::new();
+    secret(&root, "nested/key");
+    let output = run(&root, &["scan", "--threads", "32", "."]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output).contains("1 finding(s)"));
+    assert!(!text(&output).contains("abcdefghijklmnop"));
+
+    let output = run(&root, &["scan", "--threads", "2", "nested/key"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("--threads is supported only for directory and glob scans")
+    );
+}
+
+#[test]
 fn omitted_directory_and_brace_globs_include_hidden_and_lockfiles() {
     let root = TempDir::new();
     for path in [

@@ -94,7 +94,7 @@ fn glob_input_limits_and_invalid_scopes_are_fixed_errors() {
     assert!(compile_glob(r"./a\{b\}").unwrap().is_match("a{b}"));
     assert!(compile_glob("{a,b}").unwrap().is_match("b"));
     let temp = TempDir::new();
-    for workers in [0, 9] {
+    for workers in [0, 65] {
         assert_eq!(
             scan_directory_with_options(
                 &root(&temp),
@@ -241,6 +241,7 @@ fn runner(root: &ScopeRoot) -> Runner<'_> {
         },
         limits: LIMITS,
         workers: vec![Worker::new()],
+        pool: None,
         collector: Mutex::new(Collector::new(MAX_FINDINGS)),
         emitter: None,
         outcome: ScanOutcome::default(),
@@ -256,6 +257,29 @@ fn runner(root: &ScopeRoot) -> Runner<'_> {
         repositories: 0,
         metadata_only: false,
     }
+}
+
+#[test]
+fn scope_pool_is_lazy_and_uses_the_requested_private_thread_count() {
+    let temp = TempDir::new();
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    runner.options.workers = 3;
+    runner.options.parallel_threshold = 2;
+    assert!(runner.pool.is_none());
+    runner.pool(1).unwrap();
+    assert!(runner.pool.is_none());
+    runner.pool(2).unwrap();
+    assert_eq!(runner.workers.len(), 3);
+    assert_eq!(runner.pool.as_ref().unwrap().current_num_threads(), 3);
+    assert_eq!(
+        runner
+            .pool
+            .as_ref()
+            .unwrap()
+            .install(rayon::current_num_threads),
+        3
+    );
 }
 #[test]
 fn discovery_admission_failures_do_not_silently_skip_scope() {

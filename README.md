@@ -296,6 +296,10 @@ Staged scans under 5 ms and 500 MB/s per core are goals, not guarantees yet.
 To compare directory-scan thread counts on your own machine, build the release
 binary and run the sequential, warm-cache measurement harness:
 
+Directory and glob scans accept `--threads N` (1–64). If omitted, rayloc reads
+`RAYON_NUM_THREADS`, then falls back to at most eight available CPUs. Explicit
+files, staged scans and diff scans do not use this setting.
+
 ```sh
 cargo build --release --locked
 python3 scripts/parallel_measure.py --case 32_large --include-default \

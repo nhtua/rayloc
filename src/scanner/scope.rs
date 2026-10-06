@@ -117,6 +117,7 @@ struct Runner<'a> {
     options: ScopeOptions,
     limits: Limits,
     workers: Vec<Worker>,
+    pool: Option<rayon::ThreadPool>,
     collector: Mutex<Collector>,
     emitter: Option<crate::report::emitter::SharedEmitter>,
     outcome: ScanOutcome,
@@ -159,6 +160,24 @@ pub fn scan_directory_with_emitter(
         Some(emitter),
     )
 }
+pub fn scan_directory_with_options_and_emitter(
+    root: &ScopeRoot,
+    selected: &Path,
+    pattern: Option<&str>,
+    registry: &Registry,
+    options: ScopeOptions,
+    emitter: crate::report::emitter::SharedEmitter,
+) -> ScanOutcome {
+    scan_scope_with_emitter(
+        root,
+        selected,
+        pattern,
+        registry,
+        options,
+        LIMITS,
+        Some(emitter),
+    )
+}
 pub fn scan_directory_with_options(
     root: &ScopeRoot,
     selected: &Path,
@@ -190,7 +209,7 @@ fn scan_scope_with_emitter(
 ) -> ScanOutcome {
     let started = Instant::now();
     let result = (|| {
-        if options.workers == 0 || options.workers > 8 {
+        if options.workers == 0 || options.workers > super::execution::MAX_SCAN_THREADS {
             return Err(ScanError::ScopeLimit);
         }
         let inclusion = pattern.map(compile_glob).transpose()?;
@@ -210,6 +229,7 @@ fn scan_scope_with_emitter(
             options,
             limits,
             workers: vec![Worker::new()],
+            pool: None,
             collector,
             emitter,
             outcome: ScanOutcome::default(),
@@ -331,6 +351,12 @@ impl Runner<'_> {
         {
             self.workers
                 .extend((1..self.options.workers).map(|_| Worker::new()));
+            self.pool = Some(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(self.options.workers)
+                    .build()
+                    .map_err(|_| ScanError::Pool)?,
+            );
         }
         Ok(())
     }
@@ -459,7 +485,15 @@ impl Runner<'_> {
                     Err(_) => Kind::Error,
                 };
             };
-            batch.par_iter_mut().for_each(classify);
+            if batch.len() >= self.options.parallel_threshold && self.options.workers > 1 {
+                if let Some(pool) = &self.pool {
+                    pool.install(|| batch.par_iter_mut().for_each(classify));
+                } else {
+                    batch.iter_mut().for_each(classify);
+                }
+            } else {
+                batch.iter_mut().for_each(classify);
+            }
         }
         // '/' belongs to directory sorting keys; component order would misorder a.txt vs a/x.
         entries.sort_unstable_by(|a, b| {
@@ -548,11 +582,14 @@ impl Runner<'_> {
         };
         let results: Vec<_> =
             if self.options.workers > 1 && self.batch.len() >= self.options.parallel_threshold {
-                self.workers
-                    .par_iter_mut()
-                    .zip(self.batch.par_chunks(lane_length))
-                    .map(process)
-                    .collect()
+                let pool = self.pool.as_ref().expect("pool initialized with lanes");
+                pool.install(|| {
+                    self.workers
+                        .par_iter_mut()
+                        .zip(self.batch.par_chunks(lane_length))
+                        .map(process)
+                        .collect()
+                })
             } else {
                 vec![process((&mut self.workers[0], &self.batch))]
             };
