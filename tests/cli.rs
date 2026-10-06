@@ -4,7 +4,7 @@ use std::process::Command;
 fn parallel_directory_scan_streams_redacted_findings_and_finishes() {
     use std::time::{Duration, Instant};
     let directory = support::TempDir::new();
-    let token = "ghp_ParallelDirScanToken0123456789";
+    let token = "ghp_ParallelDirScanToken0123456789"; // rayloc:ignore
     for i in 0..256 {
         let path = directory.path().join(format!("file_{i}.txt"));
         std::fs::write(&path, format!("key = {token}\n")).unwrap();
@@ -128,7 +128,7 @@ fn executable_entry_point_obeys_help_version_and_error_contracts() {
         assert!(!output.stdout.is_empty());
         assert!(output.stderr.is_empty());
     }
-    let sentinel = "ghp_SyntheticCliSentinel0123456789";
+    let sentinel = "ghp_SyntheticCliSentinel0123456789"; // rayloc:ignore
     for arguments in [
         vec!["scan", sentinel],
         vec!["hook", "install"],
