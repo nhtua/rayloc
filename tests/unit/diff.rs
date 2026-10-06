@@ -208,8 +208,8 @@ fn huge_added_deleted_and_context_records_stream_only_added_payload() {
 
     let modify_header = raw("100644", "100644", OLD, NEW, "M");
     for (prefix, hunk) in [
-        (&[b'-'][..], b"@@ -1 +0,0 @@\n".as_slice()),
-        (&[b' '][..], b"@@ -1 +1 @@\n".as_slice()),
+        (b"-", b"@@ -1 +0,0 @@\n".as_slice()),
+        (b" ", b"@@ -1 +1 @@\n".as_slice()),
     ] {
         let line = [prefix, payload.as_bytes(), b"\n"].concat();
         let body = [hunk, &line].concat();
