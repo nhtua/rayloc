@@ -45,7 +45,7 @@ fn provider_stream_matches_whole_line_at_every_short_input_split() {
     let registry = &crate::rules::BUILTINS;
     // rayloc:ignore
     let examples: &[&[u8]] = &[
-    // rayloc:ignore
+        // rayloc:ignore
         // rayloc:ignore
         // rayloc:ignore
         b"prefix=AKIA1234567890ABCDEF;",
@@ -179,7 +179,7 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     // LLM provider API keys (synthetic test values)
     fixtures.push((
         RuleId::OpenaiKey,
-        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(), /* rayloc:ignore */, // rayloc:ignore
+        b"sk-SyntheticOpenAIKey1234567890ABCDEF".to_vec(), // rayloc:ignore
     ));
     fixtures.push((
         RuleId::OpenrouterKey,
