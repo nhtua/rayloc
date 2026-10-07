@@ -1,5 +1,7 @@
 # rayloc
 
+![Rayloc, a lightning-fast and lightweight offline secrets scanner](docs/rayloc-lightning-fast-secrets-scanner.jpg)
+
 [![Rust checks](https://github.com/nhtua/rayloc/actions/workflows/ci.yml/badge.svg)](https://github.com/nhtua/rayloc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
