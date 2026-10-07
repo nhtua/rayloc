@@ -1,6 +1,7 @@
 # Bounded parallel line batches
 
-Status: proposal for written review; implementation is not yet authorized.
+Status: approved in chat 2026-10-06; implementation awaits written-plan review
+and execution-method selection.
 Source baseline: `8662919` on `main`, inspected 2026-10-06.
 
 ## Intent and scope
