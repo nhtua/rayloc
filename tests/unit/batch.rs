@@ -275,6 +275,17 @@ fn prepared_batches_replay_at_129_without_losing_findings() {
     ));
     // Findings are discarded on replay
     assert!(scratch.result.findings.is_empty());
+
+    // Reusing the same lease for a later sparse batch clears replay state.
+    let batch = super::LineBatch {
+        start: 0,
+        end: token.len(),
+        first_line: 130,
+        lines: 1,
+    };
+    super::prepare_batch(&token, batch, context, limits, batch_limits, &mut scratch);
+    assert_eq!(scratch.result.replay, None);
+    assert_eq!(scratch.result.findings.len(), 1);
 }
 
 /// Accepted/ignored findings do not consume capacity.
@@ -381,13 +392,9 @@ fn accepted_ignored_and_reused_batches_do_not_consume_capacity() {
 /// Diagnostics saturate at u64::MAX without affecting scan results.
 #[test]
 fn diagnostics_saturate_without_affecting_scan_results() {
-    let _helpers = super::HelperPool::new(4, BATCH_LIMITS);
-    // Simulate many events by manually checking saturation
-    let max = u64::MAX;
-    let saturated = max.saturating_add(1);
-    assert_eq!(saturated, max);
-    // Actual saturation testing would involve triggering many wave/helper events
-    // and verifying the counters cap at u64::MAX
+    let counter = std::sync::atomic::AtomicU64::new(u64::MAX);
+    super::saturating_increment(&counter);
+    assert_eq!(counter.load(std::sync::atomic::Ordering::Relaxed), u64::MAX);
 }
 
 /// Helper pool metrics track concurrent usage.
@@ -467,4 +474,355 @@ fn batch_delta_tracks_lines() {
     assert_eq!(delta.attempted_lines, 10);
     assert_eq!(delta.completed_lines, 8);
     assert_eq!(delta.bytes, 100);
+}
+
+/// A terminal helper error reaches the scan outcome after earlier work is committed.
+#[test]
+fn publishing_a_terminal_batch_error_returns_it() {
+    let registry = crate::rules::Registry::compile(
+        crate::config::parse(b"version: \"1\"\nrules: []").unwrap(),
+    )
+    .unwrap();
+    let context = RecordContext {
+        source_id: 1,
+        path: b"input.rs",
+        registry: &registry,
+    };
+    let mut result = super::PreparedBatch {
+        findings: Vec::new(),
+        delta: super::BatchDelta {
+            attempted_lines: 1,
+            completed_lines: 0,
+            bytes: 0,
+            suppressions: Suppressions::default(),
+        },
+        terminal: Some(crate::scanner::ScanError::CandidateLimit),
+        replay: None,
+    };
+    let mut outcome = crate::scanner::ScanOutcome::default();
+    let collector = std::sync::Mutex::new(crate::scanner::engine::Collector::new(100));
+    let mut progress = crate::scanner::chunk::ReadProgress::default();
+
+    let result = super::publish_batch(
+        &mut result,
+        super::LineBatch {
+            start: 0,
+            end: 0,
+            first_line: 1,
+            lines: 1,
+        },
+        context,
+        Limits {
+            line_bytes: usize::MAX,
+            findings: 100,
+        },
+        &mut progress,
+        &mut outcome,
+        &collector,
+        None,
+    );
+
+    assert_eq!(result, Err(crate::scanner::ScanError::CandidateLimit));
+    assert_eq!(outcome.stats.lines_scanned, 1);
+    assert_eq!(progress.lines_scanned, 0);
+}
+
+#[test]
+fn counter_overflow_replays_the_helper_batch() {
+    let registry = crate::rules::Registry::compile(
+        crate::config::parse(b"version: \"1\"\nrules: [{id: secret, regex: secret}]").unwrap(),
+    )
+    .unwrap();
+    let context = RecordContext {
+        source_id: 1,
+        path: b"input.rs",
+        registry: &registry,
+    };
+    let input = b"secret\nsecret\n";
+    let limits = BatchLimits {
+        target_bytes: 7,
+        hard_bytes: 32,
+        max_batches: 2,
+        max_findings: 128,
+    };
+    let plan = super::plan_wave(input, 1, 2, limits).unwrap();
+    let helpers = super::HelperPool::new(2, limits);
+    let mut progress = crate::scanner::chunk::ReadProgress::default();
+    let mut line = crate::scanner::stream::LineSession::new();
+    let mut outcome = crate::scanner::ScanOutcome::default();
+    outcome.stats.bytes_read = u64::MAX - 7;
+    let collector = std::sync::Mutex::new(crate::scanner::engine::Collector::new(100));
+
+    let replay = super::execute_wave(
+        input,
+        &plan,
+        context,
+        Limits {
+            line_bytes: usize::MAX,
+            findings: 100,
+        },
+        limits,
+        &helpers,
+        &mut progress,
+        &mut line,
+        &mut outcome,
+        &collector,
+        None,
+    );
+
+    assert_eq!(replay, Ok(true));
+    assert_eq!(outcome.stats.bytes_read, u64::MAX);
+    assert_eq!(progress.bytes_read, 7);
+    assert_eq!(helpers.snapshot().counter_replays, 1);
+}
+
+#[test]
+fn publication_replays_when_line_or_progress_counters_overflow() {
+    for counter in ["lines", "progress_bytes", "progress_lines"] {
+        let registry = crate::rules::Registry::compile(
+            crate::config::parse(b"version: \"1\"\nrules: []").unwrap(),
+        )
+        .unwrap();
+        let context = RecordContext {
+            source_id: 1,
+            path: b"input.rs",
+            registry: &registry,
+        };
+        let mut result = super::PreparedBatch {
+            findings: Vec::new(),
+            delta: super::BatchDelta {
+                attempted_lines: 1,
+                completed_lines: 1,
+                bytes: 1,
+                suppressions: Suppressions::default(),
+            },
+            terminal: None,
+            replay: None,
+        };
+        let mut outcome = crate::scanner::ScanOutcome::default();
+        let mut progress = crate::scanner::chunk::ReadProgress::default();
+        match counter {
+            "lines" => outcome.stats.lines_scanned = u64::MAX,
+            "progress_bytes" => progress.bytes_read = u64::MAX,
+            "progress_lines" => progress.lines_scanned = u64::MAX,
+            _ => unreachable!(),
+        }
+        let collector = std::sync::Mutex::new(crate::scanner::engine::Collector::new(100));
+
+        let result = super::publish_batch(
+            &mut result,
+            super::LineBatch {
+                start: 0,
+                end: 1,
+                first_line: 1,
+                lines: 1,
+            },
+            context,
+            Limits {
+                line_bytes: usize::MAX,
+                findings: 100,
+            },
+            &mut progress,
+            &mut outcome,
+            &collector,
+            None,
+        );
+
+        assert_eq!(result, Ok(Some(super::ReplayReason::Counter)));
+    }
+}
+
+#[test]
+fn preparing_one_record_at_the_max_line_number_does_not_overflow() {
+    let context = RecordContext {
+        source_id: 1,
+        path: b"input.rs",
+        registry: &crate::rules::BUILTINS,
+    };
+    let mut scratch = super::HelperScratch {
+        histogram: Histogram::new(),
+        result: super::PreparedBatch {
+            findings: Vec::new(),
+            delta: super::BatchDelta::default(),
+            terminal: None,
+            replay: None,
+        },
+    };
+
+    super::prepare_batch(
+        b"clean\n",
+        super::LineBatch {
+            start: 0,
+            end: 6,
+            first_line: u64::MAX,
+            lines: 1,
+        },
+        context,
+        Limits {
+            line_bytes: usize::MAX,
+            findings: 100,
+        },
+        BATCH_LIMITS,
+        &mut scratch,
+    );
+
+    assert_eq!(scratch.result.terminal, None);
+    assert_eq!(scratch.result.delta.completed_lines, 1);
+    assert_eq!(scratch.result.delta.bytes, 6);
+}
+
+#[test]
+fn preparing_a_second_record_after_the_max_line_number_is_terminal() {
+    let mut scratch = super::HelperScratch {
+        histogram: Histogram::new(),
+        result: super::PreparedBatch {
+            findings: Vec::new(),
+            delta: super::BatchDelta::default(),
+            terminal: None,
+            replay: None,
+        },
+    };
+    super::prepare_batch(
+        b"clean\nnext\n",
+        super::LineBatch {
+            start: 0,
+            end: 11,
+            first_line: u64::MAX,
+            lines: 2,
+        },
+        RecordContext {
+            source_id: 1,
+            path: b"input.rs",
+            registry: &crate::rules::BUILTINS,
+        },
+        Limits {
+            line_bytes: usize::MAX,
+            findings: 100,
+        },
+        BATCH_LIMITS,
+        &mut scratch,
+    );
+
+    assert_eq!(
+        scratch.result.terminal,
+        Some(crate::scanner::ScanError::CounterOverflow)
+    );
+    assert_eq!(scratch.result.delta.completed_lines, 1);
+    assert_eq!(scratch.result.delta.bytes, 6);
+}
+
+#[test]
+fn executing_an_empty_wave_does_not_change_scan_progress() {
+    let registry = crate::rules::Registry::compile(
+        crate::config::parse(b"version: \"1\"\nrules: []").unwrap(),
+    )
+    .unwrap();
+    let plan = super::WavePlan {
+        batches: [super::LineBatch {
+            start: 0,
+            end: 0,
+            first_line: 0,
+            lines: 0,
+        }; 8],
+        len: 0,
+    };
+    let limits = BATCH_LIMITS;
+    let helpers = super::HelperPool::new(2, limits);
+    let mut progress = crate::scanner::chunk::ReadProgress::default();
+    let mut line = crate::scanner::stream::LineSession::new();
+    let mut outcome = crate::scanner::ScanOutcome::default();
+    let collector = std::sync::Mutex::new(crate::scanner::engine::Collector::new(100));
+
+    let result = super::execute_wave(
+        b"",
+        &plan,
+        RecordContext {
+            source_id: 1,
+            path: b"input.rs",
+            registry: &registry,
+        },
+        Limits {
+            line_bytes: usize::MAX,
+            findings: 100,
+        },
+        limits,
+        &helpers,
+        &mut progress,
+        &mut line,
+        &mut outcome,
+        &collector,
+        None,
+    );
+
+    assert_eq!(result, Ok(false));
+    assert_eq!(progress.bytes_read, 0);
+    assert_eq!(outcome.stats.lines_scanned, 0);
+    assert_eq!(helpers.snapshot().waves, 0);
+}
+
+#[test]
+fn serial_fallback_accounts_committed_bytes_before_a_later_record_error() {
+    let mut input = b"first\nclean\nghp_".to_vec();
+    input.resize(
+        input.len() + crate::rules::builtin::MAX_CANDIDATE_BYTES + 1,
+        b'A',
+    );
+    input.push(b'\n');
+    let split = b"first\n".len();
+    let batch_limits = BatchLimits {
+        target_bytes: 6,
+        hard_bytes: input.len(),
+        max_batches: 2,
+        max_findings: 128,
+    };
+    let empty_batch = super::LineBatch {
+        start: 0,
+        end: 0,
+        first_line: 0,
+        lines: 0,
+    };
+    let mut batches = [empty_batch; 8];
+    batches[0] = super::LineBatch {
+        start: 0,
+        end: split,
+        first_line: 1,
+        lines: 1,
+    };
+    batches[1] = super::LineBatch {
+        start: split,
+        end: input.len(),
+        first_line: 2,
+        lines: 2,
+    };
+    let plan = super::WavePlan { batches, len: 2 };
+    let helpers = super::HelperPool::new(1, batch_limits);
+    let mut progress = crate::scanner::chunk::ReadProgress::default();
+    let mut line = crate::scanner::stream::LineSession::new();
+    let mut outcome = crate::scanner::ScanOutcome::default();
+    let collector = std::sync::Mutex::new(crate::scanner::engine::Collector::new(100));
+    let result = super::execute_wave(
+        &input,
+        &plan,
+        RecordContext {
+            source_id: 1,
+            path: b"input.rs",
+            registry: &crate::rules::BUILTINS,
+        },
+        Limits {
+            line_bytes: usize::MAX,
+            findings: 100,
+        },
+        batch_limits,
+        &helpers,
+        &mut progress,
+        &mut line,
+        &mut outcome,
+        &collector,
+        None,
+    );
+
+    assert_eq!(result, Err(crate::scanner::ScanError::CandidateLimit));
+    assert_eq!(progress.bytes_read, (split + 6) as u64);
+    assert_eq!(outcome.stats.bytes_read, (split + 6) as u64);
+    assert_eq!(outcome.stats.lines_scanned, 3);
 }

@@ -113,3 +113,21 @@ fn custom_report_and_excluded_scope_propagate_every_output_error() {
             .contains("\nrayloc — EXCLUDED\n")
     );
 }
+
+#[test]
+fn report_preserves_exact_byte_counts_and_formats_large_counts() {
+    assert_eq!(format_number(999), "999");
+    assert_eq!(format_number(1_234), "1,234");
+    assert_eq!(format_number(1_234_567), "1,234,567");
+
+    let mut outcome = ScanOutcome::default();
+    outcome.stats.bytes_read = 1024 * 1024 * 1024;
+    outcome.stats.files_attempted = 1_234;
+    outcome.fail_at(ScanError::Read, Some("src/input.rs".into()));
+    let mut output = Vec::new();
+    render(&outcome, &mut output).unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert!(text.contains("1,234 file(s)"));
+    assert!(text.contains("1,073,741,824 byte(s) read"));
+    assert!(text.contains("Error: src/input.rs — cannot read selected source"));
+}

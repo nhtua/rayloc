@@ -23,10 +23,10 @@ import time
 
 
 SUMMARY = re.compile(
-    rb"(\d+) finding\(s\); (\d+) retained; (\d+) of (\d+) file\(s\) completed; "
-    rb"(\d+) line\(s\); (\d+) byte\(s\) read"
+    rb"([\d,]+) finding\(s\); ([\d,]+) retained; ([\d,]+) of ([\d,]+) file\(s\) completed; "
+    rb"([\d,]+) line\(s\); ([\d,]+) byte\(s\) read"
 )
-EXCLUDED = re.compile(rb"(\d+) file\(s\) excluded")
+EXCLUDED = re.compile(rb"([\d,]+) file\(s\) excluded")
 VALUE_MARKER = b"\nValue: "
 BLOCK = b"ordinary benchmark content\n"
 TOKEN = b"ghp_" + b"abcdefgh" + b"ijklmnop"
@@ -45,12 +45,14 @@ def parse_summary(report):
     excluded = EXCLUDED.search(report)
     if excluded is None:
         raise ValueError("scanner exclusion counter missing")
-    findings, _, completed, attempted, lines, byte_count = map(int, match.groups())
+    findings, _, completed, attempted, lines, byte_count = (
+        int(value.replace(b",", b"")) for value in match.groups()
+    )
     return {
         "findings": findings,
         "files_completed": completed,
         "files_attempted": attempted,
-        "files_excluded": int(excluded.group(1)),
+        "files_excluded": int(excluded.group(1).replace(b",", b"")),
         "lines_scanned": lines,
         "bytes_read": byte_count,
     }

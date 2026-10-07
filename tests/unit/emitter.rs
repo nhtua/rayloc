@@ -2,12 +2,28 @@ use std::io::Write;
 use std::thread;
 
 use crate::report::emitter::{
-    FindingMessage, SharedEmitter, TerminalEmitter, ThreadSafeWriter, channel_emitter,
+    FindingEmitter, FindingMessage, SharedEmitter, TerminalEmitter, ThreadSafeWriter,
+    channel_emitter,
 };
 use crate::rules::builtin::RuleId;
 use crate::scanner::fingerprint::FindingId;
 use crate::scanner::redaction::RedactedString;
 use crate::scanner::{Finding, ScanOutcome};
+use std::sync::{Arc, Mutex};
+
+#[derive(Clone)]
+struct Capture(Arc<Mutex<Vec<u8>>>);
+
+impl Write for Capture {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 fn make_finding(id: u32) -> Finding {
     Finding {
@@ -42,6 +58,21 @@ fn shared_emitter_clones_and_emits() {
 
     let outcome = make_outcome(1);
     cloned.finish_scan(&outcome);
+}
+
+#[test]
+fn terminal_emitter_reports_exact_byte_counts() {
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let emitter = TerminalEmitter::new(Capture(output.clone()));
+    let mut outcome = make_outcome(0);
+    outcome.stats.bytes_read = 16_384;
+    let mut emitter = emitter;
+    emitter.finish_scan(&outcome);
+    assert!(
+        String::from_utf8(output.lock().unwrap().clone())
+            .unwrap()
+            .contains("16,384 byte(s) read")
+    );
 }
 
 #[test]

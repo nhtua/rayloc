@@ -11,8 +11,15 @@ use super::record::{RecordContext, evaluate_record};
 use crate::report::emitter::SharedEmitter;
 use crate::rules::context::Suppressions;
 use crate::rules::entropy::Histogram;
+use rayon::prelude::*;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+
+fn saturating_increment(counter: &AtomicU64) {
+    let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+        Some(value.saturating_add(1))
+    });
+}
 
 /// Batch scheduling limits.
 #[derive(Clone, Copy)]
@@ -139,25 +146,12 @@ impl HelperPool {
     pub fn try_acquire(&self) -> Option<HelperLease<'_>> {
         let mut available = self.available.lock().expect("lock not poisoned");
         if available.is_empty() {
-            self.no_slot_fallbacks.fetch_add(1, Ordering::Relaxed);
+            saturating_increment(&self.no_slot_fallbacks);
             return None;
         }
         let scratch = available.pop().expect("slot exists");
         let in_use = self.in_use.fetch_add(1, Ordering::Relaxed) + 1;
-        // Update peak
-        loop {
-            let current = self.peak_slots.load(Ordering::Relaxed);
-            if in_use <= current {
-                break;
-            }
-            if self
-                .peak_slots
-                .compare_exchange_weak(current, in_use, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-            {
-                break;
-            }
-        }
+        self.peak_slots.fetch_max(in_use, Ordering::Relaxed);
         Some(HelperLease {
             pool: self,
             scratch: Some(scratch),
@@ -352,6 +346,10 @@ pub(super) fn prepare_batch(
     batch_limits: BatchLimits,
     scratch: &mut HelperScratch,
 ) {
+    scratch.result.findings.clear();
+    scratch.result.delta = BatchDelta::default();
+    scratch.result.terminal = None;
+    scratch.result.replay = None;
     let data = &bytes[batch.start..batch.end];
     let mut suppressions = Suppressions::default();
 
@@ -360,6 +358,8 @@ pub(super) fn prepare_batch(
     let mut pos = 0;
     let mut completed_lines = 0u64;
     let mut attempted_lines = 0u64;
+    let mut completed_bytes = 0u64;
+    let mut capacity_overflow = false;
 
     while pos < data.len() {
         attempted_lines += 1;
@@ -375,31 +375,41 @@ pub(super) fn prepare_batch(
                     &mut scratch.histogram,
                     &mut suppressions,
                     |finding| {
-                        scratch.result.findings.push(finding);
+                        if scratch.result.findings.len() == batch_limits.max_findings {
+                            capacity_overflow = true;
+                        } else {
+                            scratch.result.findings.push(finding);
+                        }
                     },
                 );
+                if capacity_overflow {
+                    scratch.result.findings.clear();
+                    scratch.result.replay = Some(ReplayReason::Capacity);
+                    break;
+                }
                 if let Err(error) = result {
                     scratch.result.terminal = Some(error);
                     break;
                 }
-                line_number += 1;
                 completed_lines += 1;
+                completed_bytes += line_end as u64 - pos as u64;
                 pos = line_end;
+                if pos < data.len() {
+                    let Some(next_line) = line_number.checked_add(1) else {
+                        scratch.result.terminal = Some(ScanError::CounterOverflow);
+                        break;
+                    };
+                    line_number = next_line;
+                }
             }
             None => break,
         }
     }
 
-    // Check for capacity overflow
-    if scratch.result.findings.len() > batch_limits.max_findings {
-        scratch.result.findings = Vec::new();
-        scratch.result.replay = Some(ReplayReason::Capacity);
-    }
-
     scratch.result.delta = BatchDelta {
         attempted_lines,
         completed_lines,
-        bytes: (batch.end - batch.start) as u64,
+        bytes: completed_bytes,
         suppressions,
     };
 }
@@ -411,7 +421,7 @@ pub(super) fn publish_batch(
     _batch: LineBatch,
     context: RecordContext<'_>,
     limits: Limits,
-    _progress: &mut super::chunk::ReadProgress,
+    progress: &mut super::chunk::ReadProgress,
     outcome: &mut super::ScanOutcome,
     collector: &std::sync::Mutex<super::engine::Collector>,
     emitter: Option<&SharedEmitter>,
@@ -424,20 +434,26 @@ pub(super) fn publish_batch(
     // Counter preflight: check if we can represent the line/byte increments
     let bytes_delta = result.delta.bytes;
     let lines_delta = result.delta.completed_lines;
+    let outcome_lines_delta = lines_delta
+        .checked_add(u64::from(result.terminal.is_some()))
+        .ok_or(ScanError::CounterOverflow)?;
 
     // Preflight: check counters can represent the increments
-    let new_bytes = outcome
-        .stats
-        .bytes_read
-        .checked_add(bytes_delta)
-        .ok_or(ScanError::CounterOverflow)?;
-    let new_lines = outcome
-        .stats
-        .lines_scanned
-        .checked_add(lines_delta)
-        .ok_or(ScanError::CounterOverflow)?;
+    let Some(new_bytes) = outcome.stats.bytes_read.checked_add(bytes_delta) else {
+        return Ok(Some(ReplayReason::Counter));
+    };
+    let Some(new_lines) = outcome.stats.lines_scanned.checked_add(outcome_lines_delta) else {
+        return Ok(Some(ReplayReason::Counter));
+    };
+    let Some(new_progress_bytes) = progress.bytes_read.checked_add(bytes_delta) else {
+        return Ok(Some(ReplayReason::Counter));
+    };
+    let Some(new_progress_lines) = progress.lines_scanned.checked_add(lines_delta) else {
+        return Ok(Some(ReplayReason::Counter));
+    };
 
-    // If we're here, counters are representable. Publish.
+    // If we're here, counters are representable. Publish before returning a
+    // terminal error so findings from earlier records remain visible.
     for finding in &result.findings {
         super::record::publish_finding(
             finding.clone(),
@@ -452,13 +468,19 @@ pub(super) fn publish_batch(
     // Update progress
     outcome.stats.bytes_read = new_bytes;
     outcome.stats.lines_scanned = new_lines;
+    progress.bytes_read = new_progress_bytes;
+    progress.lines_scanned = new_progress_lines;
+    super::engine::merge_suppressions(&mut outcome.stats.suppressions, &result.delta.suppressions)?;
 
     // Clear the result so it can be reused
     result.findings.clear();
-    result.terminal = None;
+    let terminal = result.terminal.take();
     result.replay = None;
     result.delta = BatchDelta::default();
 
+    if let Some(error) = terminal {
+        return Err(error);
+    }
     Ok(None)
 }
 
@@ -480,21 +502,9 @@ pub(super) fn execute_wave(
     if plan.len == 0 {
         return Ok(false);
     }
+    saturating_increment(&helpers.waves);
 
-    // Owner scans the first batch
     let owner_batch = plan.batches[0];
-    scan_serial_batch(
-        bytes,
-        owner_batch,
-        context,
-        limits,
-        progress,
-        line,
-        outcome,
-        collector,
-        emitter,
-    )?;
-
     // Try to lease helpers for remaining batches
     let num_remaining = plan.len - 1;
 
@@ -508,9 +518,29 @@ pub(super) fn execute_wave(
     }
 
     if leases.is_empty() {
-        // No helpers available, scan remaining serially
+        // No helpers available, scan every batch serially.
+        let bytes_before = progress.bytes_read;
+        let result = scan_serial_batch(
+            bytes,
+            owner_batch,
+            context,
+            limits,
+            progress,
+            line,
+            outcome,
+            collector,
+            emitter,
+        );
+        let committed_bytes = progress.bytes_read - bytes_before;
+        outcome.stats.bytes_read = outcome
+            .stats
+            .bytes_read
+            .checked_add(committed_bytes)
+            .ok_or(ScanError::CounterOverflow)?;
+        result?;
         for i in 1..plan.len {
-            scan_serial_batch(
+            let bytes_before = progress.bytes_read;
+            let result = scan_serial_batch(
                 bytes,
                 plan.batches[i],
                 context,
@@ -520,19 +550,63 @@ pub(super) fn execute_wave(
                 outcome,
                 collector,
                 emitter,
-            )?;
+            );
+            let committed_bytes = progress.bytes_read - bytes_before;
+            outcome.stats.bytes_read = outcome
+                .stats
+                .bytes_read
+                .checked_add(committed_bytes)
+                .ok_or(ScanError::CounterOverflow)?;
+            result?;
         }
         return Ok(false);
     }
 
-    // Spawn parallel preparation tasks
-    let mut prepared = Vec::new();
-    for (i, lease) in leases.into_iter().enumerate() {
-        let batch = plan.batches[i + 1];
-        let mut lease = lease;
-        let scratch = lease.scratch_mut();
-        prepare_batch(bytes, batch, context, limits, batch_limits, scratch);
-        prepared.push((batch, lease));
+    // Run the owner's first batch alongside helper preparation in the current
+    // Rayon pool. Indexed collection retains source order for publication.
+    let owner_bytes_before = progress.bytes_read;
+    let (owner_result, prepared): (Result<(), ScanError>, Vec<_>) = rayon::join(
+        || {
+            scan_serial_batch(
+                bytes,
+                owner_batch,
+                context,
+                limits,
+                progress,
+                line,
+                outcome,
+                collector,
+                emitter,
+            )
+        },
+        || {
+            leases
+                .into_par_iter()
+                .enumerate()
+                .map(|(i, mut lease)| {
+                    let batch = plan.batches[i + 1];
+                    prepare_batch(
+                        bytes,
+                        batch,
+                        context,
+                        limits,
+                        batch_limits,
+                        lease.scratch_mut(),
+                    );
+                    (batch, lease)
+                })
+                .collect()
+        },
+    );
+    let owner_bytes = progress.bytes_read - owner_bytes_before;
+    outcome.stats.bytes_read = outcome
+        .stats
+        .bytes_read
+        .checked_add(owner_bytes)
+        .ok_or(ScanError::CounterOverflow)?;
+    owner_result?;
+    for _ in 0..prepared.len() {
+        saturating_increment(&helpers.helper_batches);
     }
 
     // Publish in order
@@ -549,11 +623,14 @@ pub(super) fn execute_wave(
             emitter,
         ) {
             Ok(Some(ReplayReason::Capacity)) => {
+                saturating_increment(&helpers.capacity_replays);
                 capacity_replay = true;
                 // Drop remaining leases without publishing
                 break;
             }
             Ok(Some(ReplayReason::Counter)) => {
+                saturating_increment(&helpers.counter_replays);
+                capacity_replay = true;
                 break;
             }
             Ok(None) => {}

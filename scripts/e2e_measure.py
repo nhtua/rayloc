@@ -76,8 +76,8 @@ def measure(binary, arguments, directory, samples, findings, size, code=None):
             assert not diagnostics, 'unexpected scanner diagnostic'
             assert report.count(b'\nValue: ') == findings, 'benchmark omitted/added finding'
             if code != 2:
-                parsed = re.search(rb'; (\d+) byte\(s\) read', report)
-                assert parsed and int(parsed[1]) == size, 'benchmark omitted scope bytes'
+                parsed = re.search(rb'; ([\d,]+) byte\(s\) read', report)
+                assert parsed and int(parsed[1].replace(b',', b'')) == size, 'benchmark omitted scope bytes'
     result = dict(percentiles(times), samples=samples, findings=findings, bytes=size,
                   exit_code=code, peak_rss_kib=max(rss))
     result['MB_per_s'] = size / (result['median_ms'] * 1000) if size else None

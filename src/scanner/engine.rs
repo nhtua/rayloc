@@ -592,77 +592,240 @@ fn read_file_with_batches(
     collector: &Mutex<Collector>,
     emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
-    // Read entire file into buffer (for large files, use chunked reading in production)
-    let mut buffer = Vec::new();
-    let _ = reader.read_to_end(&mut buffer);
-
     let context = super::record::RecordContext {
         source_id,
         path,
         registry,
     };
-
-    let mut pos = 0;
-    let mut line_number = 1u64;
+    let mut helper_batches_enabled = true;
     let mut progress = super::chunk::ReadProgress::default();
     let mut line = super::stream::LineSession::new();
+    let mut partial_column = 1u64;
+    let mut partial_line = false;
+    let mut buffer = vec![0u8; READ_BUFFER_BYTES];
 
-    while pos < buffer.len() {
-        // Plan a wave
-        let max_batches = batch_limits.max_batches;
-        let plan = super::batch::plan_wave(&buffer[pos..], line_number, max_batches, batch_limits)?;
+    loop {
+        let length = loop {
+            match reader.read(&mut buffer) {
+                Ok(length) => break length,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => return Err(ScanError::Read),
+            }
+        };
 
-        if plan.len == 0 {
-            // No batches planned (e.g., single large line without LF).
-            // Fall back to serial processing for the remaining content.
-            let mut cursor = std::io::Cursor::new(&buffer[pos..]);
-            let result = read_records_into(
-                &mut cursor,
-                source_id,
-                path,
-                outcome,
+        if length == 0 {
+            if partial_line {
+                line.push(
+                    super::chunk::LineFragment {
+                        payload: &[],
+                        line: progress.lines_scanned + 1,
+                        column: partial_column,
+                        end: Some(super::chunk::LineEnd::Eof),
+                    },
+                    source_id,
+                    path,
+                    registry,
+                    outcome,
+                    collector,
+                    emitter,
+                    LIMITS,
+                )?;
+                progress.lines_scanned = progress
+                    .lines_scanned
+                    .checked_add(1)
+                    .ok_or(ScanError::CounterOverflow)?;
+            }
+            return Ok(());
+        }
+
+        let bytes = &buffer[..length];
+        let mut pos = 0;
+        if partial_line {
+            match bytes.iter().position(|&byte| byte == b'\n') {
+                Some(newline) => {
+                    line.push(
+                        super::chunk::LineFragment {
+                            payload: &bytes[..newline],
+                            line: progress.lines_scanned + 1,
+                            column: partial_column,
+                            end: Some(super::chunk::LineEnd::Lf),
+                        },
+                        source_id,
+                        path,
+                        registry,
+                        outcome,
+                        collector,
+                        emitter,
+                        LIMITS,
+                    )?;
+                    let committed =
+                        u64::try_from(newline + 1).map_err(|_| ScanError::CounterOverflow)?;
+                    progress.bytes_read = progress
+                        .bytes_read
+                        .checked_add(committed)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    progress.lines_scanned = progress
+                        .lines_scanned
+                        .checked_add(1)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    outcome.stats.bytes_read = outcome
+                        .stats
+                        .bytes_read
+                        .checked_add(committed)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    pos = newline + 1;
+                    partial_column = 1;
+                }
+                None => {
+                    line.push(
+                        super::chunk::LineFragment {
+                            payload: bytes,
+                            line: progress.lines_scanned + 1,
+                            column: partial_column,
+                            end: None,
+                        },
+                        source_id,
+                        path,
+                        registry,
+                        outcome,
+                        collector,
+                        emitter,
+                        LIMITS,
+                    )?;
+                    let count = u64::try_from(length).map_err(|_| ScanError::CounterOverflow)?;
+                    progress.bytes_read = progress
+                        .bytes_read
+                        .checked_add(count)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    outcome.stats.bytes_read = outcome
+                        .stats
+                        .bytes_read
+                        .checked_add(count)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    partial_column = super::chunk::next_column(partial_column, length)?;
+                    continue;
+                }
+            }
+        }
+        let complete_end = bytes
+            .iter()
+            .rposition(|&byte| byte == b'\n')
+            .map_or(0, |position| position + 1);
+        while pos < complete_end {
+            let first_line = progress.lines_scanned + 1;
+            let max_batches = if helper_batches_enabled {
+                batch_limits.max_batches
+            } else {
+                1
+            };
+            let plan = super::batch::plan_wave(
+                &bytes[pos..complete_end],
+                first_line,
+                max_batches,
+                batch_limits,
+            )?;
+
+            if plan.len == 0 {
+                // A complete record larger than the batch cap uses the
+                // established streaming line path without copying the file.
+                let line_end = bytes[pos..complete_end]
+                    .iter()
+                    .position(|&byte| byte == b'\n')
+                    .map(|offset| pos + offset + 1)
+                    .ok_or(ScanError::CounterOverflow)?;
+                let payload_end = line_end - 1;
+                line.push(
+                    super::chunk::LineFragment {
+                        payload: &bytes[pos..payload_end],
+                        line: first_line,
+                        column: 1,
+                        end: Some(super::chunk::LineEnd::Lf),
+                    },
+                    source_id,
+                    path,
+                    registry,
+                    outcome,
+                    collector,
+                    emitter,
+                    LIMITS,
+                )?;
+                let committed = (line_end - pos) as u64;
+                progress.bytes_read = progress
+                    .bytes_read
+                    .checked_add(committed)
+                    .ok_or(ScanError::CounterOverflow)?;
+                progress.lines_scanned = progress
+                    .lines_scanned
+                    .checked_add(1)
+                    .ok_or(ScanError::CounterOverflow)?;
+                outcome.stats.bytes_read = outcome
+                    .stats
+                    .bytes_read
+                    .checked_add(committed)
+                    .ok_or(ScanError::CounterOverflow)?;
+                pos = line_end;
+                continue;
+            }
+
+            let wave_start_bytes = progress.bytes_read;
+            let capacity_replay = super::batch::execute_wave(
+                &bytes[pos..complete_end],
+                &plan,
+                context,
                 LIMITS,
-                registry,
+                batch_limits,
+                helpers,
+                &mut progress,
                 &mut line,
-                &mut Histogram::new(),
+                outcome,
                 collector,
                 emitter,
-            );
-            return result;
+            )?;
+            if capacity_replay {
+                helper_batches_enabled = false;
+            }
+            let committed = progress.bytes_read - wave_start_bytes;
+            pos = pos
+                .checked_add(usize::try_from(committed).map_err(|_| ScanError::CounterOverflow)?)
+                .ok_or(ScanError::CounterOverflow)?;
         }
 
-        // Execute the wave
-        let capacity_replay = super::batch::execute_wave(
-            &buffer[pos..],
-            &plan,
-            context,
-            LIMITS,
-            batch_limits,
-            helpers,
-            &mut progress,
-            &mut line,
-            outcome,
-            collector,
-            emitter,
-        )?;
-
-        if capacity_replay {
-            // Disable helpers for this file after capacity replay
-            break;
-        }
-
-        // Advance position by the actual bytes processed
-        let bytes_processed = progress.bytes_read;
-        let lines_processed = progress.lines_scanned;
-        pos = pos.saturating_add(bytes_processed as usize);
-        line_number = line_number.saturating_add(lines_processed);
-
-        if pos >= buffer.len() {
-            break;
+        // Carry only a partial physical line across read windows. Its bytes
+        // are scanned incrementally and never retained in the batch buffer.
+        if complete_end < length {
+            let fragment = &bytes[complete_end..];
+            line.push(
+                super::chunk::LineFragment {
+                    payload: fragment,
+                    line: progress.lines_scanned + 1,
+                    column: partial_column,
+                    end: None,
+                },
+                source_id,
+                path,
+                registry,
+                outcome,
+                collector,
+                emitter,
+                LIMITS,
+            )?;
+            let count = u64::try_from(fragment.len()).map_err(|_| ScanError::CounterOverflow)?;
+            progress.bytes_read = progress
+                .bytes_read
+                .checked_add(count)
+                .ok_or(ScanError::CounterOverflow)?;
+            outcome.stats.bytes_read = outcome
+                .stats
+                .bytes_read
+                .checked_add(count)
+                .ok_or(ScanError::CounterOverflow)?;
+            partial_column = super::chunk::next_column(partial_column, fragment.len())?;
+            partial_line = true;
+        } else {
+            partial_column = 1;
+            partial_line = false;
         }
     }
-
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
