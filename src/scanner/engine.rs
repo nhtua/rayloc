@@ -1,9 +1,6 @@
 //! Bounded byte readers and one deterministic, globally capped collector.
 use super::{
-    Finding, ScanError, ScanOutcome, ScanStats,
-    binary::detect_binary,
-    fingerprint::FindingId,
-    redaction::{RedactedString, safe_label},
+    Finding, ScanError, ScanOutcome, ScanStats, binary::detect_binary, redaction::safe_label,
 };
 use crate::rules::{BUILTINS, Registry, entropy::Histogram};
 use std::{
@@ -19,6 +16,12 @@ pub const READ_BUFFER_BYTES: usize = 256 * 1024;
 /// Physical file lines without such a rule are streamed beyond this size.
 pub const MAX_LINE_BYTES: usize = 1024 * 1024;
 pub const MAX_FINDINGS: usize = 10_000;
+
+/// Options for parallel file scanning.
+#[derive(Clone, Copy)]
+pub struct FileScanOptions {
+    pub workers: usize,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Limits {
     pub(super) line_bytes: usize,
@@ -100,6 +103,110 @@ impl Worker {
             histogram: Histogram::new(),
         }
     }
+    /// Scan a file with optional parallel line batching.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn file_with_batches(
+        &mut self,
+        path: &Path,
+        label: &Path,
+        source_id: u32,
+        registry: &Registry,
+        helpers: &super::batch::HelperPool,
+        batch_limits: super::batch::BatchLimits,
+        collector: &Mutex<Collector>,
+        emitter: Option<&crate::report::emitter::SharedEmitter>,
+    ) -> super::batch::ScanRun {
+        let mut outcome = ScanOutcome::default();
+        outcome.stats.files_attempted = 1;
+        let label_string = label.to_string_lossy().into_owned();
+        let label_box: Box<str> = label_string.into();
+        match open_regular(path) {
+            Err(error) => {
+                outcome.fail_at(error, Some(label_box));
+                return super::batch::ScanRun {
+                    outcome,
+                    batching: helpers.snapshot(),
+                };
+            }
+            Ok(mut file) => {
+                // Binary file detection
+                let is_binary = match file.metadata() {
+                    Ok(metadata) => {
+                        let result = detect_binary(&mut file, metadata.len());
+                        if !result {
+                            let _ = file.seek(SeekFrom::Start(0));
+                        }
+                        result
+                    }
+                    Err(_) => false,
+                };
+                if is_binary {
+                    outcome.stats.files_excluded = 1;
+                    return super::batch::ScanRun {
+                        outcome,
+                        batching: helpers.snapshot(),
+                    };
+                }
+
+                // Check file size for batching eligibility
+                let file_size = match file.metadata() {
+                    Ok(meta) => meta.len(),
+                    Err(_) => 0,
+                };
+
+                let mut reader = BufferedFile {
+                    file,
+                    storage: &mut self.read,
+                    start: 0,
+                    end: 0,
+                };
+
+                if file_size >= super::batch::MIN_PARALLEL_FILE_BYTES {
+                    // Use parallel line batching
+                    let result = read_file_with_batches(
+                        &mut reader,
+                        source_id,
+                        label.as_os_str().as_encoded_bytes(),
+                        registry,
+                        helpers,
+                        batch_limits,
+                        &mut outcome,
+                        collector,
+                        emitter,
+                    );
+                    match result {
+                        Err(error) => outcome.fail_at(error, Some(label_box)),
+                        Ok(()) if outcome.errors.is_empty() => outcome.stats.files_completed = 1,
+                        Ok(()) => {}
+                    }
+                } else {
+                    // Serial scan for small files
+                    let result = read_records_into(
+                        &mut reader,
+                        source_id,
+                        label.as_os_str().as_encoded_bytes(),
+                        &mut outcome,
+                        LIMITS,
+                        registry,
+                        &mut self.line,
+                        &mut self.histogram,
+                        collector,
+                        emitter,
+                    );
+                    match result {
+                        Err(error) => outcome.fail_at(error, Some(label_box)),
+                        Ok(()) if outcome.errors.is_empty() => outcome.stats.files_completed = 1,
+                        Ok(()) => {}
+                    }
+                }
+            }
+        }
+        super::batch::ScanRun {
+            outcome,
+            batching: helpers.snapshot(),
+        }
+    }
+
     pub(super) fn file(
         &mut self,
         path: &Path,
@@ -209,22 +316,83 @@ pub fn scan_file_with_registry_and_emitter(
     registry: &Registry,
     emitter: Option<crate::report::emitter::SharedEmitter>,
 ) -> ScanOutcome {
-    let started = Instant::now();
-    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
-    let mut outcome = Worker::new().file(
+    scan_file_with_registry_and_options(
         path,
         label,
         source_id,
         registry,
-        &collector,
-        emitter.as_ref(),
-    );
+        FileScanOptions { workers: 1 },
+        emitter,
+    )
+    .outcome
+}
+
+pub fn scan_file_with_registry_and_options(
+    path: &Path,
+    label: &Path,
+    source_id: u32,
+    registry: &Registry,
+    options: FileScanOptions,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
+) -> super::batch::ScanRun {
+    let started = Instant::now();
+    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+    let workers = options.workers;
+    let result = if workers > 1 {
+        // Create Rayon pool and helper pool for parallel batching
+        match super::execution::build_pool(workers, |threads| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .map_err(|_| ())
+        }) {
+            Ok(pool) => {
+                let helpers = super::batch::HelperPool::new(workers, super::batch::BATCH_LIMITS);
+                let mut worker = Worker::new();
+                pool.install(|| {
+                    worker.file_with_batches(
+                        path,
+                        label,
+                        source_id,
+                        registry,
+                        &helpers,
+                        super::batch::BATCH_LIMITS,
+                        &collector,
+                        emitter.as_ref(),
+                    )
+                })
+            }
+            Err(error) => {
+                let mut outcome = ScanOutcome::default();
+                outcome.fail(error);
+                super::batch::ScanRun {
+                    outcome,
+                    batching: Default::default(),
+                }
+            }
+        }
+    } else {
+        let mut worker = Worker::new();
+        let outcome = worker.file(
+            path,
+            label,
+            source_id,
+            registry,
+            &collector,
+            emitter.as_ref(),
+        );
+        super::batch::ScanRun {
+            outcome,
+            batching: Default::default(),
+        }
+    };
+    let mut run = result;
     collector
         .into_inner()
         .expect("collector lock is not poisoned")
-        .finish(&mut outcome);
-    outcome.elapsed = started.elapsed();
-    outcome
+        .finish(&mut run.outcome);
+    run.outcome.elapsed = started.elapsed();
+    run
 }
 fn open_regular(path: &Path) -> Result<File, ScanError> {
     let metadata = fs::symlink_metadata(path).map_err(|_| ScanError::Open)?;
@@ -308,50 +476,27 @@ pub(super) fn detect_record(
     collector: &Mutex<Collector>,
     emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
+    use super::record::{RecordContext, evaluate_record, publish_finding};
     let mut suppressions = crate::rules::context::Suppressions::default();
-    let mut accepted = 0;
-    let result =
-        registry.detect_line_with_suppressions(line, histogram, &mut suppressions, |rule, span| {
-            let id = FindingId::new(path, &line[span.clone()]);
-            if registry.accepted.contains(&id) {
-                accepted += 1;
-                return;
-            }
-            if let Err(error) = add(&mut outcome.stats.findings_detected, 1) {
-                outcome.fail(error);
-                return;
-            }
-            if outcome.stats.findings_detected > limits.findings as u64 {
-                outcome.fail(ScanError::FindingLimit);
-            }
-            let finding = Finding {
-                source_id,
-                line: line_number,
-                start_column: span.start + 1,
-                end_column: span.end + 1,
-                rule,
-                value: RedactedString::new(&line[span]),
-                id,
-            };
-            let accepted = {
-                let mut c = collector.lock().expect("collector lock is not poisoned");
-                c.offer(finding.clone(), path)
-            };
-            // Emit after dropping collector lock
-            if accepted {
-                if let Some(em) = emitter {
-                    // Resolve source path for emission
-                    let source_path = collector
-                        .lock()
-                        .expect("collector lock not poisoned")
-                        .labels
-                        .get(&finding.source_id)
-                        .cloned();
-                    em.emit_finding(&finding, source_path.as_deref());
-                }
-            }
-        });
-    suppressions.accepted = accepted;
+    let ctx = RecordContext {
+        source_id,
+        path,
+        registry,
+    };
+    let mut findings = Vec::new();
+    let result = evaluate_record(
+        line,
+        line_number,
+        ctx,
+        histogram,
+        &mut suppressions,
+        |finding| {
+            findings.push(finding);
+        },
+    );
+    for finding in findings {
+        publish_finding(finding, path, outcome, limits, collector, emitter);
+    }
     merge_suppressions(&mut outcome.stats.suppressions, &suppressions)?;
     result
 }
@@ -434,6 +579,251 @@ fn scan_with_policy(
     outcome.elapsed = started.elapsed();
     outcome
 }
+/// Read and process a file using parallel line batch waves.
+#[allow(clippy::too_many_arguments)]
+fn read_file_with_batches(
+    reader: &mut dyn Read,
+    source_id: u32,
+    path: &[u8],
+    registry: &Registry,
+    helpers: &super::batch::HelperPool,
+    batch_limits: super::batch::BatchLimits,
+    outcome: &mut ScanOutcome,
+    collector: &Mutex<Collector>,
+    emitter: Option<&crate::report::emitter::SharedEmitter>,
+) -> Result<(), ScanError> {
+    let context = super::record::RecordContext {
+        source_id,
+        path,
+        registry,
+    };
+    let mut helper_batches_enabled = true;
+    let mut progress = super::chunk::ReadProgress::default();
+    let mut line = super::stream::LineSession::new();
+    let mut partial_column = 1u64;
+    let mut partial_line = false;
+    let mut buffer = vec![0u8; READ_BUFFER_BYTES];
+
+    loop {
+        let length = loop {
+            match reader.read(&mut buffer) {
+                Ok(length) => break length,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(_) => return Err(ScanError::Read),
+            }
+        };
+
+        if length == 0 {
+            if partial_line {
+                line.push(
+                    super::chunk::LineFragment {
+                        payload: &[],
+                        line: progress.lines_scanned + 1,
+                        column: partial_column,
+                        end: Some(super::chunk::LineEnd::Eof),
+                    },
+                    source_id,
+                    path,
+                    registry,
+                    outcome,
+                    collector,
+                    emitter,
+                    LIMITS,
+                )?;
+            }
+            return Ok(());
+        }
+
+        let bytes = &buffer[..length];
+        let mut pos = 0;
+        if partial_line {
+            match bytes.iter().position(|&byte| byte == b'\n') {
+                Some(newline) => {
+                    line.push(
+                        super::chunk::LineFragment {
+                            payload: &bytes[..newline],
+                            line: progress.lines_scanned + 1,
+                            column: partial_column,
+                            end: Some(super::chunk::LineEnd::Lf),
+                        },
+                        source_id,
+                        path,
+                        registry,
+                        outcome,
+                        collector,
+                        emitter,
+                        LIMITS,
+                    )?;
+                    let committed =
+                        u64::try_from(newline + 1).map_err(|_| ScanError::CounterOverflow)?;
+                    progress.bytes_read = progress
+                        .bytes_read
+                        .checked_add(committed)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    progress.lines_scanned = progress
+                        .lines_scanned
+                        .checked_add(1)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    outcome.stats.bytes_read = outcome
+                        .stats
+                        .bytes_read
+                        .checked_add(committed)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    pos = newline + 1;
+                    partial_column = 1;
+                }
+                None => {
+                    line.push(
+                        super::chunk::LineFragment {
+                            payload: bytes,
+                            line: progress.lines_scanned + 1,
+                            column: partial_column,
+                            end: None,
+                        },
+                        source_id,
+                        path,
+                        registry,
+                        outcome,
+                        collector,
+                        emitter,
+                        LIMITS,
+                    )?;
+                    let count = u64::try_from(length).map_err(|_| ScanError::CounterOverflow)?;
+                    progress.bytes_read = progress
+                        .bytes_read
+                        .checked_add(count)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    outcome.stats.bytes_read = outcome
+                        .stats
+                        .bytes_read
+                        .checked_add(count)
+                        .ok_or(ScanError::CounterOverflow)?;
+                    partial_column = super::chunk::next_column(partial_column, length)?;
+                    continue;
+                }
+            }
+        }
+        let complete_end = bytes
+            .iter()
+            .rposition(|&byte| byte == b'\n')
+            .map_or(0, |position| position + 1);
+        while pos < complete_end {
+            let first_line = progress.lines_scanned + 1;
+            let max_batches = if helper_batches_enabled {
+                batch_limits.max_batches
+            } else {
+                1
+            };
+            let plan = super::batch::plan_wave(
+                &bytes[pos..complete_end],
+                first_line,
+                max_batches,
+                batch_limits,
+            )?;
+
+            if plan.len == 0 {
+                // A complete record larger than the batch cap uses the
+                // established streaming line path without copying the file.
+                let line_end = bytes[pos..complete_end]
+                    .iter()
+                    .position(|&byte| byte == b'\n')
+                    .map(|offset| pos + offset + 1)
+                    .ok_or(ScanError::CounterOverflow)?;
+                let payload_end = line_end - 1;
+                line.push(
+                    super::chunk::LineFragment {
+                        payload: &bytes[pos..payload_end],
+                        line: first_line,
+                        column: 1,
+                        end: Some(super::chunk::LineEnd::Lf),
+                    },
+                    source_id,
+                    path,
+                    registry,
+                    outcome,
+                    collector,
+                    emitter,
+                    LIMITS,
+                )?;
+                let committed = (line_end - pos) as u64;
+                progress.bytes_read = progress
+                    .bytes_read
+                    .checked_add(committed)
+                    .ok_or(ScanError::CounterOverflow)?;
+                progress.lines_scanned = progress
+                    .lines_scanned
+                    .checked_add(1)
+                    .ok_or(ScanError::CounterOverflow)?;
+                outcome.stats.bytes_read = outcome
+                    .stats
+                    .bytes_read
+                    .checked_add(committed)
+                    .ok_or(ScanError::CounterOverflow)?;
+                pos = line_end;
+                continue;
+            }
+
+            let wave_start_bytes = progress.bytes_read;
+            let capacity_replay = super::batch::execute_wave(
+                &bytes[pos..complete_end],
+                &plan,
+                context,
+                LIMITS,
+                batch_limits,
+                helpers,
+                &mut progress,
+                &mut line,
+                outcome,
+                collector,
+                emitter,
+            )?;
+            if capacity_replay {
+                helper_batches_enabled = false;
+            }
+            let committed = progress.bytes_read - wave_start_bytes;
+            pos = pos
+                .checked_add(usize::try_from(committed).map_err(|_| ScanError::CounterOverflow)?)
+                .ok_or(ScanError::CounterOverflow)?;
+        }
+
+        // Carry only a partial physical line across read windows. Its bytes
+        // are scanned incrementally and never retained in the batch buffer.
+        if complete_end < length {
+            let fragment = &bytes[complete_end..];
+            line.push(
+                super::chunk::LineFragment {
+                    payload: fragment,
+                    line: progress.lines_scanned + 1,
+                    column: partial_column,
+                    end: None,
+                },
+                source_id,
+                path,
+                registry,
+                outcome,
+                collector,
+                emitter,
+                LIMITS,
+            )?;
+            let count = u64::try_from(fragment.len()).map_err(|_| ScanError::CounterOverflow)?;
+            progress.bytes_read = progress
+                .bytes_read
+                .checked_add(count)
+                .ok_or(ScanError::CounterOverflow)?;
+            outcome.stats.bytes_read = outcome
+                .stats
+                .bytes_read
+                .checked_add(count)
+                .ok_or(ScanError::CounterOverflow)?;
+            partial_column = super::chunk::next_column(partial_column, fragment.len())?;
+            partial_line = true;
+        } else {
+            partial_column = 1;
+            partial_line = false;
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn read_records_into(
     reader: &mut dyn BufRead,

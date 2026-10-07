@@ -5,6 +5,22 @@ use std::io::{self, Write};
 
 use crate::scanner::ScanOutcome;
 
+/// Format a number with thousands separators.
+fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    let digits = s.chars().collect::<Vec<_>>();
+    let len = digits.len();
+
+    for (i, ch) in digits.iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(*ch);
+    }
+    result
+}
+
 /// Render an outcome without receiving raw source bytes, unsanitized paths, or
 /// child errors.
 pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
@@ -49,12 +65,12 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
     writeln!(
         output,
         "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} byte(s) read",
-        outcome.stats.findings_detected,
+        format_number(outcome.stats.findings_detected),
         outcome.findings.len(),
-        outcome.stats.files_completed,
-        outcome.stats.files_attempted,
-        outcome.stats.lines_scanned,
-        outcome.stats.bytes_read,
+        format_number(outcome.stats.files_completed),
+        format_number(outcome.stats.files_attempted),
+        format_number(outcome.stats.lines_scanned),
+        format_number(outcome.stats.bytes_read),
     )?;
     writeln!(output, "{} file(s) excluded", outcome.stats.files_excluded)?;
     let suppressed = &outcome.stats.suppressions;

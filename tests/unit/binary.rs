@@ -1,5 +1,22 @@
 use crate::scanner::binary::detect_binary;
-use std::io::Cursor;
+use std::io::{self, Cursor, Read};
+
+struct ReadFailure;
+impl Read for ReadFailure {
+    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::other("synthetic read failure"))
+    }
+}
+
+#[test]
+fn binary_probe_treats_read_failure_as_text() {
+    assert!(!detect_binary(&mut ReadFailure, 16));
+}
+
+#[test]
+fn binary_probe_treats_unexpected_eof_as_text() {
+    assert!(!detect_binary(&mut Cursor::new(Vec::<u8>::new()), 16));
+}
 
 #[test]
 fn detect_binary_identifies_text_file() {

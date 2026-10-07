@@ -142,6 +142,38 @@ fn callback_and_counter_errors_stop_before_claiming_a_line_end() {
 }
 
 #[test]
+fn eof_callback_error_does_not_commit_an_unterminated_line() {
+    let mut reader = Cursor::new(b"final".as_slice());
+    let mut progress = ReadProgress::default();
+    let mut observed = Vec::new();
+    assert_eq!(
+        chunk::visit_line_fragments(&mut reader, &mut progress, |fragment| {
+            observed.push((
+                fragment.payload.to_vec(),
+                fragment.line,
+                fragment.column,
+                fragment.end,
+            ));
+            if fragment.end == Some(LineEnd::Eof) {
+                Err(ScanError::CandidateLimit)
+            } else {
+                Ok(())
+            }
+        }),
+        Err(ScanError::CandidateLimit)
+    );
+    assert_eq!(
+        observed,
+        [
+            (b"final".to_vec(), 1, 1, None),
+            (Vec::new(), 1, 6, Some(LineEnd::Eof))
+        ]
+    );
+    assert_eq!(progress.bytes_read, 5);
+    assert_eq!(progress.lines_scanned, 0);
+}
+
+#[test]
 fn advancing_byte_columns_fails_on_overflow() {
     assert_eq!(
         chunk::next_column(u64::MAX, 1),

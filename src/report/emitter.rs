@@ -14,6 +14,22 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use crate::scanner::{Finding, ScanOutcome};
 
+/// Format a number with thousands separators.
+fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    let digits = s.chars().collect::<Vec<_>>();
+    let len = digits.len();
+
+    for (i, ch) in digits.iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(*ch);
+    }
+    result
+}
+
 /// Thread-safe wrapper that makes a `&mut dyn Write` Send.
 pub struct ThreadSafeWriter<'a> {
     inner: Mutex<&'a mut dyn Write>,
@@ -185,12 +201,12 @@ impl<W: Write + 'static> FindingEmitter for TerminalEmitter<W> {
         let _ = writeln!(
             self.output,
             "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} byte(s) read",
-            outcome.stats.findings_detected,
+            format_number(outcome.stats.findings_detected),
             outcome.findings.len(),
-            outcome.stats.files_completed,
-            outcome.stats.files_attempted,
-            outcome.stats.lines_scanned,
-            outcome.stats.bytes_read,
+            format_number(outcome.stats.files_completed),
+            format_number(outcome.stats.files_attempted),
+            format_number(outcome.stats.lines_scanned),
+            format_number(outcome.stats.bytes_read),
         );
         let _ = writeln!(
             self.output,

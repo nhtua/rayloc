@@ -1044,11 +1044,11 @@ fn slack_match(bytes: &[u8]) -> Result<Option<usize>, ScanError> {
     Ok((bytes.get(end) != Some(&b'/')).then_some(end))
 }
 
-fn llm_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, ScanError> {
-    llm_key_match_with_min(bytes, prefixes, 20)
+fn api_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Result<Option<usize>, ScanError> {
+    api_key_match_with_min(bytes, prefixes, 20)
 }
 
-fn llm_key_match_with_min(
+fn api_key_match_with_min(
     bytes: &[u8],
     prefixes: &[&[u8]],
     min_body_length: usize,
@@ -1066,7 +1066,30 @@ fn llm_key_match_with_min(
     if length > MAX_CANDIDATE_BYTES {
         return Err(ScanError::CandidateLimit);
     }
-    Ok((body_length >= min_body_length).then_some(length))
+    if body_length < min_body_length {
+        return Ok(None);
+    }
+    // For prefixes ending with underscore (e.g., hf_, gsk_), the body should not
+    // contain dots or multiple underscores. Dots indicate the match is part of a
+    // larger identifier (e.g., module.attr). A single underscore is allowed for
+    // separator formats like github_pat_xxx_yyy.
+    if prefix.ends_with(b"_") {
+        let body_bytes = &body[..body_length];
+        let underscore_count = body_bytes.iter().filter(|&&b| b == b'_').count();
+        if body_bytes.contains(&b'.') || underscore_count > 1 {
+            return Ok(None);
+        }
+    }
+    // Word boundary check: if the character after the match is an identifier
+    // character, the match is part of a larger identifier and should not be
+    // treated as a standalone secret.
+    if length < bytes.len() {
+        let next_byte = bytes[length];
+        if is_word(next_byte) || next_byte == b'-' || next_byte == b'.' || next_byte == b'_' {
+            return Ok(None);
+        }
+    }
+    Ok(Some(length))
 }
 
 fn sendgrid_match(bytes: &[u8]) -> Result<Option<usize>, ScanError> {
@@ -1347,7 +1370,7 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         if disabled.contains(&rule) {
             continue;
         }
-        if let Some(end) = llm_key_match(bytes, prefixes)? {
+        if let Some(end) = api_key_match(bytes, prefixes)? {
             return Ok(Some((rule, end)));
         }
     }
@@ -1490,7 +1513,7 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         if disabled.contains(&rule) {
             continue;
         }
-        if let Some(end) = llm_key_match_with_min(bytes, prefixes, body_min)? {
+        if let Some(end) = api_key_match_with_min(bytes, prefixes, body_min)? {
             return Ok(Some((rule, end)));
         }
     }

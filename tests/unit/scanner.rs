@@ -2,6 +2,43 @@ use super::*;
 use crate::scanner::SourceError;
 
 #[test]
+fn every_scan_error_has_a_safe_stable_display() {
+    let errors = [
+        ScanError::Open,
+        ScanError::NotRegularFile,
+        ScanError::Read,
+        ScanError::LineLimit,
+        ScanError::RuleWindowLimit,
+        ScanError::CandidateLimit,
+        ScanError::FindingLimit,
+        ScanError::CounterOverflow,
+        ScanError::Discovery,
+        ScanError::ScopeLimit,
+        ScanError::GitMetadata,
+        ScanError::Policy,
+        ScanError::NoGlobMatches,
+        ScanError::Pool,
+    ];
+    for error in errors {
+        let display = error.to_string();
+        assert!(!display.is_empty());
+        assert!(!display.contains("secret"));
+        assert!(std::error::Error::source(&error).is_none());
+    }
+}
+
+#[test]
+fn source_error_formats_with_and_without_a_path() {
+    let with_path = SourceError::new(ScanError::Read, Some("src/file.rs".into()));
+    let without_path = SourceError::new(ScanError::Read, None);
+    assert_eq!(
+        with_path.to_string(),
+        "src/file.rs — cannot read selected source"
+    );
+    assert_eq!(without_path.to_string(), "cannot read selected source");
+}
+
+#[test]
 fn outcomes_obey_exit_precedence_and_deduplicate_errors() {
     let mut outcome = ScanOutcome::default();
     assert_eq!(outcome.exit_code(), 0);
