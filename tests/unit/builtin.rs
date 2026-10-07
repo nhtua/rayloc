@@ -257,6 +257,255 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         RuleId::CloudflareKey,
         b"cfut_SyntheticCloudflareUserToken12345678".to_vec(),
     ));
+    // Phase 1: Cloud & Infrastructure
+    fixtures.push((
+        RuleId::DigitalOceanPat,
+        b"dop_v1_0123456701234567012345670123456701234567012345670123456701234567".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::DigitalOceanOauth,
+        b"doo_v1_0123456701234567012345670123456701234567012345670123456701234567".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::DigitalOceanRefresh,
+        b"dor_v1_0123456701234567012345670123456701234567012345670123456701234567".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::DockerSwarmJoin,
+        b"SWMTKN-1-abcdefghijABCDEFGHIJ1234567890abcdefghij-abcdefghijABCDEFGHIJklmn".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::DockerSwarmUnlock,
+        b"SWMKEY-1-abcdefghijABCDEFGHIJ1234567890abcdefghijABCDEFGHIJ".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::HerokuApiKey,
+        b"HRKU-AA012345678901234567890123456789012345678901234567890123456789".to_vec(),
+    ));
+    // Phase 1: Package Managers
+    fixtures.push((
+        RuleId::ClojarsToken,
+        b"CLOJARS_SyntheticClojarsToken1234567890abcdef1234567890ab".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::CratesioToken,
+        b"cratesio_SyntheticCratesioToken1234567890abcdef1234".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::PyPiToken,
+        b"pypi-AgEI_SyntheticPyPiToken1234567890abcdef1234567890".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::RubygemsApiKey,
+        b"rubygems_SyntheticRubygemsApiKey1234567890abcdef1234567890abcd".to_vec(),
+    ));
+    // Phase 1: Communication & Messaging
+    fixtures.push((
+        RuleId::SendgridApiKey,
+        b"SG.SyntheticSendGridApiKey1.SyntheticSendGridApiKey1234567890abcdefghij".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::SendinblueApiKey,
+        b"xkeysib-01234567890123456789012345678901234567890123456789012345678901234567890123456789a".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::SlackBotToken,
+        concat!(
+            "xoxb-",
+            "123456789012",
+            "-",
+            "123456789012",
+            "-",
+            "abcdefghijABCDEFGH1234"
+        )
+        .as_bytes()
+        .to_vec(),
+    ));
+    fixtures.push((
+        RuleId::SlackUserToken,
+        concat!(
+            "xoxp-",
+            "123456789012",
+            "-",
+            "123456789012",
+            "-",
+            "abcdefgh"
+        )
+        .as_bytes()
+        .to_vec(),
+    ));
+    fixtures.push((
+        RuleId::SlackWorkspaceToken,
+        concat!(
+            "xoxa-",
+            "123456789012",
+            "-",
+            "123456789012",
+            "-",
+            "abcdefgh"
+        )
+        .as_bytes()
+        .to_vec(),
+    ));
+    fixtures.push((
+        RuleId::SlackRefreshToken,
+        concat!(
+            "xoxr-",
+            "123456789012",
+            "-",
+            "123456789012",
+            "-",
+            "abcdefgh"
+        )
+        .as_bytes()
+        .to_vec(),
+    ));
+    // Phase 1: Databases & Storage
+    fixtures.push((
+        RuleId::TwilioAccountSid,
+        concat!("AC", "1234567890abcdef", "1234567890abcdef")
+            .as_bytes()
+            .to_vec(),
+    ));
+    fixtures.push((
+        RuleId::TwilioApiKey,
+        concat!("SK", "1234567890abcdef", "1234567890abcdef")
+            .as_bytes()
+            .to_vec(),
+    ));
+    // Phase 1: SaaS & Dev Tools
+    fixtures.push((
+        RuleId::SentryOrgToken,
+        b"sntrys_SyntheticSentryOrgToken1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabCicdJobToken,
+        b"glcbt-A_SyntheticGitlabCicd123456".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabDeployToken,
+        b"gldt-SyntheticGitlabDeployToken12".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabFeatureFlagToken,
+        b"glffct-SyntheticGitlabFeatureFlag1".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabPersonalAccessToken,
+        b"glpat-SyntheticGitlabPAT12345678901".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::Auth0ManagementToken,
+        b"ua2_SyntheticAuth0ManagementToken123456789ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::OktaAccessToken,
+        b"00aS1SyntheticOktaAccessToken123456.okta.com".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::NotionApiKey,
+        b"nt_SyntheticNotionApiKey1234567890123456".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::LinearApiKey,
+        b"lin_api_SyntheticLinearApiKey1234567890ABC".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::FigmaToken,
+        b"figt_SyntheticFigmaToken1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::SquareAccessToken,
+        b"sq0atp-SyntheticSquareAccessToken12".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::ShopifyAccessToken,
+        b"shpat_SyntheticShopifyAccessToken123456".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::ShopifyCustomToken,
+        b"shpcc_SyntheticShopifyCustomToken123456".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::ShopifySharedSecret,
+        b"shpss_SyntheticShopifySharedSecret12345".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::ShopifyAppPassword,
+        b"shppa_SyntheticShopifyAppPassword123456".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::StripePaymentIntent,
+        b"pi_live_secret_SyntheticStripePaymentIntent1".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::StripeAccessToken,
+        b"sk_prod_SyntheticStripeAccessToken123456789".to_vec(),
+    ));
+    // Phase 1: AI / ML Providers
+    fixtures.push((
+        RuleId::MistralKey,
+        b"mv4-SyntheticMistralApiKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::CerebrasKey,
+        b"csk_SyntheticCerebrasApiKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::TogetheraiKey,
+        b"tgn-SyntheticTogetheraiApiKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::FireworksAiKey,
+        b"fw_SyntheticFireworksAiKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::StabilityAiKey,
+        b"sk-stability-SyntheticStabilityAiKey1234567890".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::DeepgramKey,
+        b"dg_SyntheticDeepgramApiKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::TelegramBotToken,
+        b"123456789:AABBCCDDEE11223344556677889900aAbbccdd".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::RazorpayKey,
+        b"rzp_SyntheticRazorpayKey1234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::FlutterwaveKey,
+        b"FLWSECK-1234567890abcdef1234567890abcdef".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::PlanetscalePassword,
+        b"pscale_password_SyntheticPlanetscalePassword1234567890abcdef".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::CloudinaryUrl,
+        b"cloudinary://apikey:apisecret1234567890abcdef@demo.cloudinary.com/abc".to_vec(),
+    ));
+    // Phase 3: URI-based rules
+    fixtures.push((
+        RuleId::MongodbUri,
+        b"mongodb://user:pass123@cluster.example.com/db".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::PostgresUri,
+        b"postgres://user:pass123@host/db".to_vec(),
+    ));
+    fixtures.push((RuleId::RedisUri, b"redis://user:pass123@host:6379".to_vec()));
+    fixtures.push((
+        RuleId::SqlserverUri,
+        b"sqlserver://user:pass123@host/db".to_vec(),
+    ));
+    fixtures.push((RuleId::MysqlUri, b"mysql://user:pass123@host/db".to_vec()));
+    fixtures.push((
+        RuleId::CockroachdbUri,
+        b"cockroachdb://user:pass123@host:26257/db".to_vec(),
+    ));
     for (rule, value) in fixtures {
         let input = [b"\0\xff value = \"".as_slice(), &value, b"\";\r"].concat();
         let start = 12;
@@ -270,7 +519,7 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         assert!(!metadata.id.is_empty());
         assert!(!metadata.description.is_empty());
         assert!(metadata.reference.starts_with("https://"));
-        assert_eq!(metadata.reviewed_on, "2026-10-01");
+        assert_eq!(metadata.reviewed_on, "2026-10-06");
     }
 }
 
@@ -321,6 +570,63 @@ fn provider_negatives_and_boundaries_are_not_findings() {
         "vcp_short",
         "sb_secret_short",
         "cfut_short",
+        // Phase 1 negatives
+        "dop_v1_short",
+        "doo_v1_short",
+        "dor_v1_short",
+        "SWMTKN-short",
+        "SWMKEY-short",
+        "HRKU-short",
+        "CLOJARS_short",
+        "cratesio_short",
+        "cratesioplus_short",
+        "pypi-AgE-short",
+        "pypi-Agkv-short",
+        "rubygems_short",
+        "SG.short.short",
+        "xkeysib-short",
+        "xoxb-short",
+        "xoxp-short",
+        "xoxa-short",
+        "xoxr-short",
+        "AC_short",
+        "SK_short",
+        "sntrys_short",
+        "glcbt_short",
+        "gldt_short",
+        "glffct_short",
+        "glpat-short",
+        "ua2_short",
+        "00a-short",
+        "nt_short",
+        "lin_api_short",
+        "figt_short",
+        "fig-oauth-short",
+        "sq0atp-short",
+        "shpat_short",
+        "shpcc_short",
+        "shpss_short",
+        "shppa_short",
+        "pi_live_short",
+        "sk_prod_short",
+        "rk_prod_short",
+        "mv4-sh",
+        "csk-sh",
+        "tgn-sh",
+        "fw-sh",
+        "sk-stability-sh",
+        "dg-sh",
+        "123:Ab", // Telegram: too short body
+        "FLWSECK-short",
+        "FLWTESTCK-short",
+        "pscale_password_short",
+        "cloudinary://",                    // URI without credentials
+        "mongodb://cluster.example.com/db", // scheme without credentials
+        "postgres://host/db",
+        "redis://host:6379",
+        "sqlserver://host/db",
+        "mysql://host/db",
+        "cockroachdb://host/db",
     ] {
         assert!(
             matches(value.as_bytes()).is_empty(),
