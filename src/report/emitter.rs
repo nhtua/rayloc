@@ -14,6 +14,39 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use crate::scanner::{Finding, ScanOutcome};
 
+/// Format bytes to human-readable string (KB, MB, GB).
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Format a number with thousands separators.
+fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    let digits = s.chars().collect::<Vec<_>>();
+    let len = digits.len();
+
+    for (i, ch) in digits.iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(*ch);
+    }
+    result
+}
+
 /// Thread-safe wrapper that makes a `&mut dyn Write` Send.
 pub struct ThreadSafeWriter<'a> {
     inner: Mutex<&'a mut dyn Write>,
@@ -184,13 +217,13 @@ impl<W: Write + 'static> FindingEmitter for TerminalEmitter<W> {
         let _ = writeln!(self.output, "rayloc — {status}");
         let _ = writeln!(
             self.output,
-            "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} byte(s) read",
-            outcome.stats.findings_detected,
+            "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} read",
+            format_number(outcome.stats.findings_detected),
             outcome.findings.len(),
-            outcome.stats.files_completed,
-            outcome.stats.files_attempted,
-            outcome.stats.lines_scanned,
-            outcome.stats.bytes_read,
+            format_number(outcome.stats.files_completed),
+            format_number(outcome.stats.files_attempted),
+            format_number(outcome.stats.lines_scanned),
+            format_bytes(outcome.stats.bytes_read),
         );
         let _ = writeln!(
             self.output,
