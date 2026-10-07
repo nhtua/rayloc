@@ -1,9 +1,6 @@
 //! Bounded byte readers and one deterministic, globally capped collector.
 use super::{
-    Finding, ScanError, ScanOutcome, ScanStats,
-    binary::detect_binary,
-    fingerprint::FindingId,
-    redaction::{RedactedString, safe_label},
+    Finding, ScanError, ScanOutcome, ScanStats, binary::detect_binary, redaction::safe_label,
 };
 use crate::rules::{BUILTINS, Registry, entropy::Histogram};
 use std::{
@@ -308,50 +305,27 @@ pub(super) fn detect_record(
     collector: &Mutex<Collector>,
     emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
+    use super::record::{RecordContext, evaluate_record, publish_finding};
     let mut suppressions = crate::rules::context::Suppressions::default();
-    let mut accepted = 0;
-    let result =
-        registry.detect_line_with_suppressions(line, histogram, &mut suppressions, |rule, span| {
-            let id = FindingId::new(path, &line[span.clone()]);
-            if registry.accepted.contains(&id) {
-                accepted += 1;
-                return;
-            }
-            if let Err(error) = add(&mut outcome.stats.findings_detected, 1) {
-                outcome.fail(error);
-                return;
-            }
-            if outcome.stats.findings_detected > limits.findings as u64 {
-                outcome.fail(ScanError::FindingLimit);
-            }
-            let finding = Finding {
-                source_id,
-                line: line_number,
-                start_column: span.start + 1,
-                end_column: span.end + 1,
-                rule,
-                value: RedactedString::new(&line[span]),
-                id,
-            };
-            let accepted = {
-                let mut c = collector.lock().expect("collector lock is not poisoned");
-                c.offer(finding.clone(), path)
-            };
-            // Emit after dropping collector lock
-            if accepted {
-                if let Some(em) = emitter {
-                    // Resolve source path for emission
-                    let source_path = collector
-                        .lock()
-                        .expect("collector lock not poisoned")
-                        .labels
-                        .get(&finding.source_id)
-                        .cloned();
-                    em.emit_finding(&finding, source_path.as_deref());
-                }
-            }
-        });
-    suppressions.accepted = accepted;
+    let ctx = RecordContext {
+        source_id,
+        path,
+        registry,
+    };
+    let mut findings = Vec::new();
+    let result = evaluate_record(
+        line,
+        line_number,
+        ctx,
+        histogram,
+        &mut suppressions,
+        |finding| {
+            findings.push(finding);
+        },
+    );
+    for finding in findings {
+        publish_finding(finding, path, outcome, limits, collector, emitter);
+    }
     merge_suppressions(&mut outcome.stats.suppressions, &suppressions)?;
     result
 }

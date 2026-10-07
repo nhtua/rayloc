@@ -1,5 +1,7 @@
 use super::*;
 use crate::scanner::SourceError;
+use crate::scanner::fingerprint::FindingId;
+use crate::scanner::redaction::RedactedString;
 use std::{
     fs::OpenOptions,
     io::{BufReader, Cursor, Read, Write},

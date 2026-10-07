@@ -12,6 +12,7 @@ pub mod engine;
 pub(crate) mod execution;
 pub mod fingerprint;
 mod git;
+pub(crate) mod record;
 pub mod redaction;
 pub mod scope;
 pub mod staged;
@@ -22,6 +23,10 @@ pub mod worktree;
 #[cfg(test)]
 #[path = "../../tests/unit/chunk.rs"]
 mod chunk_tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/parallel_support.rs"]
+mod parallel_support;
 
 /// Errors contain fixed categories only, never paths, arguments, or source text.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
