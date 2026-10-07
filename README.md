@@ -13,7 +13,7 @@ The name comes from the Vietnamese *rây lọc*, a fine-mesh sieve used in the k
 to strain out the bits you don't want. rayloc does the same for your code: clean
 code passes through, while API keys, private keys and tokens get caught.
 
-- **Fast**: parallel scanning with regexes compiled once.
+- **Fast**: parallel scanning with regexes compiled once; lowest average scan time per MB among the other well-known scanners in our benchmark.
 - **Lightweight**: a 1 MB built binary and just 12 MB of memory, with 5–7× lower memory use than other well-known scanners.
 - **Built for Git**: scans staged changes, diffs against a ref, or whole directories.
 - **Never leaks what it finds**: values are always masked in the output.
