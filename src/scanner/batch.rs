@@ -192,14 +192,14 @@ pub struct HelperLease<'a> {
     scratch: Option<HelperScratch>,
 }
 
-impl<'a> HelperLease<'a> {
+impl HelperLease<'_> {
     /// Get mutable access to the scratch.
     pub fn scratch_mut(&mut self) -> &mut HelperScratch {
         self.scratch.as_mut().expect("lease has scratch")
     }
 }
 
-impl<'a> Drop for HelperLease<'a> {
+impl Drop for HelperLease<'_> {
     fn drop(&mut self) {
         if let Some(scratch) = self.scratch.take() {
             self.pool.release(scratch);

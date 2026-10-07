@@ -389,3 +389,82 @@ fn diagnostics_saturate_without_affecting_scan_results() {
     // Actual saturation testing would involve triggering many wave/helper events
     // and verifying the counters cap at u64::MAX
 }
+
+/// Helper pool metrics track concurrent usage.
+#[test]
+fn helper_pool_tracks_concurrent_usage() {
+    let helpers = super::HelperPool::new(4, BATCH_LIMITS);
+
+    // Acquire all slots
+    let mut leases = Vec::new();
+    for _ in 0..3 {
+        leases.push(helpers.try_acquire().unwrap());
+    }
+
+    // Peak should be 3
+    let metrics = helpers.snapshot();
+    assert_eq!(metrics.peak_slots, 3);
+
+    // Release all
+    leases.clear();
+
+    // Peak should still be 3
+    let metrics = helpers.snapshot();
+    assert_eq!(metrics.peak_slots, 3);
+}
+
+/// Lease scratch access works correctly.
+#[test]
+fn lease_scratch_access_works() {
+    let helpers = super::HelperPool::new(4, BATCH_LIMITS);
+    let mut lease = helpers.try_acquire().unwrap();
+    let scratch = lease.scratch_mut();
+    // Just verify we can access it
+    assert_eq!(scratch.result.findings.len(), 0);
+}
+
+/// Wave planning with multiple small batches.
+#[test]
+fn wave_planner_multiple_small_batches() {
+    let input = b"a\nb\nc\nd\ne\nf\ng\nh\n";
+    let limits = BatchLimits {
+        target_bytes: 4,
+        hard_bytes: 8,
+        max_batches: 8,
+        max_findings: 128,
+    };
+    let plan = plan_wave(input, 1, 8, limits).unwrap();
+    // Each line is 2 bytes, target is 4, so 2 lines per batch
+    assert_eq!(plan.len, 4);
+    for i in 0..plan.len {
+        assert_eq!(plan.batches[i].lines, 2);
+    }
+}
+
+/// Wave planning respects max_batches parameter.
+#[test]
+fn wave_planner_respects_max_batches() {
+    let input = b"a\nb\nc\nd\ne\nf\ng\nh\n";
+    let limits = BatchLimits {
+        target_bytes: 4,
+        hard_bytes: 8,
+        max_batches: 8,
+        max_findings: 128,
+    };
+    let plan = plan_wave(input, 1, 2, limits).unwrap();
+    assert_eq!(plan.len, 2);
+}
+
+/// Batch delta tracks attempted vs completed lines.
+#[test]
+fn batch_delta_tracks_lines() {
+    let delta = super::BatchDelta {
+        attempted_lines: 10,
+        completed_lines: 8,
+        bytes: 100,
+        suppressions: Suppressions::default(),
+    };
+    assert_eq!(delta.attempted_lines, 10);
+    assert_eq!(delta.completed_lines, 8);
+    assert_eq!(delta.bytes, 100);
+}
