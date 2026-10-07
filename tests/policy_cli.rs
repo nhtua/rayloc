@@ -34,8 +34,8 @@ fn explicit_file_detects_builtin_and_custom_without_metadata_leaks() {
     ] {
         assert!(!text.contains(private));
     }
-    assert!(text.contains("\ninput:2:6\n"));
-    assert!(text.contains("\ninput:3:1\n"));
+    assert!(text.contains("\nFile: input:2:6\n"));
+    assert!(text.contains("\nFile: input:3:1\n"));
     assert!(output.stderr.is_empty());
 }
 
