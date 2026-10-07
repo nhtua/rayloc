@@ -5,6 +5,7 @@ use std::{fmt, time::Duration};
 use crate::rules::builtin::RuleId;
 use redaction::RedactedString;
 
+pub(crate) mod batch;
 pub mod binary;
 pub(crate) mod chunk;
 pub mod diff;
