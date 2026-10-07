@@ -19,7 +19,7 @@ fn clean_findings_and_partial_reports_are_distinct_and_never_leak_values() {
     // Summary appears at the end after findings
     assert!(text.contains("\nrayloc — FINDINGS\n"));
     assert!(text.contains("2 finding(s); 2 retained; 1 of 1 file(s) completed"));
-    assert!(text.contains("source #7:1:1"));
+    assert!(text.contains("File: source #7:1:1"));
     assert!(text.contains("High; Medium confidence"));
     assert!(text.contains("Critical; Medium confidence"));
     assert_eq!(text.matches("Value: ").count(), 2);
@@ -31,7 +31,7 @@ fn clean_findings_and_partial_reports_are_distinct_and_never_leak_values() {
     let mut output = Vec::new();
     render(&outcome, &mut output).unwrap();
     let text = String::from_utf8(output).unwrap();
-    assert!(text.contains("\nsrc/app.rs:1:1\n"));
+    assert!(text.contains("\nFile: src/app.rs:1:1\n"));
     assert!(!text.contains("source #7"));
     outcome.fail(ScanError::Read);
     let mut output = Vec::new();
@@ -115,7 +115,7 @@ fn custom_report_and_excluded_scope_propagate_every_output_error() {
 }
 
 #[test]
-fn report_preserves_exact_byte_counts_and_formats_large_counts() {
+fn report_preserves_exact_counters_and_formats_large_byte_counts() {
     assert_eq!(format_number(999), "999");
     assert_eq!(format_number(1_234), "1,234");
     assert_eq!(format_number(1_234_567), "1,234,567");
@@ -128,6 +128,28 @@ fn report_preserves_exact_byte_counts_and_formats_large_counts() {
     render(&outcome, &mut output).unwrap();
     let text = String::from_utf8(output).unwrap();
     assert!(text.contains("1,234 file(s)"));
-    assert!(text.contains("1,073,741,824 byte(s) read"));
+    assert!(text.contains("1 GiB read"));
     assert!(text.contains("Error: src/input.rs — cannot read selected source"));
+}
+
+#[test]
+fn report_formats_byte_counts_in_binary_units() {
+    for (bytes, expected) in [
+        (999, "999 B read"),
+        (1_024, "1 KiB read"),
+        (1_572_864, "1.5 MiB read"),
+        (216_906_540, "206.86 MiB read"),
+        (1_073_741_824, "1 GiB read"),
+    ] {
+        let mut outcome = ScanOutcome::default();
+        outcome.stats.bytes_read = bytes;
+        let mut output = Vec::new();
+        render(&outcome, &mut output).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(
+            text.contains(expected),
+            "{bytes} bytes should render as {expected}"
+        );
+        assert!(!text.contains("byte(s) read"));
+    }
 }

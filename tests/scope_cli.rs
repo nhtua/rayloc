@@ -261,7 +261,12 @@ fn source_numbers_follow_raw_path_bytes_including_directory_separator() {
     assert_eq!(output.status.code(), Some(1));
     let text = text(&output);
     // .raylocignore is #1, a.txt #2, a/x #3, excluded a0 #4, z #5.
-    let positions = ["\na.txt:1:1\n", "\na/x:1:1\n", "\nz:1:1\n"].map(|s| text.find(s).unwrap());
+    let positions = [
+        "\nFile: a.txt:1:1\n",
+        "\nFile: a/x:1:1\n",
+        "\nFile: z:1:1\n",
+    ]
+    .map(|s| text.find(s).unwrap());
     assert!(positions[0] < positions[1] && positions[1] < positions[2]);
 }
 #[cfg(unix)]
@@ -302,9 +307,9 @@ fn newline_paths_and_duplicate_index_stages_keep_raw_order() {
     assert!(text(&out).contains("3 finding(s)"));
     // An unprintable path falls back to its source number.
     assert!(!text(&out).contains("a\nkey"));
-    assert!(text(&out).contains("\nsource #"));
-    assert!(text(&out).contains("\nconflict:1:1\n"));
-    assert!(text(&out).contains("\nzkey:1:1\n"));
+    assert!(text(&out).contains("\nFile: source #"));
+    assert!(text(&out).contains("\nFile: conflict:1:1\n"));
+    assert!(text(&out).contains("\nFile: zkey:1:1\n"));
 }
 #[test]
 fn internal_git_administration_is_excluded_during_recursive_discovery() {

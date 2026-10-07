@@ -150,11 +150,21 @@ impl SharedEmitter {
 /// Terminal output emitter that streams findings immediately.
 pub struct TerminalEmitter<W: Write + 'static> {
     output: W,
+    silent: bool,
 }
 
 impl<W: Write + 'static> TerminalEmitter<W> {
     pub fn new(output: W) -> Self {
-        Self { output }
+        Self {
+            output,
+            silent: false,
+        }
+    }
+
+    /// Suppress individual finding blocks while retaining the final summary.
+    pub fn with_silent(mut self, silent: bool) -> Self {
+        self.silent = silent;
+        self
     }
 }
 
@@ -164,14 +174,17 @@ impl<W: Write + 'static> FindingEmitter for TerminalEmitter<W> {
     }
 
     fn emit_finding(&mut self, finding: &Finding, source_path: Option<&str>) {
+        if self.silent {
+            return;
+        }
         let metadata = finding.rule.metadata();
         if let crate::rules::builtin::RuleId::Custom(index, _) = finding.rule {
             let _ = writeln!(self.output, "Custom rule #{index}");
         }
         if let Some(path) = source_path {
-            let _ = write!(self.output, "\n{path}");
+            let _ = write!(self.output, "\nFile: {path}");
         } else {
-            let _ = write!(self.output, "\nsource #{}", finding.source_id);
+            let _ = write!(self.output, "\nFile: source #{}", finding.source_id);
         }
         let _ = writeln!(
             self.output,
@@ -200,13 +213,13 @@ impl<W: Write + 'static> FindingEmitter for TerminalEmitter<W> {
         let _ = writeln!(self.output, "rayloc — {status}");
         let _ = writeln!(
             self.output,
-            "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} byte(s) read",
+            "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} read",
             format_number(outcome.stats.findings_detected),
             outcome.findings.len(),
             format_number(outcome.stats.files_completed),
             format_number(outcome.stats.files_attempted),
             format_number(outcome.stats.lines_scanned),
-            format_number(outcome.stats.bytes_read),
+            super::format_bytes(outcome.stats.bytes_read),
         );
         let _ = writeln!(
             self.output,

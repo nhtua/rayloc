@@ -72,7 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | sh
 
 | Variable             | Purpose                                  |
 | -------------------- | ---------------------------------------- |
-| `RAYLOC_VERSION`     | Pin a release, e.g. `2026.10.4`          |
+| `RAYLOC_VERSION`     | Pin a release, e.g. `2026.10.7`          |
 | `RAYLOC_INSTALL_DIR` | Install somewhere other than `~/.local/bin` |
 
 ### Prebuilt binaries
@@ -158,7 +158,7 @@ installed `rayloc`. Add this to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/nhtua/rayloc
-    rev: v2026.10.4
+    rev: v2026.10.7
     hooks:
       - id: rayloc-staged
 ```
@@ -176,16 +176,18 @@ pre-commit Rust backend.
 
 ## What it detects
 
-| Category          | Coverage                                                          |
-| ----------------- | ----------------------------------------------------------------- |
-| AWS               | Access key IDs and secret key assignments                         |
-| GitHub            | Opaque tokens (`ghp_`, `gho_`, `github_pat_`, …) and app forms    |
-| Stripe            | Secret and restricted keys                                        |
-| Slack             | Slack and GovSlack webhooks                                       |
-| Private keys      | PEM private-key markers                                           |
-| JWT / JOSE        | Compact tokens, checked for valid structure                       |
-| Generic secrets   | High-entropy values in assignments, and strong password literals of 8+ bytes |
-| Custom            | Your own regexes in [`.rayloc.yaml`](#configuration)              |
+| Category | Coverage |
+| --- | --- |
+| Cloud and infrastructure | AWS, Azure AD, Cloudflare, DigitalOcean, Docker Swarm, Heroku, Supabase, Vercel, Vultr |
+| AI providers and tooling | OpenAI, Anthropic, Google/Gemini, Groq, Hugging Face, Mistral, Perplexity, xAI, Alibaba Cloud, Baidu, Replicate, Weights & Biases, LangSmith, Voyage AI, Firecrawl, and other distinctive API keys |
+| Developer platforms and package registries | GitHub tokens and app credentials, GitLab, Sentry, Auth0, Okta, Notion, Linear, Figma, Shopify, Clojars, Crates.io, PyPI, RubyGems, and NuGet |
+| Communication and monitoring | Slack and GovSlack, Telegram bots, SendGrid, Brevo, Datadog, Grafana, New Relic, PagerDuty, Splunk, and Sumo Logic |
+| Payments and commerce | Stripe, Square, Twilio, Razorpay, Flutterwave, and Cloudinary URLs |
+| Database connection strings | MongoDB, PostgreSQL, Redis, SQL Server, MySQL, and CockroachDB URIs containing `user:password@` credentials |
+| Private keys | PEM private-key markers |
+| JWT / JOSE | Compact tokens, checked for valid structure |
+| Generic secrets | High-entropy values in assignments, and strong password literals of 8+ bytes |
+| Custom | Your own regexes in [`.rayloc.yaml`](#configuration) |
 
 A finding means a credential **may** be exposed. rayloc does not check whether it
 is still active.
@@ -293,30 +295,23 @@ length and still leaves a larger cutoff. See the
 
 ## Performance
 
-See the [measured release baseline](docs/research/release-baseline.md) for numbers
-and methodology. The [parallel scanning results](docs/research/parallel-scanning-results.md)
-record thread-scaling measurements and remaining limits. The
-[bounded chunk measurements](docs/research/byte-chunk-scanning-results.md)
-compare streamed minified lines with 1/5/10 MiB whole-line caps. On the held-out synthetic corpus, rayloc reaches 98% precision
-and recall. That corpus is too small to estimate a real-world false-positive rate.
-Staged scans under 5 ms and 500 MB/s per core are goals, not guarantees yet.
+### Performance comparison
 
-To compare directory-scan thread counts on your own machine, build the release
-binary and run the sequential, warm-cache measurement harness:
+Across 96 offline scans of eight repositories, `rayloc` had the lowest averages for the three measures below. Each scanner ran three times per repository, with equal weight given to each target. MB means 1,000,000 bytes.
 
-Directory and glob scans accept `--threads N` (1–64). If omitted, rayloc reads
-`RAYON_NUM_THREADS`, then falls back to at most eight available CPUs. Explicit
-files, staged scans and diff scans do not use this setting.
+| Measure | rayloc ⭐ | trufflehog | gitleaks | betterleaks |
+| --- | ---: | ---: | ---: | ---: |
+| Avg elapsed time per MB (s/MB) | 0.008240 (+88.36%) | 0.065088 (+8.05%) | 0.070790 (0%) | 0.008976 (+87.32%) |
+| Avg CPU time per MB (CPU s/MB) | 0.044926 (+91.56%) | 0.158976 (+70.14%) | 0.532378 (0%) | 0.064619 (+87.86%) |
+| Avg peak resident memory (MB) | 10.892 (+97.15%) | 382.050 (0%) | 121.009 (+68.33%) | 135.781 (+64.46%) |
 
-```sh
-cargo build --release --locked
-python3 scripts/parallel_measure.py --case 32_large --include-default \
-  --threads 1 2 8 16 32 --samples 15 --output target/parallel-scan.json
-```
+- **Elapsed time per MB** is GNU Time's wall time divided by each tool's reported processed MB. Smaller means less waiting per reported MB; the report also records whole-repository wall times.
+- **CPU time per MB** is GNU Time's user plus system CPU seconds divided by reported processed MB. Smaller means less measured CPU work per reported MB. This measures CPU cost, not parallel utilization or algorithm quality.
+- **Peak resident memory** is the average of each scan's maximum resident set size, converted to MB. It is an absolute memory measurement, not memory per processed MB; smaller means a lower resident memory footprint.
 
-The harness checks completed files, excluded files, scanned bytes, findings,
-exit status and credential redaction for every sample. See the [benchmark guide](benches/README.md)
-for fixture definitions and cache limitations.
+Each row's largest value is the `(0%)` baseline. `(+x%)` means x% lower than that value. GNU Time's CPU utilization percentage, retained in the detailed results, describes how many cores were busy on average. A higher percentage can indicate effective parallel processing when throughput improves and should not be read as a flaw.
+
+The normalized rows use each tool's own reported volume, which differs substantially between scanners. They do not establish equal scan coverage or detection accuracy. Whole-repository wall time measures how long users wait for a complete command: Betterleaks recorded the lowest mean time on five targets and rayloc on three. See the [full results and methodology](docs/research/speed-comparison.md) for the per-run data and these comparison limits.
 
 ## Contributing
 

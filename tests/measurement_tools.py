@@ -63,11 +63,15 @@ class MeasurementTests(unittest.TestCase):
         except FileNotFoundError:
             self.fail('parallel measurement harness missing')
         report = ('\nrayloc — FINDINGS\n1,234 finding(s); 2 retained; 3 of 3 file(s) completed; '
-                  '9 line(s); 12,345 byte(s) read\n0 file(s) excluded\n').encode()
+                  '9 line(s); 12.06 KiB read\n0 file(s) excluded\n').encode()
         self.assertEqual(measure.parse_summary(report), {
             'findings': 1234, 'files_completed': 3, 'files_attempted': 3,
-            'files_excluded': 0, 'lines_scanned': 9, 'bytes_read': 12345,
+            'files_excluded': 0, 'lines_scanned': 9, 'bytes_read': 12349,
+            'bytes_read_tolerance': 6,
         })
+        exact_report = report.replace(b'12.06 KiB read', b'12,345 byte(s) read')
+        self.assertEqual(measure.parse_summary(exact_report)['bytes_read'], 12345)
+        self.assertEqual(measure.parse_summary(exact_report)['bytes_read_tolerance'], 0)
         with self.assertRaises(ValueError):
             measure.parse_summary(b'not a rayloc report')
 
