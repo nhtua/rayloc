@@ -44,7 +44,7 @@ Python is not a rayloc runtime dependency. In a consumer repository, add
 ```yaml
 repos:
   - repo: https://github.com/nhtua/rayloc
-    rev: v2026.10.4  # a release tag or commit SHA
+    rev: v2026.10.7  # a release tag or commit SHA
     hooks:
       - id: rayloc-staged
 ```
