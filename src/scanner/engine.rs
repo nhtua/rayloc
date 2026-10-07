@@ -97,6 +97,110 @@ impl Worker {
             histogram: Histogram::new(),
         }
     }
+    /// Scan a file with optional parallel line batching.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn file_with_batches(
+        &mut self,
+        path: &Path,
+        label: &Path,
+        source_id: u32,
+        registry: &Registry,
+        helpers: &super::batch::HelperPool,
+        batch_limits: super::batch::BatchLimits,
+        collector: &Mutex<Collector>,
+        emitter: Option<&crate::report::emitter::SharedEmitter>,
+    ) -> super::batch::ScanRun {
+        let mut outcome = ScanOutcome::default();
+        outcome.stats.files_attempted = 1;
+        let label_string = label.to_string_lossy().into_owned();
+        let label_box: Box<str> = label_string.into();
+        match open_regular(path) {
+            Err(error) => {
+                outcome.fail_at(error, Some(label_box));
+                return super::batch::ScanRun {
+                    outcome,
+                    batching: helpers.snapshot(),
+                };
+            }
+            Ok(mut file) => {
+                // Binary file detection
+                let is_binary = match file.metadata() {
+                    Ok(metadata) => {
+                        let result = detect_binary(&mut file, metadata.len());
+                        if !result {
+                            let _ = file.seek(SeekFrom::Start(0));
+                        }
+                        result
+                    }
+                    Err(_) => false,
+                };
+                if is_binary {
+                    outcome.stats.files_excluded = 1;
+                    return super::batch::ScanRun {
+                        outcome,
+                        batching: helpers.snapshot(),
+                    };
+                }
+
+                // Check file size for batching eligibility
+                let file_size = match file.metadata() {
+                    Ok(meta) => meta.len(),
+                    Err(_) => 0,
+                };
+
+                let mut reader = BufferedFile {
+                    file,
+                    storage: &mut self.read,
+                    start: 0,
+                    end: 0,
+                };
+
+                if file_size >= super::batch::MIN_PARALLEL_FILE_BYTES {
+                    // Use parallel line batching
+                    let result = read_file_with_batches(
+                        &mut reader,
+                        source_id,
+                        label.as_os_str().as_encoded_bytes(),
+                        registry,
+                        helpers,
+                        batch_limits,
+                        &mut outcome,
+                        collector,
+                        emitter,
+                    );
+                    match result {
+                        Err(error) => outcome.fail_at(error, Some(label_box)),
+                        Ok(()) if outcome.errors.is_empty() => outcome.stats.files_completed = 1,
+                        Ok(()) => {}
+                    }
+                } else {
+                    // Serial scan for small files
+                    let result = read_records_into(
+                        &mut reader,
+                        source_id,
+                        label.as_os_str().as_encoded_bytes(),
+                        &mut outcome,
+                        LIMITS,
+                        registry,
+                        &mut self.line,
+                        &mut self.histogram,
+                        collector,
+                        emitter,
+                    );
+                    match result {
+                        Err(error) => outcome.fail_at(error, Some(label_box)),
+                        Ok(()) if outcome.errors.is_empty() => outcome.stats.files_completed = 1,
+                        Ok(()) => {}
+                    }
+                }
+            }
+        }
+        super::batch::ScanRun {
+            outcome,
+            batching: helpers.snapshot(),
+        }
+    }
+
     pub(super) fn file(
         &mut self,
         path: &Path,
@@ -408,6 +512,92 @@ fn scan_with_policy(
     outcome.elapsed = started.elapsed();
     outcome
 }
+/// Read and process a file using parallel line batch waves.
+#[allow(clippy::too_many_arguments)]
+fn read_file_with_batches(
+    reader: &mut dyn Read,
+    source_id: u32,
+    path: &[u8],
+    registry: &Registry,
+    helpers: &super::batch::HelperPool,
+    batch_limits: super::batch::BatchLimits,
+    outcome: &mut ScanOutcome,
+    collector: &Mutex<Collector>,
+    emitter: Option<&crate::report::emitter::SharedEmitter>,
+) -> Result<(), ScanError> {
+    // Read entire file into buffer (for large files, use chunked reading in production)
+    let mut buffer = Vec::new();
+    let _ = reader.read_to_end(&mut buffer);
+
+    let context = super::record::RecordContext {
+        source_id,
+        path,
+        registry,
+    };
+
+    let mut pos = 0;
+    let mut line_number = 1u64;
+    let mut progress = super::chunk::ReadProgress::default();
+    let mut line = super::stream::LineSession::new();
+
+    while pos < buffer.len() {
+        // Plan a wave
+        let max_batches = batch_limits.max_batches;
+        let plan = super::batch::plan_wave(&buffer[pos..], line_number, max_batches, batch_limits)?;
+
+        if plan.len == 0 {
+            // No batches planned (e.g., single large line without LF).
+            // Fall back to serial processing for the remaining content.
+            let mut cursor = std::io::Cursor::new(&buffer[pos..]);
+            let result = read_records_into(
+                &mut cursor,
+                source_id,
+                path,
+                outcome,
+                LIMITS,
+                registry,
+                &mut line,
+                &mut Histogram::new(),
+                collector,
+                emitter,
+            );
+            return result;
+        }
+
+        // Execute the wave
+        let capacity_replay = super::batch::execute_wave(
+            &buffer[pos..],
+            &plan,
+            context,
+            LIMITS,
+            batch_limits,
+            helpers,
+            &mut progress,
+            &mut line,
+            outcome,
+            collector,
+            emitter,
+        )?;
+
+        if capacity_replay {
+            // Disable helpers for this file after capacity replay
+            break;
+        }
+
+        // Advance position by the actual bytes processed
+        let bytes_processed = progress.bytes_read;
+        let lines_processed = progress.lines_scanned;
+        pos = pos.saturating_add(bytes_processed as usize);
+        line_number = line_number.saturating_add(lines_processed);
+
+        if pos >= buffer.len() {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn read_records_into(
     reader: &mut dyn BufRead,

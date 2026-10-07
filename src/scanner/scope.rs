@@ -120,6 +120,7 @@ struct Runner<'a> {
     limits: Limits,
     workers: Vec<Worker>,
     pool: Option<rayon::ThreadPool>,
+    helpers: Option<super::batch::HelperPool>,
     collector: Mutex<Collector>,
     emitter: Option<crate::report::emitter::SharedEmitter>,
     outcome: ScanOutcome,
@@ -232,6 +233,7 @@ fn scan_scope_with_emitter(
             limits,
             workers: vec![Worker::new()],
             pool: None,
+            helpers: None,
             collector,
             emitter,
             outcome: ScanOutcome::default(),
@@ -361,6 +363,11 @@ impl Runner<'_> {
             self.workers
                 .extend((1..self.options.workers).map(|_| Worker::new()));
             self.pool = Some(pool);
+            // Create shared helper pool for parallel line batching
+            self.helpers = Some(super::batch::HelperPool::new(
+                self.options.workers,
+                super::batch::BATCH_LIMITS,
+            ));
         }
         Ok(())
     }
@@ -575,22 +582,38 @@ impl Runner<'_> {
                 || estimated_bytes >= self.options.parallel_bytes_threshold);
         let results: Vec<_> = if parallel {
             let pool = self.pool.as_ref().expect("pool initialized with lanes");
+            let helpers = self.helpers.as_ref();
             super::execution::dynamic_claim(
                 pool,
                 &mut self.workers,
                 &self.batch,
                 |worker, item, outcome| {
-                    engine::merge(
-                        outcome,
-                        worker.file(
+                    // Use parallel line batching for eligible large files
+                    if let Some(helpers) = helpers {
+                        let run = worker.file_with_batches(
                             &item.path,
                             item.path.strip_prefix(&root.root).unwrap_or(&item.path),
                             item.source_id,
                             registry,
+                            helpers,
+                            super::batch::BATCH_LIMITS,
                             collector,
                             emitter,
-                        ),
-                    );
+                        );
+                        engine::merge(outcome, run.outcome);
+                    } else {
+                        engine::merge(
+                            outcome,
+                            worker.file(
+                                &item.path,
+                                item.path.strip_prefix(&root.root).unwrap_or(&item.path),
+                                item.source_id,
+                                registry,
+                                collector,
+                                emitter,
+                            ),
+                        );
+                    }
                 },
             )
         } else {

@@ -236,6 +236,7 @@ fn permission_failures_preserve_partial_findings_even_in_ignored_trees() {
 }
 fn runner(root: &ScopeRoot) -> Runner<'_> {
     Runner {
+        helpers: None,
         registry: &BUILTINS,
         exclusions: Exclusions::load(&root.root).unwrap(),
         root,
