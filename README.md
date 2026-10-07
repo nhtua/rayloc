@@ -14,6 +14,7 @@ to strain out the bits you don't want. rayloc does the same for your code: clean
 code passes through, while API keys, private keys and tokens get caught.
 
 - **Fast**: parallel scanning with regexes compiled once.
+- **Lightweight**: a 1 MB built binary and just 12 MB of memory, with 5–7× lower memory use than other well-known scanners.
 - **Built for Git**: scans staged changes, diffs against a ref, or whole directories.
 - **Never leaks what it finds**: values are always masked in the output.
 - **Single static binary**: no runtime and no network access.
