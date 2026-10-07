@@ -1070,11 +1070,13 @@ fn api_key_match_with_min(
         return Ok(None);
     }
     // For prefixes ending with underscore (e.g., hf_, gsk_), the body should not
-    // contain dots. Dots indicate the match is part of a larger identifier
-    // (e.g., module.attr) rather than a standalone API key.
+    // contain dots or multiple underscores. Dots indicate the match is part of a
+    // larger identifier (e.g., module.attr). A single underscore is allowed for
+    // separator formats like github_pat_xxx_yyy.
     if prefix.ends_with(b"_") {
         let body_bytes = &body[..body_length];
-        if body_bytes.contains(&b'.') {
+        let underscore_count = body_bytes.iter().filter(|&&b| b == b'_').count();
+        if body_bytes.contains(&b'.') || underscore_count > 1 {
             return Ok(None);
         }
     }
