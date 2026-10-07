@@ -52,7 +52,10 @@ class MeasurementTests(unittest.TestCase):
             fixture = measure.create_fixture(Path(directory), 'dense')
             result = measure.measure_once(ROOT / 'target/release/rayloc', fixture, 2, sink_delay_ms=1)
         self.assertEqual(result['findings'], 800)
-        self.assertEqual(result['bytes_read'], fixture['expected_bytes'])
+        self.assertLessEqual(
+            abs(result['bytes_read'] - fixture['expected_bytes']),
+            result['bytes_read_tolerance'],
+        )
         self.assertNotIn('report', result)
 
     def test_parallel_harness_extracts_only_safe_process_metrics(self):
@@ -107,6 +110,14 @@ class MeasurementTests(unittest.TestCase):
             result = measure.measure(ROOT / 'target/release/rayloc', ['scan', str(source)], Path(directory), 1, 0, 9)
         self.assertLess(result['peak_rss_kib'], 64 * 1024, "Python launcher allocations counted as scanner RSS")
         self.assertEqual(len(ballast), 96 * 1024 * 1024)
+
+    def test_e2e_measure_parses_human_readable_byte_counts(self):
+        spec = importlib.util.spec_from_file_location('measure', ROOT / 'scripts/e2e_measure.py')
+        measure = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(measure)
+        parsed, tolerance = measure.parse_read_bytes(b'; 12.06 KiB read')
+        self.assertEqual(parsed, 12349)
+        self.assertEqual(tolerance, 6)
 
 
 if __name__ == '__main__':
