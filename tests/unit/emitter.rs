@@ -61,7 +61,7 @@ fn shared_emitter_clones_and_emits() {
 }
 
 #[test]
-fn terminal_emitter_reports_exact_byte_counts() {
+fn terminal_emitter_reports_human_readable_byte_counts() {
     let output = Arc::new(Mutex::new(Vec::new()));
     let emitter = TerminalEmitter::new(Capture(output.clone()));
     let mut outcome = make_outcome(0);
@@ -71,8 +71,17 @@ fn terminal_emitter_reports_exact_byte_counts() {
     assert!(
         String::from_utf8(output.lock().unwrap().clone())
             .unwrap()
-            .contains("16,384 byte(s) read")
+            .contains("16 KiB read")
     );
+}
+
+#[test]
+fn terminal_emitter_formats_source_locations_consistently() {
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let mut emitter = TerminalEmitter::new(Capture(output.clone()));
+    emitter.emit_finding(&make_finding(1), Some("src/key.pem"));
+    let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+    assert!(text.contains("\nFile: src/key.pem:1:1\n"));
 }
 
 #[test]

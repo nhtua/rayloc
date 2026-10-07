@@ -35,6 +35,22 @@ def environment():
     return result
 
 
+def parse_read_bytes(report):
+    raw = re.search(rb'; ([\d,]+) byte\(s\) read', report)
+    if raw is not None:
+        return int(raw.group(1).replace(b',', b'')), 0
+
+    human = re.search(rb'; ([\d.]+) (B|KiB|MiB|GiB|TiB|PiB|EiB) read', report)
+    if human is None:
+        raise ValueError('benchmark omitted scope bytes')
+    value = float(human.group(1))
+    unit = human.group(2).decode('ascii')
+    power = 0 if unit == 'B' else ('KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB').index(unit) + 1
+    multiplier = 1024 ** power
+    tolerance = 0 if power == 0 else round(0.005 * multiplier) + 1
+    return round(value * multiplier), tolerance
+
+
 @cache
 def rss_launcher():
     temporary = tempfile.TemporaryDirectory(prefix='rayloc-rss-launcher-')
@@ -76,8 +92,8 @@ def measure(binary, arguments, directory, samples, findings, size, code=None):
             assert not diagnostics, 'unexpected scanner diagnostic'
             assert report.count(b'\nValue: ') == findings, 'benchmark omitted/added finding'
             if code != 2:
-                parsed = re.search(rb'; ([\d,]+) byte\(s\) read', report)
-                assert parsed and int(parsed[1].replace(b',', b'')) == size, 'benchmark omitted scope bytes'
+                parsed, tolerance = parse_read_bytes(report)
+                assert abs(parsed - size) <= tolerance, 'benchmark omitted scope bytes'
     result = dict(percentiles(times), samples=samples, findings=findings, bytes=size,
                   exit_code=code, peak_rss_kib=max(rss))
     result['MB_per_s'] = size / (result['median_ms'] * 1000) if size else None

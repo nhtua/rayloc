@@ -24,7 +24,7 @@ import time
 
 SUMMARY = re.compile(
     rb"([\d,]+) finding\(s\); ([\d,]+) retained; ([\d,]+) of ([\d,]+) file\(s\) completed; "
-    rb"([\d,]+) line\(s\); ([\d,]+) byte\(s\) read"
+    rb"([\d,]+) line\(s\); (?:(?P<raw>[\d,]+) byte\(s\)|(?P<value>[\d.]+) (?P<unit>B|KiB|MiB|GiB|TiB|PiB|EiB)) read"
 )
 EXCLUDED = re.compile(rb"([\d,]+) file\(s\) excluded")
 VALUE_MARKER = b"\nValue: "
@@ -45,9 +45,19 @@ def parse_summary(report):
     excluded = EXCLUDED.search(report)
     if excluded is None:
         raise ValueError("scanner exclusion counter missing")
-    findings, _, completed, attempted, lines, byte_count = (
-        int(value.replace(b",", b"")) for value in match.groups()
+    findings, _, completed, attempted, lines = (
+        int(value.replace(b",", b"")) for value in match.groups()[:5]
     )
+    raw_bytes = match.group("raw")
+    if raw_bytes is not None:
+        byte_count = int(raw_bytes.replace(b",", b""))
+        byte_tolerance = 0
+    else:
+        displayed_bytes = float(match.group("value"))
+        unit = match.group("unit").decode("ascii")
+        multiplier = 1024 ** (0 if unit == "B" else ("KiB", "MiB", "GiB", "TiB", "PiB", "EiB").index(unit) + 1)
+        byte_count = round(displayed_bytes * multiplier)
+        byte_tolerance = 0 if unit == "B" else round(0.005 * multiplier) + 1
     return {
         "findings": findings,
         "files_completed": completed,
@@ -55,6 +65,7 @@ def parse_summary(report):
         "files_excluded": int(excluded.group(1).replace(b",", b"")),
         "lines_scanned": lines,
         "bytes_read": byte_count,
+        "bytes_read_tolerance": byte_tolerance,
     }
 
 
@@ -236,7 +247,7 @@ def measure_once(binary, fixture, threads, sink_delay_ms=0):
         raise AssertionError(
             f"scanner exclusion count changed: {summary['files_excluded']} != {fixture['expected_excluded']}"
         )
-    if summary["bytes_read"] != fixture["expected_bytes"]:
+    if abs(summary["bytes_read"] - fixture["expected_bytes"]) > summary["bytes_read_tolerance"]:
         raise AssertionError("scanner byte count changed for the fixture")
     if any(needle in tails["stderr"] for needle in fixture["_needles"]):
         raise AssertionError("scanner wrote a complete fixture credential to stderr")

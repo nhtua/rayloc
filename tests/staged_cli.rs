@@ -149,9 +149,9 @@ fn attributes_nul_quoted_paths_and_symlink_text_remain_visible() {
     let text = check(scan(root, &[]), 1, 4);
     // Control characters withhold the path; printable paths are shown.
     assert!(!text.contains("quotes"));
-    assert!(text.contains("\nbinary:1:"), "{text}");
-    assert!(text.contains("\nspace b/name:1:"), "{text}");
-    assert!(text.contains("\nlink:1:"), "{text}");
+    assert!(text.contains("\nFile: binary:1:"), "{text}");
+    assert!(text.contains("\nFile: space b/name:1:"), "{text}");
+    assert!(text.contains("\nFile: link:1:"), "{text}");
 }
 #[test]
 fn rename_delete_mode_changes_and_type_changes_obey_added_lines() {

@@ -31,8 +31,8 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
             writeln!(output, "Custom rule #{index}")?;
         }
         match outcome.sources.get(&finding.source_id) {
-            Some(path) => write!(output, "\n{path}")?,
-            None => write!(output, "\nsource #{}", finding.source_id)?,
+            Some(path) => write!(output, "\nFile: {path}")?,
+            None => write!(output, "\nFile: source #{}", finding.source_id)?,
         }
         writeln!(
             output,
@@ -64,13 +64,13 @@ pub fn render(outcome: &ScanOutcome, output: &mut dyn Write) -> io::Result<()> {
     writeln!(output, "rayloc — {status}")?;
     writeln!(
         output,
-        "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} byte(s) read",
+        "{} finding(s); {} retained; {} of {} file(s) completed; {} line(s); {} read",
         format_number(outcome.stats.findings_detected),
         outcome.findings.len(),
         format_number(outcome.stats.files_completed),
         format_number(outcome.stats.files_attempted),
         format_number(outcome.stats.lines_scanned),
-        format_number(outcome.stats.bytes_read),
+        super::format_bytes(outcome.stats.bytes_read),
     )?;
     writeln!(output, "{} file(s) excluded", outcome.stats.files_excluded)?;
     let suppressed = &outcome.stats.suppressions;
