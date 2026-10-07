@@ -16,6 +16,12 @@ pub const READ_BUFFER_BYTES: usize = 256 * 1024;
 /// Physical file lines without such a rule are streamed beyond this size.
 pub const MAX_LINE_BYTES: usize = 1024 * 1024;
 pub const MAX_FINDINGS: usize = 10_000;
+
+/// Options for parallel file scanning.
+#[derive(Clone, Copy)]
+pub struct FileScanOptions {
+    pub workers: usize,
+}
 #[derive(Clone, Copy)]
 pub(super) struct Limits {
     pub(super) line_bytes: usize,
@@ -310,22 +316,83 @@ pub fn scan_file_with_registry_and_emitter(
     registry: &Registry,
     emitter: Option<crate::report::emitter::SharedEmitter>,
 ) -> ScanOutcome {
-    let started = Instant::now();
-    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
-    let mut outcome = Worker::new().file(
+    scan_file_with_registry_and_options(
         path,
         label,
         source_id,
         registry,
-        &collector,
-        emitter.as_ref(),
-    );
+        FileScanOptions { workers: 1 },
+        emitter,
+    )
+    .outcome
+}
+
+pub fn scan_file_with_registry_and_options(
+    path: &Path,
+    label: &Path,
+    source_id: u32,
+    registry: &Registry,
+    options: FileScanOptions,
+    emitter: Option<crate::report::emitter::SharedEmitter>,
+) -> super::batch::ScanRun {
+    let started = Instant::now();
+    let collector = Mutex::new(Collector::new(MAX_FINDINGS));
+    let workers = options.workers;
+    let result = if workers > 1 {
+        // Create Rayon pool and helper pool for parallel batching
+        match super::execution::build_pool(workers, |threads| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .map_err(|_| ())
+        }) {
+            Ok(pool) => {
+                let helpers = super::batch::HelperPool::new(workers, super::batch::BATCH_LIMITS);
+                let mut worker = Worker::new();
+                pool.install(|| {
+                    worker.file_with_batches(
+                        path,
+                        label,
+                        source_id,
+                        registry,
+                        &helpers,
+                        super::batch::BATCH_LIMITS,
+                        &collector,
+                        emitter.as_ref(),
+                    )
+                })
+            }
+            Err(error) => {
+                let mut outcome = ScanOutcome::default();
+                outcome.fail(error);
+                super::batch::ScanRun {
+                    outcome,
+                    batching: Default::default(),
+                }
+            }
+        }
+    } else {
+        let mut worker = Worker::new();
+        let outcome = worker.file(
+            path,
+            label,
+            source_id,
+            registry,
+            &collector,
+            emitter.as_ref(),
+        );
+        super::batch::ScanRun {
+            outcome,
+            batching: Default::default(),
+        }
+    };
+    let mut run = result;
     collector
         .into_inner()
         .expect("collector lock is not poisoned")
-        .finish(&mut outcome);
-    outcome.elapsed = started.elapsed();
-    outcome
+        .finish(&mut run.outcome);
+    run.outcome.elapsed = started.elapsed();
+    run
 }
 fn open_regular(path: &Path) -> Result<File, ScanError> {
     let metadata = fs::symlink_metadata(path).map_err(|_| ScanError::Open)?;

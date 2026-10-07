@@ -182,7 +182,7 @@ fn scan(
     if threads.is_some() && (staged || reference.is_some()) {
         return scan_error(
             errors,
-            "--threads is supported only for directory and glob scans",
+            "--threads is supported only for file, directory and glob scans",
         );
     }
     let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
@@ -226,13 +226,8 @@ fn scan(
         Ok(_) => return scan_error(errors, "selected path is not a regular file or directory"),
         Err(_) => return scan_error(errors, "cannot open selected file"),
     };
-    let workers = if metadata.is_file() {
-        if threads.is_some() {
-            return scan_error(
-                errors,
-                "--threads is supported only for directory and glob scans",
-            );
-        }
+    let workers = if metadata.is_file() && threads.is_none() {
+        // File scan without explicit --threads: use serial (1 worker)
         1
     } else {
         match crate::scanner::execution::resolve_threads(
@@ -274,13 +269,27 @@ fn scan(
         outcome
     } else if metadata.is_file() {
         let label = absolute.strip_prefix(&root.root).unwrap_or(&absolute);
-        crate::scanner::engine::scan_file_with_registry_and_emitter(
-            &absolute,
-            label,
-            1,
-            &registry,
-            Some(emitter.clone()),
-        )
+        // For single files, use file_with_batches for parallel line batching
+        // if workers > 1, otherwise use serial scan
+        if workers > 1 {
+            let run = crate::scanner::engine::scan_file_with_registry_and_options(
+                &absolute,
+                label,
+                1,
+                &registry,
+                crate::scanner::engine::FileScanOptions { workers },
+                Some(emitter.clone()),
+            );
+            run.outcome
+        } else {
+            crate::scanner::engine::scan_file_with_registry_and_emitter(
+                &absolute,
+                label,
+                1,
+                &registry,
+                Some(emitter.clone()),
+            )
+        }
     } else {
         let selected = if pattern.is_some() {
             root.root.as_path()

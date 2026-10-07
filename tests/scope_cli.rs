@@ -43,41 +43,48 @@ fn secret(root: &TempDir, path: &str) {
 }
 
 #[test]
-fn directory_thread_option_is_supported_but_file_scope_rejects_it() {
+fn thread_option_supported_for_file_and_directory_scans() {
     let root = TempDir::new();
     secret(&root, "nested/key");
-    let output = run(&root, &["scan", "--threads", "32", "."]);
+    // Directory scan with --threads
+    let output = run(&root, &["scan", "--threads", "2", "."]);
     assert_eq!(output.status.code(), Some(1));
     assert!(text(&output).contains("1 finding(s)"));
     assert!(!text(&output).contains("abcdefghijklmnop"));
 
+    // File scan with --threads (now supported)
     let output = run(&root, &["scan", "--threads", "2", "nested/key"]);
-    assert_eq!(output.status.code(), Some(2));
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("--threads is supported only for directory and glob scans")
-    );
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output).contains("1 finding(s)"));
+    assert!(!text(&output).contains("abcdefghijklmnop"));
 }
 
 #[test]
-fn thread_environment_only_applies_to_directory_scans_and_file_option_is_validated_early() {
+fn thread_environment_and_option_validation() {
     let root = TempDir::new();
     fs::write(root.path().join("input.txt"), "ordinary content\n").unwrap();
+    // File scan ignores RAYON_NUM_THREADS
     let output = run_with_threads_env(&root, &["scan", "input.txt"], Some("invalid"));
     assert_eq!(output.status.code(), Some(0));
 
+    // Directory scan validates RAYON_NUM_THREADS
     let output = run_with_threads_env(&root, &["scan", "."], Some("invalid"));
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("invalid scan thread count"));
     assert!(!String::from_utf8_lossy(&output.stderr).contains("invalid\""));
 
+    // --threads takes precedence over RAYON_NUM_THREADS for file scans
+    let output = run_with_threads_env(
+        &root,
+        &["scan", "--threads", "1", "input.txt"],
+        Some("invalid"),
+    );
+    assert_eq!(output.status.code(), Some(0));
+
+    // Excluded file with valid --threads
     fs::write(root.path().join(".raylocignore"), "input.txt\n").unwrap();
     let output = run(&root, &["scan", "--threads", "2", "input.txt"]);
-    assert_eq!(output.status.code(), Some(2));
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("--threads is supported only for directory and glob scans")
-    );
+    assert_eq!(output.status.code(), Some(0));
 }
 
 #[test]
