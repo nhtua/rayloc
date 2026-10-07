@@ -630,10 +630,6 @@ fn read_file_with_batches(
                     emitter,
                     LIMITS,
                 )?;
-                progress.lines_scanned = progress
-                    .lines_scanned
-                    .checked_add(1)
-                    .ok_or(ScanError::CounterOverflow)?;
             }
             return Ok(());
         }
