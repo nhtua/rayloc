@@ -75,7 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | sh
 
 | Variable             | Purpose                                  |
 | -------------------- | ---------------------------------------- |
-| `RAYLOC_VERSION`     | Pin a release, e.g. `2026.10.7`          |
+| `RAYLOC_VERSION`     | Pin a release, e.g. `v2026.10.8`         |
 | `RAYLOC_INSTALL_DIR` | Install somewhere other than `~/.local/bin` |
 
 ### Prebuilt binaries
@@ -161,7 +161,7 @@ installed `rayloc`. Add this to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/nhtua/rayloc
-    rev: v2026.10.7
+    rev: v2026.10.8
     hooks:
       - id: rayloc-staged
 ```
