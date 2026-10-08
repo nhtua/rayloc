@@ -43,6 +43,37 @@ template/heredoc syntax, arbitrary expressions, and language-aware escape decodi
 are not supported. Values/entropy use source bytes. No context state can cross
 files or noncontiguous diff additions.
 
+### Source-aware binding evidence (2026-10-08)
+
+For generic assignment detection only, named files ending in `.py`, `.pyi`, `.rs`,
+`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, or `.cts` (case-insensitive)
+receive a code grammar hint. Every other suffix and unnamed/pathless reader uses
+text grammar. A source path is not trusted as proof that content is safe.
+
+In code mode, a single `=` can associate a value, while `==` and `===` are
+classified as equality and remain eligible for concrete credential comparisons.
+`=>`, `::`, `:=`, and a colon label immediately following `?` are not
+associations. A qualified ASCII member/namespace expression is reference
+evidence only when unquoted and complete: supported separators are `.`, `?.`,
+`->`, and `::`. Bare names, malformed/partial expressions, and quoted values
+remain eligible. The grammar evidence is bounded to the candidate and local
+operator context; it performs no AST parsing, name resolution, or data flow.
+
+The existing strong field vocabulary is unchanged, including
+`allow_credentials`, password suffixes, and provider-specific fields. Only
+reference and non-binding expression evidence suppresses generic context
+findings. Provider signatures and custom rules remain independent; so do strong
+password assignments, unresolved opaque values, and literal eligibility.
+There are no test-path, dummy-value, or field-name exceptions. Intentional
+findings continue to use `rayloc:ignore` or `rayloc accept`.
+
+The console's `reference` count is a count of excluded strong-context candidates,
+not a count of files, source expressions, or findings. `placeholder`,
+`generic-filter`, and `checksum` counters also retain their documented candidate
+units; none proves a finding would otherwise have been emitted. The
+[precision results](builtin-detection-precision-results.md) report the labeled
+occurrence checks and performance gates.
+
 ## Scoped exclusions and counts
 
 Exact, case-insensitive password placeholders: `changeme`, `your_password`,

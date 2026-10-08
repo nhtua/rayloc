@@ -195,6 +195,16 @@ pre-commit Rust backend.
 A finding means a credential **may** be exposed. rayloc does not check whether it
 is still active.
 
+For supported code files (`.py`, `.pyi`, `.rs`, `.js`, `.jsx`, `.mjs`, `.cjs`,
+`.ts`, `.tsx`, `.mts`, `.cts`), the generic assignment detector uses bounded
+syntax evidence to avoid treating unquoted qualified member references or
+non-binding ternary labels as credential values. This does not exempt code from
+secret detection: quoted literals, concrete password comparisons, unresolved
+bare values, provider signatures, and custom rules remain eligible. Other file
+types and pathless readers retain text-style assignment handling. See the
+[precision design](docs/superpowers/specs/2026-10-08-builtin-detection-precision-design.md)
+and [measured results](docs/research/builtin-detection-precision-results.md).
+
 **Out of scope for v1:** passwords shorter than 8 bytes, archive contents, UTF-16
 files, obfuscated values and multi-line rules.
 

@@ -90,6 +90,9 @@ and staged workloads use the `max(0.5 ms, 5%)` p95 gate. Every case uses the
 corpus hashes, exact bytes/findings/exits, paired percentiles, ratios, hardware,
 and gate results. A scope mismatch, incomplete scan, leaked fixture, or
 unexpected diagnostic aborts the measurement instead of counting as speed.
+The reviewed 21-sample comparison, safe aggregate JSON, fixture hashes, and
+gate summary are recorded in the
+[builtin precision results](../docs/research/builtin-detection-precision-results.md).
 
 [Recorded baseline](../docs/research/release-baseline.md) contains measured results
 and regression policy. Under 5 ms startup-inclusive staged latency and

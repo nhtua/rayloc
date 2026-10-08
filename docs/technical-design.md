@@ -219,6 +219,37 @@ Use two generic branches:
   remain secrets; shorter literals/ambiguous expressions require custom rules
   or future calibrated handling.
 
+#### Bounded source syntax evidence
+
+Source syntax is a grammar hint for the generic context detector, selected once
+per named source by a case-insensitive suffix match on `.py`, `.pyi`, `.rs`,
+`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, or `.cts`. Unknown suffixes,
+configuration/text files, and pathless reader APIs use text syntax. This metadata
+does not affect provider signatures, custom rules, quote handling for concrete
+assignments, or generic/password eligibility requirements.
+
+The code hint classifies `=` as assignment only when it is not part of `==`,
+`===`, or `=>`; equality remains credential-relevant when a strong field is
+compared with a concrete literal. A `:` is treated as a pair delimiter except
+for ternary selector labels after `?`, `::`, and `:=`. Reference suppression
+requires a complete, unquoted, qualified ASCII identifier using `.`, `?.`,
+`->`, or `::`; quoted values and bare/unresolved identifiers remain eligible.
+Existing template/config reference forms keep their prior handling. Field
+evidence is still evaluated independently, including `allow_credentials` and
+all existing generic, password, AWS, authorization, and checksum fields.
+
+Only a positively classified code reference or non-binding expression is
+excluded from generic context evaluation. Opaque identifier-shaped values,
+weak password literals, unquoted configuration assignments in text files,
+quoted literals, provider matches, and custom-rule matches remain eligible.
+There are no file-name, test-directory, dummy-value, or field-name exemptions.
+Reviewed intentional findings use `rayloc:ignore` or `rayloc accept`; these
+existing controls do not change detector classification. The lexer is bounded
+and is not a language parser or symbol resolver. See the
+[precision design](superpowers/specs/2026-10-08-builtin-detection-precision-design.md)
+for scope and [the report](research/builtin-detection-precision-results.md)
+for measured accuracy and performance.
+
 Compute empirical byte-frequency Shannon entropy:
 
 ```text

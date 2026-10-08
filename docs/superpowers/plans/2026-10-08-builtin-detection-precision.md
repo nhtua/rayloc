@@ -246,14 +246,14 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/e2e_measure.py \
 ```
 
 - [x] Confirm all spec gates across 14 paired workloads: candidate median ratios are 0.176–1.010, all large fixed medians are within 3%, every startup/staged p95 increase is below 0.5 ms, and every RSS change is within `max(256 KiB, 1%)`. No gate required a repeat. The engine microbenchmark is 7.720 ms candidate vs 7.637 ms baseline median (1.011x), with 8.228 vs 8.172 ms p95. Full scope benchmark 4,096-file/16-KiB cases measure 2.655/1.354/0.363 s candidate and 2.677/1.372/0.373 s baseline at 1/2/8 workers. Record the complete safe aggregate in Task 6; these are warm-cache local measurements, not universal speed guarantees.
-- [ ] Commit as `perf: measure builtin precision without narrowing scan scope`.
+- [x] Commit as `perf: measure builtin precision without narrowing scan scope` (`9a2ce7c`).
 
 ### Task 6: Validate and document the completed change for approval
 
 **Files:** Modify `README.md`, `docs/research/p4-context-jose.md`, `docs/technical-design.md`, `docs/development-decisions.md`, `benches/README.md`; create `docs/research/builtin-detection-precision-results.md` and `docs/research/builtin-detection-precision-results.json` from reviewed aggregate evidence.
 
-- [ ] Document grammar hints rather than trusted code paths: exact suffixes, text/pathless fallback, non-binding ternary labels, retained credential comparisons, qualified-only/quote-sensitive references, unresolved bare values, unchanged strong fields including `allow_credentials`, literal/provider/custom criteria, and counter units. Document `rayloc:ignore`/`rayloc accept` with no new dummy/test exceptions and the corrected 95% lines/regions, 98% functions coverage gates. Keep provider-format and private-key-material work deferred.
-- [ ] Run all repository-required checks and the MSRV suite:
+- [x] Document grammar hints rather than trusted code paths: exact suffixes, text/pathless fallback, non-binding ternary labels, retained credential comparisons, qualified-only/quote-sensitive references, unresolved bare values, unchanged strong fields including `allow_credentials`, literal/provider/custom criteria, and counter units. Document `rayloc:ignore`/`rayloc accept` with no new dummy/test exceptions and the corrected 95% lines/regions, 98% functions coverage gates. Keep provider-format and private-key-material work deferred.
+- [x] Run all repository-required checks and the MSRV suite:
 
 ```sh
 cargo fmt --all -- --check
@@ -271,10 +271,17 @@ The user's corrected spec gates are 95% lines/regions and 98% functions, matchin
 do not exclude production functions to satisfy coverage. Run final benchmarks once for the final build;
 repeat only for new changes or unresolved performance concerns.
 
-- [ ] Re-run the accuracy checks against the reviewed candidate report with `--expected` and `--check`; confirm occurrence/recall/redaction gates. Record the final binary SHA and confirm it is the same binary measured for performance.
-- [ ] Use the candidate Rayloc to re-preview vLLM and the equivalent Paperclip relative glob; source review is now authorized. Compare source/input hashes and occurrence locations, not just totals. With unchanged policy/input, all 18 verified members plus the one environment-selector error should disappear and the 24 literal/provider/marker occurrences should remain. Investigate drift without adding dummy exceptions, auto-accepting findings, or modifying target files.
-- [ ] Produce safe results documenting changes, per-family/length/context confusion, occurrence counts, all performance/RSS gates, resource/error checks, and limitations. Do not commit raw preview output, positive values, or source excerpts. State whether any gate is unmet.
-- [ ] Commit documentation/results as `docs: record builtin detection precision and performance`.
+The `cargo coverage` alias returned `unrecognized subcommand llvm-cov` in this
+environment. Running its configured command directly with the same file
+exclusions and fail-under thresholds passed: 96.61% lines, 95.34% regions, and
+99.50% functions. `cargo fmt`, strict Clippy, `cargo test --all` (333 unit tests
+plus integration/doc suites), `cargo +1.85.0 test --locked --all`, `cargo bench`,
+and both Python test modules passed.
+
+- [x] Re-run the accuracy checks against the reviewed candidate report with `--expected` and `--check`; confirm occurrence/recall/redaction gates. Record the final binary SHA and confirm it is the same binary measured for performance.
+- [x] Use the candidate Rayloc to re-preview vLLM and the equivalent Paperclip relative glob; source review is now authorized. Compare source/input hashes and occurrence locations, not just totals. With unchanged policy/input, all 18 verified members plus the one environment-selector error should disappear and the 24 literal/provider/marker occurrences should remain. Investigate drift without adding dummy exceptions, auto-accepting findings, or modifying target files. The vLLM run removed all 8 baseline locations; Paperclip removed 11 and retained the other 24 exactly. Input identity hashes and the per-location deltas are recorded in the results report. Neither target repository's tracked files were modified.
+- [x] Produce safe results documenting changes, per-family/length/context confusion, occurrence counts, all performance/RSS gates, resource/error checks, and limitations. Do not commit raw preview output, positive values, or source excerpts. State whether any gate is unmet. None of the specified accuracy, performance, test, or production coverage gates is unmet.
+- [x] Commit documentation/results as `docs: record builtin detection precision and performance`.
 - [ ] Request review of the actual implementation and evidence before integration/release. Execution approval does not authorize publishing or merging.
 
 ## Plan review and execution boundary
