@@ -765,7 +765,31 @@ fn placeholder(value: &[u8], password: bool, aws: bool) -> bool {
             b"insert_token_here",
         ]
         .contains(&lower.as_slice())
+            || descriptive_api_key_placeholder(&lower)
     }
+}
+
+/// Anchored `your[-_](provider[-_])*api[-_]key([-_]here)?` placeholders.
+/// Require alphabetic words and one separator style; random tokens, suffixes,
+/// and concrete password literals must remain eligible for detection.
+fn descriptive_api_key_placeholder(value: &[u8]) -> bool {
+    let Some(rest) = value.strip_prefix(b"your") else {
+        return false;
+    };
+    let Some((&separator, body)) = rest.split_first() else {
+        return false;
+    };
+    if !matches!(separator, b'-' | b'_') {
+        return false;
+    }
+    let mut words = body.split(|&byte| byte == separator).rev();
+    let mut last = words.next();
+    if last == Some(b"here") {
+        last = words.next();
+    }
+    last == Some(b"key")
+        && words.next() == Some(b"api")
+        && words.all(|word| !word.is_empty() && word.iter().all(u8::is_ascii_lowercase))
 }
 fn sequential(value: &[u8]) -> bool {
     value.windows(2).all(|p| p[0] == p[1])

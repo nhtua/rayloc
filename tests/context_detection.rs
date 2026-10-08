@@ -4,6 +4,7 @@ use rayloc::{
     scanner::engine::scan_reader_with_registry,
 };
 use std::io::Cursor;
+mod support;
 fn rules(line: &[u8]) -> Vec<(&'static str, std::ops::Range<usize>)> {
     let registry = Registry::compile(Config::default()).unwrap();
     let mut matches = Vec::new();
@@ -65,6 +66,46 @@ fn contexts_support_short_random_hex_headers_json_and_escaped_quotes() {
         rules(b"aws_secret_access_key=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCD")[0].0,
         "aws-secret-access-key"
     );
+}
+
+#[test]
+fn documentation_api_key_placeholders_produce_a_clean_scan() {
+    let directory = support::TempDir::new();
+    let path = directory.path().join("demo.md");
+    std::fs::write(
+        &path,
+        "export HINDSIGHT_API_LLM_API_KEY=your-minimax-api-key\n\
+         export HINDSIGHT_API_LLM_API_KEY=your-atlascloud-api-key\n\
+         export HINDSIGHT_API_LLM_API_KEY=your-meta-model-api-key\n\
+         export HINDSIGHT_API_RERANKER_ALIBABA_API_KEY=your-dashscope-api-key\n\
+         api_key='your_meta_model_api_key'\n",
+    )
+    .unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(directory.path())
+        .arg("scan")
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("CLEAN"));
+    assert!(stdout.contains("placeholder=5"));
+}
+
+#[test]
+fn multiple_underscores_do_not_hide_context_secrets() {
+    for line in [
+        b"api_key=Q7v2_n9B4_x6M1z8K3".as_slice(),
+        b"api_key=your_Q7v2_n9B4_api_key",
+        b"password='your-meta-model-api-key'",
+    ] {
+        let outcome =
+            scan_reader_with_registry(&mut Cursor::new(line), 1, &rayloc::rules::BUILTINS);
+        assert_eq!(outcome.exit_code(), 1);
+        assert_eq!(outcome.findings.len(), 1);
+        assert_eq!(outcome.stats.suppressions.placeholder, 0);
+    }
 }
 #[test]
 fn inline_comments_suppress_only_their_physical_line() {

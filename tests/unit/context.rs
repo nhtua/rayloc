@@ -306,6 +306,69 @@ fn context_stream_placeholder_suppression() {
 }
 
 #[test]
+fn descriptive_api_key_placeholders_are_suppressed_at_every_input_split() {
+    let registry = &crate::rules::BUILTINS;
+    for line in [
+        b"export HINDSIGHT_API_LLM_API_KEY=your-minimax-api-key".as_slice(),
+        b"export HINDSIGHT_API_LLM_API_KEY=your-atlascloud-api-key",
+        b"export HINDSIGHT_API_LLM_API_KEY=your-meta-model-api-key",
+        b"export HINDSIGHT_API_RERANKER_ALIBABA_API_KEY=your-dashscope-api-key",
+        b"api_key='your_meta_model_api_key'",
+        b"api_key: \"YOUR_META_MODEL_API_KEY_HERE\"",
+        b"api_key=your-api-key",
+        b"api_key=your_api_key_here",
+    ] {
+        let mut counts = Suppressions::default();
+        detect(
+            line,
+            registry,
+            &mut Histogram::new(),
+            &mut counts,
+            |_, _| panic!("placeholder emitted"),
+        )
+        .unwrap();
+        assert_eq!(counts.placeholder, 1);
+        for split in 0..=line.len() {
+            let mut state = ContextState::new();
+            let mut counts = Suppressions::default();
+            let mut histogram = Histogram::new();
+            for fragment in [&line[..split], &line[split..]] {
+                state
+                    .push(fragment, registry, &mut histogram, &mut counts, |_| {
+                        panic!("streamed placeholder emitted at split {split}")
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, &mut histogram, &mut counts, |_| {
+                    panic!("streamed placeholder emitted at split {split}")
+                })
+                .unwrap();
+            assert_eq!(counts.placeholder, 1, "split {split}");
+        }
+    }
+}
+
+#[test]
+fn placeholder_patterns_do_not_hide_concrete_values_or_passwords() {
+    for value in [
+        b"Q7v2_n9B4_x6M1z8K3".as_slice(),
+        b"your_Q7v2_n9B4_api_key",
+        b"prefix_your_meta_model_api_key",
+        b"your_meta_model_api_key_suffix",
+        b"your__meta_api_key",
+        b"your-meta_model-api-key",
+        b"your-meta-model-api-key!",
+        b"your-meta-model-client-secret",
+        b"yourmeta-model-api-key",
+        b"your",
+    ] {
+        assert!(!placeholder(value, false, false));
+    }
+    assert!(!placeholder(b"your-meta-model-api-key", true, false));
+}
+
+#[test]
 fn context_stream_checksum_suppression() {
     // Test that checksums are suppressed
     let registry = Registry::compile(crate::config::Config::default()).unwrap();

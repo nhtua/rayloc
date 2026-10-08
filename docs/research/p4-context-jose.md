@@ -48,7 +48,13 @@ files or noncontiguous diff additions.
 Exact, case-insensitive password placeholders: `changeme`, `your_password`,
 `your-password`, `password_here`, `example_password`, `replace_me`. Exact generic
 placeholders: `your_api_key_here`, `your-api-key-here`, `replace_with_your_key`,
-`example_api_key`, `insert_token_here`. The published AWS secret-key example is an
+`example_api_key`, `insert_token_here`. Generic context also suppresses anchored,
+case-insensitive `your[-_](provider[-_])*api[-_]key([-_]here)?` placeholders,
+such as `your-meta-model-api-key` and `your_meta_model_api_key_here`. Provider
+words must be nonempty ASCII letters and use the same separator throughout;
+extra suffixes and arbitrary values containing multiple underscores remain
+eligible. This pattern does not suppress concrete password assignments,
+provider signatures, or custom rules. The published AWS secret-key example is an
 exact case-sensitive exclusion under the AWS context only. Ordinary concrete
 `password` literals, weak repeated passwords, and values containing `test`, `foo`
 or `EXAMPLE` remain eligible. Explicit custom rules have no implicit placeholder
