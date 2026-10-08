@@ -9,6 +9,8 @@ use regex::bytes::{Regex, RegexBuilder, RegexSet, RegexSetBuilder};
 use regex_syntax::hir::{Class, Hir, HirKind};
 use std::{ops::Range, sync::LazyLock};
 use stream::Candidate;
+pub(crate) mod assignment;
+pub use assignment::SourceSyntax;
 pub mod builtin;
 pub mod context;
 pub mod entropy;
