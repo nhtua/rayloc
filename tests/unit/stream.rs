@@ -321,6 +321,42 @@ fn line_session_with_long_jose_token_crossing_boundary() {
 }
 
 #[test]
+fn long_line_jose_token_is_emitted_when_stream_finishes() {
+    let mut line = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES];
+    line.extend_from_slice(
+        b" Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+    );
+    let outcome = scan_reader(&mut Cursor::new(line), 1);
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(
+        outcome
+            .findings
+            .iter()
+            .any(|finding| { finding.rule == crate::rules::builtin::RuleId::JoseToken }),
+        "reported rules: {:?}",
+        outcome
+            .findings
+            .iter()
+            .map(|finding| finding.rule)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn long_line_context_secret_is_emitted_from_streamed_fragments() {
+    let mut line = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES];
+    line.extend_from_slice(b" api_key=Q7v2n9B4x6M1z8K3");
+    let outcome = scan_reader(&mut Cursor::new(line), 1);
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(
+        outcome
+            .findings
+            .iter()
+            .any(|finding| finding.rule == crate::rules::builtin::RuleId::ContextSecret)
+    );
+}
+
+#[test]
 fn line_session_findings_are_published_after_line_end() {
     // Findings should not be published until the line is complete
     let mut line = vec![b'x'; 1024];
@@ -331,6 +367,67 @@ fn line_session_findings_are_published_after_line_end() {
     assert_eq!(outcome.exit_code(), 0);
     assert!(outcome.findings.is_empty());
     assert_eq!(outcome.stats.suppressions.inline, 1);
+}
+
+#[test]
+fn long_line_session_retains_full_value_for_unredacted_emitter() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut session = LineSession::new();
+    let mut outcome = ScanOutcome::default();
+    let collector = Mutex::new(Collector::new(100));
+    let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
+        crate::report::emitter::TerminalEmitter::new(Vec::new()).with_no_redact(true),
+    ));
+    let limits = Limits {
+        findings: 100,
+        line_bytes: usize::MAX,
+    };
+    let prefix = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES];
+    session
+        .push(
+            LineFragment {
+                payload: &prefix,
+                line: 1,
+                column: 1,
+                end: None,
+            },
+            1,
+            b"secret.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            Some(&emitter),
+            limits,
+        )
+        .unwrap();
+    let secret = b" ghp_abcdefghijklmnop";
+    session
+        .push(
+            LineFragment {
+                payload: secret,
+                line: 1,
+                column: (prefix.len() + 1) as u64,
+                end: Some(crate::scanner::chunk::LineEnd::Lf),
+            },
+            1,
+            b"secret.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            Some(&emitter),
+            limits,
+        )
+        .unwrap();
+    collector
+        .into_inner()
+        .expect("collector lock is not poisoned")
+        .finish(&mut outcome);
+    assert_eq!(outcome.findings.len(), 1);
+    let full_value = outcome.findings[0]
+        .unredacted_value
+        .as_ref()
+        .expect("unredacted emitter retains the full match");
+    assert_eq!(full_value.to_string(), "ghp_abcdefghijklmnop");
 }
 
 #[test]
@@ -357,4 +454,177 @@ fn line_session_accepts_findings_after_line_end() {
     let outcome = scan_reader(&mut Cursor::new(line.to_vec()), 1);
     assert_eq!(outcome.exit_code(), 1);
     assert_eq!(outcome.findings.len(), 1);
+}
+
+#[test]
+fn line_session_fast_path_enforces_record_limit_and_counter_overflow() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let collector = Mutex::new(Collector::new(10));
+    let mut limited = LineSession::new();
+    let mut outcome = ScanOutcome::default();
+    let limits = Limits {
+        findings: 10,
+        line_bytes: 0,
+    };
+    assert_eq!(
+        limited.push(
+            LineFragment {
+                payload: b"x",
+                line: 1,
+                column: 1,
+                end: Some(crate::scanner::chunk::LineEnd::Lf),
+            },
+            1,
+            b"input.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        ),
+        Err(ScanError::LineLimit)
+    );
+
+    let mut overflowing = LineSession::new();
+    let mut outcome = ScanOutcome::default();
+    outcome.stats.lines_scanned = u64::MAX;
+    assert_eq!(
+        overflowing.push(
+            LineFragment {
+                payload: b"x",
+                line: 1,
+                column: 1,
+                end: Some(crate::scanner::chunk::LineEnd::Lf),
+            },
+            1,
+            b"input.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            Limits {
+                findings: 10,
+                line_bytes: usize::MAX,
+            },
+        ),
+        Err(ScanError::CounterOverflow)
+    );
+}
+
+#[test]
+fn long_line_reports_scanned_line_counter_overflow() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut session = LineSession::new();
+    let mut outcome = ScanOutcome::default();
+    let collector = Mutex::new(Collector::new(10));
+    let limits = Limits {
+        findings: 10,
+        line_bytes: usize::MAX,
+    };
+    let prefix = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES + 1];
+    session
+        .push(
+            LineFragment {
+                payload: &prefix,
+                line: 1,
+                column: 1,
+                end: None,
+            },
+            1,
+            b"input.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        )
+        .unwrap();
+
+    outcome.stats.lines_scanned = u64::MAX;
+    assert_eq!(
+        session.push(
+            LineFragment {
+                payload: b"x",
+                line: 1,
+                column: (prefix.len() + 1) as u64,
+                end: Some(crate::scanner::chunk::LineEnd::Lf),
+            },
+            1,
+            b"input.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        ),
+        Err(ScanError::CounterOverflow)
+    );
+}
+
+#[test]
+fn long_line_propagates_context_suppression_overflow_at_finish() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut session = LineSession::new();
+    let mut outcome = ScanOutcome::default();
+    let collector = Mutex::new(Collector::new(10));
+    let limits = Limits {
+        findings: 10,
+        line_bytes: usize::MAX,
+    };
+    let prefix = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES + 1];
+    session.suppressions.reference = usize::MAX;
+    session
+        .push(
+            LineFragment {
+                payload: &prefix,
+                line: 1,
+                column: 1,
+                end: None,
+            },
+            1,
+            b"input.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        )
+        .unwrap();
+
+    assert_eq!(
+        session.push(
+            LineFragment {
+                payload: b" password=${PASSWORD}",
+                line: 1,
+                column: (prefix.len() + 1) as u64,
+                end: Some(crate::scanner::chunk::LineEnd::Lf),
+            },
+            1,
+            b"input.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        ),
+        Err(ScanError::CounterOverflow)
+    );
+}
+
+#[test]
+fn long_line_propagates_provider_candidate_limit() {
+    let mut line = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES + 1];
+    line.extend_from_slice(b" ghp_");
+    line.extend(std::iter::repeat_n(
+        b'A',
+        crate::rules::builtin::MAX_CANDIDATE_BYTES + 1,
+    ));
+    let outcome = scan_reader(&mut Cursor::new(line), 1);
+    assert_eq!(outcome.exit_code(), 2);
+    assert!(
+        outcome
+            .errors
+            .iter()
+            .any(|error| error.error == ScanError::CandidateLimit)
+    );
 }

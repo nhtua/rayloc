@@ -11,16 +11,17 @@ pub(super) fn format_bytes(bytes: u64) -> String {
     }
 
     let mut value = bytes as f64;
+    let mut selected_unit = "EiB";
     for unit in UNITS {
         value /= 1024.0;
-        if value < 1024.0 || unit == "EiB" {
-            let formatted = format!("{value:.2}");
-            let concise = formatted.trim_end_matches('0').trim_end_matches('.');
-            return format!("{concise} {unit}");
+        selected_unit = unit;
+        if value < 1024.0 {
+            break;
         }
     }
-
-    unreachable!("largest byte unit handled above")
+    let formatted = format!("{value:.2}");
+    let concise = formatted.trim_end_matches('0').trim_end_matches('.');
+    format!("{concise} {selected_unit}")
 }
 
 #[cfg(test)]

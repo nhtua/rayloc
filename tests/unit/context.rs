@@ -341,11 +341,12 @@ fn context_stream_aws_secret_detection() {
     let registry = Registry::compile(crate::config::Config::default()).unwrap();
     let mut state = ContextState::new();
     let mut found = Vec::new();
+    let value = b"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab+/";
     let mut emit = |c: Candidate<'_>| found.push((c.rule, c.value.to_vec()));
 
     state
         .push(
-            b"aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            b"aws_secret_access_key=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab+/",
             &registry,
             &mut Histogram::new(),
             &mut Suppressions::default(),
@@ -360,9 +361,7 @@ fn context_stream_aws_secret_detection() {
             &mut emit,
         )
         .unwrap();
-    // AWS secret detection requires exact 40-char value with specific format
-    // Just verify the line was processed without error
-    // (found may be empty if the value doesn't match all validation checks)
+    assert_eq!(found, [(RuleId::AwsSecretAccessKey, value.to_vec())]);
 }
 
 #[test]
@@ -543,7 +542,7 @@ fn context_stream_with_escaped_quotes_in_name() {
 
     state
         .push(
-            b"'api_key'=Q7v2n9B4x6M1z8K3",
+            b"'not\\'a_key'=ignored api_key=Q7v2n9B4x6M1z8K3",
             &registry,
             &mut Histogram::new(),
             &mut Suppressions::default(),
@@ -560,6 +559,62 @@ fn context_stream_with_escaped_quotes_in_name() {
         .unwrap();
     // Should find the key with quoted name
     assert_eq!(found.len(), 1);
+    assert_eq!(found[0].1, b"Q7v2n9B4x6M1z8K3");
+}
+
+#[test]
+fn authorization_parser_rejects_non_bearer_and_preserves_bearer_spacing() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    for line in [
+        b"Authorization: Basi Q7v2n9B4x6M1z8K3".as_slice(),
+        b"Authorization: \"Basic Q7v2n9B4x6M1z8K3\"",
+        b"Authorization: \"Basic \\\"quoted\\\" token\"",
+    ] {
+        let mut state = ContextState::new();
+        let mut findings = Vec::new();
+        let mut histogram = Histogram::new();
+        let mut suppressions = Suppressions::default();
+        let mut emit = |candidate: Candidate<'_>| findings.push(candidate.rule);
+        state
+            .push(
+                line,
+                &registry,
+                &mut histogram,
+                &mut suppressions,
+                &mut emit,
+            )
+            .unwrap();
+        state
+            .finish(&registry, &mut histogram, &mut suppressions, &mut emit)
+            .unwrap();
+        assert!(findings.is_empty(), "non-Bearer value: {line:?}");
+    }
+
+    let line = b"Authorization: Bearer   Q7v2n9B4x6M1z8K3";
+    let mut state = ContextState::new();
+    let mut findings = Vec::new();
+    let mut histogram = Histogram::new();
+    let mut suppressions = Suppressions::default();
+    let mut emit = |candidate: Candidate<'_>| {
+        findings.push((candidate.rule, candidate.span));
+    };
+    state
+        .push(
+            line,
+            &registry,
+            &mut histogram,
+            &mut suppressions,
+            &mut emit,
+        )
+        .unwrap();
+    state
+        .finish(&registry, &mut histogram, &mut suppressions, &mut emit)
+        .unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        &line[findings[0].1.start as usize..findings[0].1.end as usize],
+        b"Q7v2n9B4x6M1z8K3"
+    );
 }
 
 #[test]
@@ -720,4 +775,142 @@ fn context_phase2_field_suffixes_in_strong_list() {
     });
     assert!(result.is_ok());
     assert!(!found.is_empty(), "api_key baseline check failed");
+}
+
+#[test]
+fn context_stream_rejects_malformed_and_low_confidence_assignments() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut histogram = Histogram::new();
+    let mut suppressions = Suppressions::default();
+    let mut emitted = Vec::new();
+
+    for line in [
+        // Quoted values may contain delimiters that terminate an unquoted value.
+        b"api_key='Q7v2n9B4x6M1z8K3\\'".as_slice(),
+        b"api_key=Q7v2n9B4x6M1z8K3(continued)",
+        b"aws_secret_access_key=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab+*",
+        b"api_key=aaaaaaaaaaaaaaaZ",
+    ] {
+        let mut state = ContextState::new();
+        let mut emit = |candidate: Candidate<'_>| {
+            emitted.push((line.to_vec(), candidate.rule, candidate.value.to_vec()))
+        };
+        state
+            .push(
+                line,
+                &registry,
+                &mut histogram,
+                &mut suppressions,
+                &mut emit,
+            )
+            .unwrap();
+        state
+            .finish(&registry, &mut histogram, &mut suppressions, &mut emit)
+            .unwrap();
+    }
+
+    assert_eq!(emitted.len(), 1);
+    assert_eq!(emitted[0].1, RuleId::ContextSecret);
+    assert!(emitted[0].0.starts_with(b"aws_secret_access_key="));
+    assert_eq!(suppressions.generic_filter, 0);
+}
+
+#[test]
+fn context_stream_reports_suppression_counter_overflow() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    for (line, kind) in [
+        (b"password='${PASSWORD}'".as_slice(), 0),
+        (b"password='changeme'", 1),
+        (b"api_key_sha256=9f21c7ab6e40d835", 2),
+        (b"api_key=AAAAAAAAAAAAAAAA", 3),
+    ] {
+        let mut suppressions = Suppressions::default();
+        match kind {
+            0 => suppressions.reference = usize::MAX,
+            1 => suppressions.placeholder = usize::MAX,
+            2 => suppressions.checksum = usize::MAX,
+            _ => suppressions.generic_filter = usize::MAX,
+        }
+        let mut state = ContextState::new();
+        let mut histogram = Histogram::new();
+        let mut emit = |_candidate: Candidate<'_>| {};
+        let result = state
+            .push(
+                line,
+                &registry,
+                &mut histogram,
+                &mut suppressions,
+                &mut emit,
+            )
+            .and_then(|()| state.finish(&registry, &mut histogram, &mut suppressions, &mut emit));
+        assert_eq!(result, Err(ScanError::CounterOverflow));
+    }
+}
+
+#[test]
+fn context_state_fails_closed_on_offset_and_value_counter_overflow() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut histogram = Histogram::new();
+    let mut suppressions = Suppressions::default();
+    let mut emit = |_candidate: Candidate<'_>| {};
+
+    let mut empty = ContextState::new();
+    empty
+        .finish(&registry, &mut histogram, &mut suppressions, &mut emit)
+        .unwrap();
+
+    let mut offset_overflow = ContextState::new();
+    offset_overflow.offset = u64::MAX;
+    assert_eq!(
+        offset_overflow.push(
+            b"x",
+            &registry,
+            &mut histogram,
+            &mut suppressions,
+            &mut emit,
+        ),
+        Err(ScanError::CounterOverflow)
+    );
+
+    let mut quoted_start_overflow = ContextState::new();
+    quoted_start_overflow.mode = super::ContextMode::BeforeValue;
+    quoted_start_overflow.offset = u64::MAX;
+    assert_eq!(
+        quoted_start_overflow.push(
+            b"'",
+            &registry,
+            &mut histogram,
+            &mut suppressions,
+            &mut emit,
+        ),
+        Err(ScanError::CounterOverflow)
+    );
+
+    let mut value_length_overflow = ContextState::new();
+    value_length_overflow.mode = super::ContextMode::UnquotedValue;
+    value_length_overflow.active = true;
+    value_length_overflow.value_len = usize::MAX;
+    assert_eq!(
+        value_length_overflow.push(
+            b"x",
+            &registry,
+            &mut histogram,
+            &mut suppressions,
+            &mut emit,
+        ),
+        Err(ScanError::CounterOverflow)
+    );
+
+    let mut value_end_overflow = ContextState::new();
+    value_end_overflow.mode = super::ContextMode::Pending;
+    value_end_overflow.active = true;
+    value_end_overflow.password = true;
+    value_end_overflow.password_enabled = true;
+    value_end_overflow.value.extend_from_slice(b"longsecret");
+    value_end_overflow.value_len = value_end_overflow.value.len();
+    value_end_overflow.value_start = u64::MAX - 4;
+    assert_eq!(
+        value_end_overflow.finish(&registry, &mut histogram, &mut suppressions, &mut emit,),
+        Err(ScanError::CounterOverflow)
+    );
 }

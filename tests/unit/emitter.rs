@@ -9,6 +9,7 @@ use crate::rules::builtin::RuleId;
 use crate::scanner::fingerprint::FindingId;
 use crate::scanner::redaction::RedactedString;
 use crate::scanner::{Finding, ScanOutcome};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -107,6 +108,39 @@ fn terminal_emitter_prints_full_value_only_when_configured() {
     let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
     assert!(!text.contains("prefix-ghp_secret-suffix"));
     assert!(text.contains("Value: te********"));
+
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let mut emitter = TerminalEmitter::new(Capture(output.clone())).with_no_redact(true);
+    emitter.emit_finding(&make_finding(2), Some("secret.txt"));
+    let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+    assert!(text.contains("Value: te********"));
+}
+
+#[derive(Clone)]
+struct DefaultRedactionEmitter(Arc<AtomicBool>);
+
+impl FindingEmitter for DefaultRedactionEmitter {
+    fn begin_scan(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    fn emit_finding(&mut self, _finding: &Finding, _source_path: Option<&str>) {}
+
+    fn finish_scan(&mut self, _outcome: &ScanOutcome) {}
+}
+
+#[test]
+fn shared_emitter_calls_begin_and_defaults_to_redaction() {
+    let began = Arc::new(AtomicBool::new(false));
+    let emitter = SharedEmitter::new(Box::new(DefaultRedactionEmitter(Arc::clone(&began))));
+    assert!(!emitter.no_redact());
+    emitter.begin_scan();
+    assert!(began.load(Ordering::SeqCst));
+}
+
+#[test]
+fn byte_formatter_handles_the_largest_value() {
+    assert_eq!(super::format_bytes(u64::MAX), "16 EiB");
 }
 
 #[test]
