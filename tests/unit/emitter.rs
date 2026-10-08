@@ -33,6 +33,7 @@ fn make_finding(id: u32) -> Finding {
         end_column: 10,
         rule: RuleId::AwsAccessKeyId,
         value: RedactedString::new(b"test-secret"),
+        unredacted_value: None,
         id: FindingId::new(b"test/path.rs", b"test-secret"),
     }
 }
@@ -82,6 +83,30 @@ fn terminal_emitter_formats_source_locations_consistently() {
     emitter.emit_finding(&make_finding(1), Some("src/key.pem"));
     let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
     assert!(text.contains("\nFile: src/key.pem:1:1\n"));
+}
+
+#[test]
+fn terminal_emitter_prints_full_value_only_when_configured() {
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let finding = Finding {
+        unredacted_value: Some(crate::scanner::redaction::UnredactedString::new(
+            b"prefix-ghp_secret-suffix",
+        )),
+        ..make_finding(1)
+    };
+    assert!(!format!("{finding:?}").contains("prefix-ghp_secret-suffix"));
+    let mut emitter = TerminalEmitter::new(Capture(output.clone())).with_no_redact(true);
+    emitter.emit_finding(&finding, Some("secret.txt"));
+    let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+    assert!(text.contains("Value: prefix-ghp_secret-suffix"));
+    assert!(!text.contains("key=prefix-ghp_secret-suffix"));
+
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let mut emitter = TerminalEmitter::new(Capture(output.clone()));
+    emitter.emit_finding(&finding, Some("secret.txt"));
+    let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+    assert!(!text.contains("prefix-ghp_secret-suffix"));
+    assert!(text.contains("Value: te********"));
 }
 
 #[test]

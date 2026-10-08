@@ -907,6 +907,7 @@ fn reusable_file_buffers_and_worker_failures_preserve_counts() {
             end_column: 2,
             rule: crate::rules::builtin::RuleId::GithubToken,
             value: RedactedString::new(b"x"),
+            unredacted_value: None,
             id: FindingId::new(b"", b"x"),
         },
         b"test/path",

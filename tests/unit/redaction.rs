@@ -31,6 +31,14 @@ fn display_reveals_a_bounded_prefix_and_a_fixed_mask() {
 }
 
 #[test]
+fn unredacted_values_escape_controls_and_mask_debug_output() {
+    let value = UnredactedString::new(b"prefix\x1b\nsecret");
+    assert_eq!(format!("{value}"), "prefix\\u{1b}\\nsecret");
+    assert_eq!(format!("{value:?}"), "[REDACTED]");
+    assert_eq!(format!("{value:#?}"), "[REDACTED]");
+}
+
+#[test]
 fn labels_withhold_unprintable_or_oversized_paths() {
     assert_eq!(
         safe_label(b"src/config.rs").as_deref(),

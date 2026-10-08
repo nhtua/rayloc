@@ -17,6 +17,7 @@ pub struct RecordContext<'a> {
     pub source_id: u32,
     pub path: &'a [u8],
     pub registry: &'a Registry,
+    pub retain_unredacted_value: bool,
 }
 
 /// Prepare a Finding from registry match output.
@@ -41,7 +42,10 @@ pub fn prepare_finding(
         start_column: span.start + 1,
         end_column: span.end + 1,
         rule,
-        value: RedactedString::new(&bytes[span]),
+        value: RedactedString::new(&bytes[span.clone()]),
+        unredacted_value: context
+            .retain_unredacted_value
+            .then(|| super::redaction::UnredactedString::new(&bytes[span])),
         id,
     })
 }

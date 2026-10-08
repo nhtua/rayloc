@@ -59,6 +59,75 @@ fn parallel_directory_scan_streams_redacted_findings_and_finishes() {
 }
 
 #[test]
+fn no_redact_shows_full_matching_value_only_when_requested() {
+    let directory = support::TempDir::new();
+    let token = "ghp_NoRedactToken0123456789"; // rayloc:ignore
+    std::fs::write(
+        directory.path().join("secret.txt"),
+        format!("key={token}\n"),
+    )
+    .unwrap();
+
+    let help = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(directory.path())
+        .args(["scan", "--help"])
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    assert!(
+        String::from_utf8(help.stdout)
+            .unwrap()
+            .contains("--no-redact")
+    );
+
+    let redacted = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(directory.path())
+        .args(["scan", "secret.txt"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        redacted.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&redacted.stderr)
+    );
+    let redacted_stdout = String::from_utf8(redacted.stdout).unwrap();
+    assert!(!redacted_stdout.contains(token));
+
+    let silent = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(directory.path())
+        .args(["scan", "--no-redact", "--silent", "secret.txt"])
+        .output()
+        .unwrap();
+    assert_eq!(silent.status.code(), Some(1));
+    assert!(!String::from_utf8(silent.stdout).unwrap().contains(token));
+
+    let unredacted = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(directory.path())
+        .args(["scan", "--no-redact", "secret.txt"])
+        .output()
+        .unwrap();
+    assert_eq!(unredacted.status.code(), Some(1));
+    let unredacted_stdout = String::from_utf8(unredacted.stdout).unwrap();
+    assert!(unredacted_stdout.contains(&format!("Value: {token}")));
+    assert!(!unredacted_stdout.contains(&format!("key={token}")));
+
+    let long_line = format!("{} {token}", "a".repeat(128 * 1024));
+    std::fs::write(directory.path().join("long.txt"), long_line).unwrap();
+    let long_output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(directory.path())
+        .args(["scan", "--no-redact", "long.txt"])
+        .output()
+        .unwrap();
+    assert_eq!(long_output.status.code(), Some(1));
+    assert!(
+        String::from_utf8(long_output.stdout)
+            .unwrap()
+            .contains(&format!("Value: {token}"))
+    );
+}
+
+#[test]
 fn parallel_directory_scan_completes_without_findings() {
     use std::time::{Duration, Instant};
     let directory = support::TempDir::new();

@@ -3,7 +3,7 @@
 use std::{fmt, time::Duration};
 
 use crate::rules::builtin::RuleId;
-use redaction::RedactedString;
+use redaction::{RedactedString, UnredactedString};
 
 pub(crate) mod batch;
 pub mod binary;
@@ -104,6 +104,7 @@ pub struct Finding {
     pub end_column: usize,
     pub rule: RuleId,
     pub value: RedactedString,
+    pub unredacted_value: Option<UnredactedString>,
     pub id: fingerprint::FindingId,
 }
 

@@ -815,6 +815,7 @@ fn deleted_and_context_secrets_never_reach_detector_or_retained_findings() {
                 end_column: span.end + 1,
                 rule,
                 value: crate::scanner::redaction::RedactedString::new(&payload[span.clone()]),
+                unredacted_value: None,
                 id: crate::scanner::fingerprint::FindingId::new(b"", &payload[span]),
             })
         })

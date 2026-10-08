@@ -46,6 +46,7 @@ fn evaluation_preserves_spans_ids_priority_and_acceptance() {
         source_id,
         path,
         registry: &registry,
+        retain_unredacted_value: false,
     };
 
     // Collect findings via callback
@@ -115,6 +116,7 @@ fn publication_is_redacted_and_nonterminal_limits_are_preserved() {
         source_id,
         path,
         registry,
+        retain_unredacted_value: false,
     };
     let mut suppressions = Suppressions::default();
     let mut findings = Vec::new();
@@ -213,6 +215,7 @@ fn semantic_key_matches_serial_equivalent_outcomes() {
         source_id,
         path,
         registry: builtins(),
+        retain_unredacted_value: false,
     };
     let mut s1 = Suppressions::default();
     evaluate_record(line, 1, ctx1, &mut h1, &mut s1, |f| {
@@ -227,6 +230,7 @@ fn semantic_key_matches_serial_equivalent_outcomes() {
         source_id,
         path,
         registry: builtins(),
+        retain_unredacted_value: false,
     };
     let mut s2 = Suppressions::default();
     evaluate_record(line, 1, ctx2, &mut h2, &mut s2, |f| {
@@ -247,6 +251,7 @@ fn prepare_finding_skips_accepted_ids() {
         source_id: 1,
         path: b"test.rs",
         registry: &registry,
+        retain_unredacted_value: false,
     };
     let span = 0..5;
 
@@ -278,6 +283,7 @@ fn evaluate_record_counts_accepted_before_registry_error() {
         source_id: 1,
         path: b"test.rs",
         registry: &registry,
+        retain_unredacted_value: false,
     };
     let mut suppressions = Suppressions::default();
     let mut histogram = Histogram::new();

@@ -17,9 +17,10 @@ Options:
   -V, --version    Print version
 
 Commands:
-  scan [<file|directory> | --glob <pattern> | --staged | --diff <ref>] [--threads <count>] [--config <file>] [--no-inline-ignores] [-s|--silent]
+  scan [<file|directory> | --glob <pattern> | --staged | --diff <ref>] [--threads <count>] [--config <file>] [--no-inline-ignores] [--no-redact] [-s|--silent]
                   Scan files, a directory (default: current directory), or a glob
                   --threads applies to directory and glob scans (1-64)
+                  --no-redact prints full matched values
                   --silent hides individual findings and prints only the summary
 
   accept <id>     Accept a reviewed finding by its report ID in the root .rayloc.yaml;
@@ -96,6 +97,7 @@ fn scan(
     let mut explicit = None;
     let mut positional = false;
     let mut no_inline = false;
+    let mut no_redact = false;
     let mut silent = false;
     let mut glob = None;
     let mut staged = false;
@@ -125,6 +127,10 @@ fn scan(
         }
         if !positional && arg == "--no-inline-ignores" {
             no_inline = true;
+            continue;
+        }
+        if !positional && arg == "--no-redact" {
+            no_redact = true;
             continue;
         }
         if !positional && matches!(arg.to_str(), Some("-s" | "--silent")) {
@@ -192,7 +198,9 @@ fn scan(
         );
     }
     let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
-        crate::report::emitter::TerminalEmitter::new(std::io::stdout()).with_silent(silent),
+        crate::report::emitter::TerminalEmitter::new(std::io::stdout())
+            .with_silent(silent)
+            .with_no_redact(no_redact),
     ));
     if staged || reference.is_some() {
         let outcome = if let Some(reference) = reference {

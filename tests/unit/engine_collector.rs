@@ -27,6 +27,7 @@ fn test_collector_emits_findings_immediately() {
         end_column: 10,
         rule: RuleId::AwsAccessKeyId,
         value: RedactedString::new(b"secretvalue"),
+        unredacted_value: None,
         id: FindingId::new(b"test/path.rs", b"secretvalue"),
     };
 
@@ -60,6 +61,7 @@ fn test_collector_deduplicates() {
         end_column: 10,
         rule: RuleId::AwsAccessKeyId,
         value: RedactedString::new(b"secretvalue"),
+        unredacted_value: None,
         id: FindingId::new(b"test/path.rs", b"secretvalue"),
     };
 
@@ -95,6 +97,7 @@ fn test_collector_finish_does_not_duplicate_findings() {
         end_column: 10,
         rule: RuleId::AwsAccessKeyId,
         value: RedactedString::new(b"secretvalue"),
+        unredacted_value: None,
         id: FindingId::new(b"test/path.rs", b"secretvalue"),
     };
 

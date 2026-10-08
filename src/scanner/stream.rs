@@ -4,7 +4,7 @@ use super::{
     chunk::LineFragment,
     engine::{Collector, Limits, MAX_FINDINGS, add, detect_record, merge_suppressions},
     fingerprint::FindingId,
-    redaction::RedactedString,
+    redaction::{RedactedString, UnredactedString},
 };
 use crate::{
     report::emitter::SharedEmitter,
@@ -30,6 +30,7 @@ pub(crate) struct LineSession {
     legacy: Vec<u8>,
     legacy_overflow: bool,
     long: bool,
+    no_redact: bool,
     line: u64,
     next_column: u64,
     provider: ProviderState,
@@ -51,6 +52,7 @@ impl LineSession {
             legacy: Vec::new(),
             legacy_overflow: false,
             long: false,
+            no_redact: false,
             line: 0,
             next_column: 1,
             provider: ProviderState::new(),
@@ -108,6 +110,7 @@ impl LineSession {
         }
         if self.line == 0 {
             self.line = fragment.line;
+            self.no_redact = emitter.is_some_and(SharedEmitter::no_redact);
         }
         if fragment.line != self.line || fragment.column != self.next_column {
             return Err(ScanError::CounterOverflow);
@@ -170,11 +173,11 @@ impl LineSession {
         self.directive.push(bytes);
         let mut candidates = Vec::new();
         self.provider.push(bytes, registry, |c| {
-            candidates.push(capture(c, source_id, self.line, path))
+            candidates.push(capture(c, source_id, self.line, path, self.no_redact))
         })?;
         if registry.jose_enabled() {
             self.jose.push(bytes, |c| {
-                candidates.push(capture(c, source_id, self.line, path))
+                candidates.push(capture(c, source_id, self.line, path, self.no_redact))
             })?;
         }
         self.context.push(
@@ -182,11 +185,11 @@ impl LineSession {
             registry,
             &mut self.histogram,
             &mut self.suppressions,
-            |c| candidates.push(capture(c, source_id, self.line, path)),
+            |c| candidates.push(capture(c, source_id, self.line, path, self.no_redact)),
         )?;
         self.window
             .push(bytes, registry, &mut self.histogram, |c| {
-                candidates.push(capture(c, source_id, self.line, path))
+                candidates.push(capture(c, source_id, self.line, path, self.no_redact))
             })?;
         for item in candidates {
             self.offer(item?);
@@ -219,25 +222,26 @@ impl LineSession {
     ) -> Result<(), ScanError> {
         let mut candidates = Vec::new();
         self.provider.finish(registry, |c| {
-            candidates.push(capture(c, source_id, self.line, path))
+            candidates.push(capture(c, source_id, self.line, path, self.no_redact))
         })?;
         if registry.jose_enabled() {
-            self.jose
-                .finish(|c| candidates.push(capture(c, source_id, self.line, path)))?;
+            self.jose.finish(|c| {
+                candidates.push(capture(c, source_id, self.line, path, self.no_redact))
+            })?;
         }
         self.context
             .finish(registry, &mut self.histogram, &mut self.suppressions, |c| {
-                candidates.push(capture(c, source_id, self.line, path))
+                candidates.push(capture(c, source_id, self.line, path, self.no_redact))
             })?;
         self.window.finish(registry, &mut self.histogram, |c| {
-            candidates.push(capture(c, source_id, self.line, path))
+            candidates.push(capture(c, source_id, self.line, path, self.no_redact))
         })?;
         if registry.requires_whole_line() {
             if self.legacy_overflow {
                 outcome.fail_at(ScanError::RuleWindowLimit, safe_path(path));
             } else {
                 registry.detect_legacy_line(&self.legacy, &mut self.histogram, |c| {
-                    candidates.push(capture(c, source_id, self.line, path))
+                    candidates.push(capture(c, source_id, self.line, path, self.no_redact))
                 })?;
             }
         }
@@ -316,6 +320,7 @@ impl LineSession {
         self.legacy.clear();
         self.legacy_overflow = false;
         self.long = false;
+        self.no_redact = false;
         self.line = 0;
         self.next_column = 1;
         self.suppressions = Suppressions::default();
@@ -337,6 +342,7 @@ fn capture(
     source_id: u32,
     line: u64,
     path: &[u8],
+    no_redact: bool,
 ) -> Result<(u16, Finding), ScanError> {
     let start = usize::try_from(candidate.span.start).map_err(|_| ScanError::CounterOverflow)?;
     let end = usize::try_from(candidate.span.end).map_err(|_| ScanError::CounterOverflow)?;
@@ -351,6 +357,7 @@ fn capture(
             end_column,
             rule: candidate.rule,
             value: RedactedString::new(candidate.value),
+            unredacted_value: no_redact.then(|| UnredactedString::new(candidate.value)),
             id: FindingId::new(path, candidate.value),
         },
     ))
