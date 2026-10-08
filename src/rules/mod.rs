@@ -270,6 +270,18 @@ impl Registry {
         bytes: &[u8],
         histogram: &mut Histogram,
         suppressions: &mut context::Suppressions,
+        emit: impl FnMut(RuleId, Range<usize>),
+    ) -> Result<(), ScanError> {
+        self.detect_line_in_source(bytes, SourceSyntax::Text, histogram, suppressions, emit)
+    }
+    /// Detect using a source-language grammar hint for assignment contexts.
+    /// Pathless APIs continue to use [`SourceSyntax::Text`].
+    pub fn detect_line_in_source(
+        &self,
+        bytes: &[u8],
+        syntax: SourceSyntax,
+        histogram: &mut Histogram,
+        suppressions: &mut context::Suppressions,
         mut emit: impl FnMut(RuleId, Range<usize>),
     ) -> Result<(), ScanError> {
         if bytes.len() > LEGACY_LINE_BYTES && self.requires_whole_line() {
@@ -299,7 +311,7 @@ impl Registry {
         if !self.disabled.contains(&RuleId::JoseToken) {
             jose::detect(bytes, &mut unique)?;
         }
-        context::detect(bytes, self, histogram, suppressions, &mut unique)?;
+        context::detect(bytes, syntax, self, histogram, suppressions, &mut unique)?;
         for index in self.set.matches(bytes) {
             let rule = &self.custom[index];
             if rule.disabled {

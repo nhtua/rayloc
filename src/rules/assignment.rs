@@ -1,5 +1,4 @@
 //! Bounded byte classifiers shared by assignment detectors.
-#![allow(dead_code)] // Both context lexers consume these helpers in Task 2.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceSyntax {

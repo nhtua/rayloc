@@ -275,6 +275,410 @@ fn context_stream_reference_suppression() {
     assert_eq!(suppressions.reference, 1);
 }
 
+fn detect_with_syntax(
+    line: &[u8],
+    syntax: crate::rules::SourceSyntax,
+) -> (Vec<(RuleId, std::ops::Range<usize>)>, Suppressions) {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut findings = Vec::new();
+    let mut suppressions = Suppressions::default();
+    registry
+        .detect_line_in_source(
+            line,
+            syntax,
+            &mut Histogram::new(),
+            &mut suppressions,
+            |rule, span| findings.push((rule, span)),
+        )
+        .unwrap();
+    (findings, suppressions)
+}
+
+fn stream_with_syntax(
+    line: &[u8],
+    syntax: crate::rules::SourceSyntax,
+    split: usize,
+) -> (Vec<(RuleId, std::ops::Range<usize>)>, Suppressions) {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut state = ContextState::with_syntax(syntax);
+    let mut findings = Vec::new();
+    let mut histogram = Histogram::new();
+    let mut suppressions = Suppressions::default();
+    let mut emit = |candidate: Candidate<'_>| {
+        findings.push((
+            candidate.rule,
+            candidate.span.start as usize..candidate.span.end as usize,
+        ));
+    };
+    state
+        .push(
+            &line[..split],
+            &registry,
+            &mut histogram,
+            &mut suppressions,
+            &mut emit,
+        )
+        .unwrap();
+    state
+        .push(
+            &line[split..],
+            &registry,
+            &mut histogram,
+            &mut suppressions,
+            &mut emit,
+        )
+        .unwrap();
+    state
+        .finish(&registry, &mut histogram, &mut suppressions, &mut emit)
+        .unwrap();
+    (findings, suppressions)
+}
+
+#[test]
+fn code_members_do_not_become_generic_or_password_findings() {
+    let line = b"api_key=args.vllm_api_key; api_key=self.allow_credentials; api_key=self.DUMMY_API_KEY; api_key=args.allow_credentials; api_key=auth.accessToken; api_key=deps.completeCredential; api_key=input.credential; api_key=row.externalCredential ?? null; api_key=input.configPath; api_key=grantRef.configPath; api_key=input.env.COGNEE_API_KEY; api_key=credentials.accessToken; password=credentials.clientSecret)";
+    let (findings, suppressions) = detect_with_syntax(line, crate::rules::SourceSyntax::Code);
+    assert!(findings.is_empty());
+    assert_eq!(suppressions.reference, 13);
+
+    for split in 0..=line.len() {
+        let (streamed, counters) =
+            stream_with_syntax(line, crate::rules::SourceSyntax::Code, split);
+        assert_eq!(streamed, findings, "split {split}");
+        assert_eq!(counters, suppressions, "split {split}");
+    }
+}
+
+#[test]
+fn ternary_keys_are_not_bindings_but_real_code_values_remain_eligible() {
+    for line in [
+        b"route.auth === \"api_key\" ? \"ANTHROPIC_API_KEY\" : \"ANTHROPIC_AUTH_TOKEN\"".as_slice(),
+        b"condition ? \"configPath\" : \"fallbackToken\"",
+        b"condition ? TOKEN : \"fallback\"",
+    ] {
+        let (findings, suppressions) = detect_with_syntax(line, crate::rules::SourceSyntax::Code);
+        assert!(findings.is_empty(), "{line:?}");
+        assert_eq!(suppressions.reference, 0, "{line:?}");
+        for split in 0..=line.len() {
+            let (streamed, counters) =
+                stream_with_syntax(line, crate::rules::SourceSyntax::Code, split);
+            assert!(streamed.is_empty(), "split {split} in {line:?}");
+            assert_eq!(counters.reference, 0, "split {split} in {line:?}");
+        }
+    }
+
+    let secret = b"Q7v2n9B4x6M1z8K3";
+    for line in [
+        [b"flag ? {api_key: ".as_slice(), secret, b"} : fallback"].concat(),
+        [b"condition ? TOKEN : { api_key: ".as_slice(), secret, b" }"].concat(),
+        [b"  api_key: ".as_slice(), secret, b", // isolated property"].concat(),
+        b"route.auth === \"selector\" ? \"KEY_A\" : \"KEY_B\"; password='weakweak'".to_vec(),
+    ] {
+        let (findings, _) = detect_with_syntax(&line, crate::rules::SourceSyntax::Code);
+        if line
+            .windows(b"weakweak".len())
+            .any(|part| part == b"weakweak")
+        {
+            assert!(
+                findings
+                    .iter()
+                    .any(|(rule, _)| *rule == RuleId::PasswordAssignment)
+            );
+        } else {
+            assert!(
+                findings
+                    .iter()
+                    .any(|(rule, _)| *rule == RuleId::ContextSecret)
+            );
+        }
+    }
+}
+
+#[test]
+fn code_syntax_keeps_opaque_values_and_weak_passwords_eligible() {
+    let token = b"Q7v2n9B4x6M1z8K3";
+    for syntax in [
+        crate::rules::SourceSyntax::Text,
+        crate::rules::SourceSyntax::Code,
+    ] {
+        let generic = [b"api_key=".as_slice(), token].concat();
+        let (findings, _) = detect_with_syntax(&generic, syntax);
+        assert!(
+            findings
+                .iter()
+                .any(|(rule, _)| *rule == RuleId::ContextSecret)
+        );
+
+        let (findings, _) = detect_with_syntax(b"password=aaaaaaaa", syntax);
+        assert!(
+            findings
+                .iter()
+                .any(|(rule, _)| *rule == RuleId::PasswordAssignment)
+        );
+
+        let literal = [b"password='self.DUMMY_API_KEY'; password='config.password'; password='ANTHROPIC_AUTH_TOKEN'".as_slice()];
+        let (findings, suppressions) = detect_with_syntax(&literal.concat(), syntax);
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|(rule, _)| *rule == RuleId::PasswordAssignment)
+                .count(),
+            3
+        );
+        assert_eq!(suppressions.reference, 0);
+    }
+
+    let (findings, counters) =
+        detect_with_syntax(b"password='${PASSWORD}'", crate::rules::SourceSyntax::Code);
+    assert!(findings.is_empty());
+    assert_eq!(counters.reference, 1);
+
+    let generic = [b"allowCredentials=".as_slice(), token].concat();
+    let (findings, _) = detect_with_syntax(&generic, crate::rules::SourceSyntax::Code);
+    assert!(
+        findings
+            .iter()
+            .any(|(rule, _)| *rule == RuleId::ContextSecret)
+    );
+}
+
+#[test]
+fn equality_associations_report_password_literals_with_exact_spans() {
+    for line in [
+        b"if (password == 'weakweak') {}".as_slice(),
+        b"if (password === 'weakweak') {}",
+    ] {
+        let (findings, _) = detect_with_syntax(line, crate::rules::SourceSyntax::Code);
+        let start = line
+            .windows(b"weakweak".len())
+            .position(|part| part == b"weakweak")
+            .unwrap();
+        assert!(
+            findings.contains(&(RuleId::PasswordAssignment, start..start + 8)),
+            "{line:?}: {findings:?}"
+        );
+        for split in 0..=line.len() {
+            assert_eq!(
+                stream_with_syntax(line, crate::rules::SourceSyntax::Code, split).0,
+                findings,
+                "split {split}"
+            );
+        }
+    }
+
+    let line = b"api_key === 'Q7v2n9B4x6M1z8K3'";
+    let (findings, _) = detect_with_syntax(line, crate::rules::SourceSyntax::Code);
+    assert!(
+        findings
+            .iter()
+            .any(|(rule, _)| *rule == RuleId::ContextSecret)
+    );
+    for split in 0..=line.len() {
+        assert_eq!(
+            stream_with_syntax(line, crate::rules::SourceSyntax::Code, split).0,
+            findings,
+            "split {split}"
+        );
+    }
+
+    let crlf = b"password='weakweak'\r";
+    let (findings, _) = detect_with_syntax(crlf, crate::rules::SourceSyntax::Code);
+    assert!(
+        findings
+            .iter()
+            .any(|(rule, _)| *rule == RuleId::PasswordAssignment)
+    );
+    for split in 0..=crlf.len() {
+        assert_eq!(
+            stream_with_syntax(crlf, crate::rules::SourceSyntax::Code, split).0,
+            findings,
+            "CRLF split {split}"
+        );
+    }
+}
+
+#[test]
+fn non_association_operators_do_not_create_context_candidates() {
+    for line in [
+        b"api_key => 'Q7v2n9B4x6M1z8K3'".as_slice(),
+        b"api_key::'Q7v2n9B4x6M1z8K3'",
+        b"api_key:='Q7v2n9B4x6M1z8K3'",
+        b"flag ? api_key: 'Q7v2n9B4x6M1z8K3'",
+    ] {
+        let (expected, counters) = detect_with_syntax(line, crate::rules::SourceSyntax::Code);
+        assert!(expected.is_empty(), "{line:?}");
+        assert_eq!(counters.reference, 0, "{line:?}");
+        for split in 0..=line.len() {
+            let (actual, streamed) =
+                stream_with_syntax(line, crate::rules::SourceSyntax::Code, split);
+            assert_eq!(actual, expected, "split {split} in {line:?}");
+            assert_eq!(streamed, counters, "split {split} in {line:?}");
+        }
+    }
+}
+
+#[test]
+fn code_member_operators_are_split_safe_and_require_complete_identifiers() {
+    let line = b"api_key=node->secret; api_key=client?.credential";
+    let (expected, suppressions) = detect_with_syntax(line, crate::rules::SourceSyntax::Code);
+    assert!(expected.is_empty());
+    assert_eq!(suppressions.reference, 2);
+    for split in 0..=line.len() {
+        let (actual, counters) = stream_with_syntax(line, crate::rules::SourceSyntax::Code, split);
+        assert_eq!(actual, expected, "split {split}");
+        assert_eq!(counters, suppressions, "split {split}");
+    }
+
+    let line = b"api_key=client?.";
+    let (findings, suppressions) = detect_with_syntax(line, crate::rules::SourceSyntax::Code);
+    assert!(findings.is_empty());
+    assert_eq!(suppressions.reference, 0);
+    for split in 0..=line.len() {
+        let (actual, counters) = stream_with_syntax(line, crate::rules::SourceSyntax::Code, split);
+        assert_eq!(actual, findings, "split {split}");
+        assert_eq!(counters, suppressions, "split {split}");
+    }
+}
+
+#[test]
+fn text_assignment_and_unquoted_literals_keep_legacy_behavior() {
+    let (text_findings, _) =
+        detect_with_syntax(b"PASSWORD==aaaaaaaa", crate::rules::SourceSyntax::Text);
+    assert!(
+        text_findings
+            .iter()
+            .any(|(rule, _)| *rule == RuleId::PasswordAssignment)
+    );
+
+    for line in [
+        b"password=self.DUMMY_API_KEY".as_slice(),
+        b"PASSWORD=aaaaaaaa",
+    ] {
+        let (findings, _) = detect_with_syntax(line, crate::rules::SourceSyntax::Text);
+        assert!(
+            findings
+                .iter()
+                .any(|(rule, _)| *rule == RuleId::PasswordAssignment),
+            "{line:?}"
+        );
+    }
+    let (code_findings, code_suppressions) = detect_with_syntax(
+        b"password=self.DUMMY_API_KEY",
+        crate::rules::SourceSyntax::Code,
+    );
+    assert!(code_findings.is_empty());
+    assert_eq!(code_suppressions.reference, 1);
+}
+
+#[test]
+fn code_test_credentials_keep_existing_inline_ignore_controls() {
+    assert_eq!(
+        crate::rules::SourceSyntax::from_path(b"fixture.test.ts"),
+        crate::rules::SourceSyntax::Code
+    );
+    let line = b"password='aaaaaaaa' # rayloc:ignore";
+    let (ignored, counters) = detect_with_syntax(line, crate::rules::SourceSyntax::Code);
+    assert!(ignored.is_empty());
+    assert_eq!(counters.inline, 1);
+
+    let mut registry = Registry::compile(crate::config::Config::default()).unwrap();
+    registry.inline_ignores = false;
+    let mut findings = Vec::new();
+    registry
+        .detect_line_in_source(
+            line,
+            crate::rules::SourceSyntax::Code,
+            &mut Histogram::new(),
+            &mut Suppressions::default(),
+            |rule, span| findings.push((rule, span)),
+        )
+        .unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].0, RuleId::PasswordAssignment);
+
+    let unsupported = b"password='aaaaaaaa' # rayloc:ignored";
+    let (findings, counters) = detect_with_syntax(unsupported, crate::rules::SourceSyntax::Code);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(counters.inline, 0);
+}
+
+#[test]
+fn source_grammar_does_not_change_provider_or_custom_matches() {
+    let registry = Registry::compile(
+        crate::config::parse(
+            b"version: \"1\"\nrules: [{id: marker, regex: '(?P<value>client\\.secret)'}]",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut found = Vec::new();
+    let mut suppressions = Suppressions::default();
+    registry
+        .detect_line_in_source(
+            b"api_key=client.secret",
+            crate::rules::SourceSyntax::Code,
+            &mut Histogram::new(),
+            &mut suppressions,
+            |rule, span| found.push((rule, span)),
+        )
+        .unwrap();
+    assert!(
+        found
+            .iter()
+            .any(|(rule, _)| matches!(rule, RuleId::Custom(..)))
+    );
+    assert_eq!(suppressions.reference, 1);
+
+    let mut provider = Vec::new();
+    registry
+        .detect_line_in_source(
+            b"api_key=ghp_12345678901234567890",
+            crate::rules::SourceSyntax::Code,
+            &mut Histogram::new(),
+            &mut Suppressions::default(),
+            |rule, span| provider.push((rule, span)),
+        )
+        .unwrap();
+    assert!(
+        provider
+            .iter()
+            .any(|(rule, _)| *rule == RuleId::GithubToken)
+    );
+}
+
+#[test]
+fn code_reference_limits_and_counter_overflow_are_checked_before_suppression() {
+    let mut long = b"api_key=client.".to_vec();
+    long.extend(std::iter::repeat_n(b'x', MAX_CANDIDATE_BYTES));
+    long.extend_from_slice(b" # rayloc:ignore");
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    assert_eq!(
+        registry.detect_line_in_source(
+            &long,
+            crate::rules::SourceSyntax::Code,
+            &mut Histogram::new(),
+            &mut Suppressions::default(),
+            |_, _| {},
+        ),
+        Err(ScanError::CandidateLimit)
+    );
+
+    let mut counters = Suppressions {
+        reference: usize::MAX,
+        ..Suppressions::default()
+    };
+    assert_eq!(
+        registry.detect_line_in_source(
+            b"api_key=client.secret",
+            crate::rules::SourceSyntax::Code,
+            &mut Histogram::new(),
+            &mut counters,
+            |_, _| {},
+        ),
+        Err(ScanError::CounterOverflow)
+    );
+}
+
 #[test]
 fn context_stream_placeholder_suppression() {
     // Test that placeholders are suppressed
@@ -321,6 +725,7 @@ fn descriptive_api_key_placeholders_are_suppressed_at_every_input_split() {
         let mut counts = Suppressions::default();
         detect(
             line,
+            crate::rules::SourceSyntax::Text,
             registry,
             &mut Histogram::new(),
             &mut counts,
@@ -824,20 +1229,72 @@ fn public_suppression_accumulators_are_checked_for_overflow() {
 
 #[test]
 fn context_phase2_field_suffixes_in_strong_list() {
-    // Verify that the strong() suffix list includes new Phase 2 suffixes
-    // by checking the source code compiles with them.
-    // The suffixes are checked in NameState::field() called via strong()
-    // in prepare_name(). End-to-end context detection tests would require
-    // deep integration testing of the context state machine.
-    let registry = Registry::compile(crate::config::Config::default()).unwrap();
-    // Verify api_key still works (baseline check)
-    let mut found = Vec::new();
-    let mut histogram = Histogram::new();
-    let result = registry.detect_line(b"api_key=Q7v2n9B4x6M1z8K3", &mut histogram, |rule, _| {
-        found.push(rule)
-    });
-    assert!(result.is_ok());
-    assert!(!found.is_empty(), "api_key baseline check failed");
+    let suffixes: [&str; 31] = [
+        "api_key",
+        "access_token",
+        "client_secret",
+        "credential",
+        "credentials",
+        "auth_token",
+        "secret_key",
+        "datadog_api_key",
+        "datadog_app_key",
+        "azure_ad_client_secret",
+        "npm_token",
+        "nuget_api_key",
+        "pagerduty_key",
+        "pagerduty_integration_key",
+        "snyk_token",
+        "sonar_token",
+        "newrelic_license_key",
+        "newrelic_insights_key",
+        "splunk_observability_token",
+        "intercom_api_key",
+        "vultr_api_key",
+        "trello_api_key",
+        "postman_api_key",
+        "unsplash_api_key",
+        "sumologic_access_id",
+        "sumologic_access_key",
+        "grafana_service_account",
+        "honeycomb_api_key",
+        "logdna_api_key",
+        "zoom_oauth_client_secret",
+        "allow_credentials",
+    ];
+    for suffix in suffixes {
+        let line = format!("{suffix}=Q7v2n9B4x6M1z8K3");
+        let (complete, complete_suppressions) =
+            detect_with_syntax(line.as_bytes(), crate::rules::SourceSyntax::Text);
+        let (streamed, stream_suppressions) = stream_with_syntax(
+            line.as_bytes(),
+            crate::rules::SourceSyntax::Text,
+            line.len(),
+        );
+        assert_eq!(
+            complete,
+            [(RuleId::ContextSecret, suffix.len() + 1..line.len())],
+            "{suffix}"
+        );
+        assert_eq!(streamed, complete, "streaming field {suffix}");
+        assert_eq!(
+            complete_suppressions, stream_suppressions,
+            "counters {suffix}"
+        );
+    }
+
+    let long_name = format!("checksum_{}_api_key=Q7v2n9B4x6M1z8K3", "x".repeat(80));
+    let (complete, complete_suppressions) =
+        detect_with_syntax(long_name.as_bytes(), crate::rules::SourceSyntax::Text);
+    let (streamed, stream_suppressions) = stream_with_syntax(
+        long_name.as_bytes(),
+        crate::rules::SourceSyntax::Text,
+        long_name.len(),
+    );
+    assert!(complete.is_empty());
+    assert!(streamed.is_empty());
+    assert_eq!(complete_suppressions.checksum, 1);
+    assert_eq!(stream_suppressions, complete_suppressions);
 }
 
 #[test]
@@ -967,7 +1424,7 @@ fn context_state_fails_closed_on_offset_and_value_counter_overflow() {
     let mut value_end_overflow = ContextState::new();
     value_end_overflow.mode = super::ContextMode::Pending;
     value_end_overflow.active = true;
-    value_end_overflow.password = true;
+    value_end_overflow.has_password_field = true;
     value_end_overflow.password_enabled = true;
     value_end_overflow.value.extend_from_slice(b"longsecret");
     value_end_overflow.value_len = value_end_overflow.value.len();

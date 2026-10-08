@@ -1,7 +1,10 @@
 //! Small physical-line assignment lexer; no state crosses records or sources.
 use super::stream::Candidate;
 use super::{
-    Registry,
+    Registry, SourceSyntax,
+    assignment::{
+        AssociationKind, ReferenceKind, classify_association, classify_fields, classify_reference,
+    },
     builtin::{MAX_CANDIDATE_BYTES, RuleId},
     entropy::Histogram,
 };
@@ -156,6 +159,7 @@ enum ContextMode {
     WordName,
     QuotedName,
     AfterName,
+    OperatorProbe,
     BeforeValue,
     QuotedValue,
     UnquotedValue,
@@ -172,10 +176,16 @@ pub(crate) struct ContextState {
     escaped: bool,
     previous: Option<u8>,
     before_previous: Option<u8>,
+    significant: Option<u8>,
+    before_name: Option<u8>,
+    operator_probe: [u8; 3],
+    operator_len: usize,
+    syntax: SourceSyntax,
     comment: bool,
-    password: bool,
+    has_password_field: bool,
     aws: bool,
     authorization: bool,
+    generic: bool,
     checksum: bool,
     password_enabled: bool,
     aws_enabled: bool,
@@ -199,7 +209,6 @@ struct NameState {
     checksum: bool,
     delayed: Option<u8>,
     raw_before_delayed: Option<u8>,
-    exact: bool,
 }
 
 impl NameState {
@@ -212,7 +221,6 @@ impl NameState {
             checksum: false,
             delayed: None,
             raw_before_delayed: None,
-            exact: true,
         }
     }
     fn reset(&mut self) {
@@ -264,12 +272,9 @@ impl NameState {
             if delayed.is_ascii_lowercase() && b.is_ascii_uppercase() {
                 self.push_normalized(b'_');
             }
-        } else {
-            self.exact = true;
         }
         self.raw_before_delayed = prior;
         self.delayed = Some(b);
-        self.exact &= self.len <= 64;
     }
     fn finish(&mut self) {
         if let Some(b) = self.delayed.take() {
@@ -277,21 +282,13 @@ impl NameState {
         }
         self.check_component();
     }
-    fn is(&self, value: &[u8]) -> bool {
-        self.len == value.len() && self.tail.as_slice() == value
-    }
-    fn field(&self, suffix: &[u8]) -> bool {
-        self.tail.ends_with(suffix)
-            && (self.len == suffix.len()
-                || self
-                    .tail
-                    .get(self.tail.len().saturating_sub(suffix.len() + 1))
-                    == Some(&b'_'))
-    }
 }
 
 impl ContextState {
     pub(crate) fn new() -> Self {
+        Self::with_syntax(SourceSyntax::Text)
+    }
+    pub(crate) fn with_syntax(syntax: SourceSyntax) -> Self {
         Self {
             mode: ContextMode::Search,
             offset: 0,
@@ -300,10 +297,16 @@ impl ContextState {
             escaped: false,
             previous: None,
             before_previous: None,
+            significant: None,
+            before_name: None,
+            operator_probe: [0; 3],
+            operator_len: 0,
+            syntax,
             comment: false,
-            password: false,
+            has_password_field: false,
             aws: false,
             authorization: false,
+            generic: false,
             checksum: false,
             password_enabled: false,
             aws_enabled: false,
@@ -320,7 +323,7 @@ impl ContextState {
         }
     }
     pub(crate) fn reset(&mut self) {
-        *self = Self::new();
+        *self = Self::with_syntax(self.syntax);
     }
 
     pub(crate) fn push(
@@ -348,13 +351,17 @@ impl ContextState {
                             self.comment = true;
                         } else if matches!(b, b'\'' | b'"') {
                             self.name.reset();
+                            self.before_name = self.significant;
                             self.quoted = b;
                             self.escaped = false;
                             self.mode = ContextMode::QuotedName;
                         } else if word(b) {
                             self.name.reset();
+                            self.before_name = self.significant;
                             self.name.raw(b);
                             self.mode = ContextMode::WordName;
+                        } else if !b.is_ascii_whitespace() {
+                            self.significant = Some(b);
                         }
                         self.before_previous = self.previous;
                         self.previous = Some(b);
@@ -363,6 +370,7 @@ impl ContextState {
                         if word(b) {
                             self.name.raw(b);
                         } else {
+                            self.significant = self.name.delayed;
                             self.name.finish();
                             self.mode = ContextMode::AfterName;
                             again = true;
@@ -377,6 +385,7 @@ impl ContextState {
                             self.escaped = true;
                         } else if b == self.quoted {
                             self.name.finish();
+                            self.significant = Some(b);
                             self.mode = ContextMode::AfterName;
                         } else {
                             self.name.raw(b);
@@ -385,11 +394,29 @@ impl ContextState {
                     ContextMode::AfterName => {
                         if b.is_ascii_whitespace() {
                         } else if matches!(b, b'=' | b':') {
-                            self.prepare_name(registry);
-                            self.mode = ContextMode::BeforeValue;
+                            if self.syntax == SourceSyntax::Text {
+                                self.prepare_name(registry);
+                                self.mode = ContextMode::BeforeValue;
+                            } else {
+                                self.operator_probe[0] = b;
+                                self.operator_len = 1;
+                                self.mode = ContextMode::OperatorProbe;
+                            }
                         } else {
                             self.mode = ContextMode::Search;
                             again = true;
+                        }
+                    }
+                    ContextMode::OperatorProbe => {
+                        self.operator_probe[self.operator_len] = b;
+                        self.operator_len += 1;
+                        let first = self.operator_probe[0];
+                        let awaiting = self.operator_len == 1
+                            || (first == b'='
+                                && self.operator_len == 2
+                                && self.operator_probe[1] == b'=');
+                        if !awaiting {
+                            again = self.resolve_operator(registry)?;
                         }
                     }
                     ContextMode::BeforeValue => {
@@ -473,13 +500,17 @@ impl ContextState {
                             self.capture(b)?;
                             self.escaped = true;
                         } else if b == self.quoted {
+                            self.significant = Some(b);
                             self.mode = ContextMode::Pending;
                         } else {
                             self.capture(b)?;
                         }
                     }
                     ContextMode::UnquotedValue => {
-                        if b.is_ascii_whitespace() || matches!(b, b',' | b';' | b'}' | b'#') {
+                        if b.is_ascii_whitespace()
+                            || matches!(b, b',' | b';' | b'}' | b'#')
+                            || (self.syntax == SourceSyntax::Code && b == b')')
+                        {
                             self.mode = ContextMode::Pending;
                             again = true;
                         } else {
@@ -509,12 +540,14 @@ impl ContextState {
     }
 
     fn prepare_name(&mut self, registry: &Registry) {
-        self.password = self.name.field(b"password") || self.name.field(b"passwd");
-        self.aws = self.name.is(b"aws_secret_access_key") || self.name.is(b"secret_access_key");
-        self.authorization = self.name.is(b"authorization");
-        self.checksum = self.name.checksum;
+        let evidence = classify_fields(&self.name.tail, self.name.len, self.name.checksum);
+        self.has_password_field = evidence.password;
+        self.aws = evidence.aws;
+        self.authorization = evidence.authorization;
+        self.generic = evidence.generic;
+        self.checksum = evidence.checksum;
         self.password_enabled =
-            self.password && !registry.disabled.contains(&RuleId::PasswordAssignment);
+            self.has_password_field && !registry.disabled.contains(&RuleId::PasswordAssignment);
         self.aws_enabled = self.aws && !registry.disabled.contains(&RuleId::AwsSecretAccessKey);
         self.generic_enabled = !registry.disabled.contains(&RuleId::ContextSecret);
         self.active =
@@ -527,44 +560,28 @@ impl ContextState {
         self.auth_probe_done = false;
     }
     fn strong(&self) -> bool {
-        self.password
-            || self.aws
-            || (self.authorization && self.bearer)
-            || [
-                b"api_key".as_slice(),
-                b"access_token",
-                b"client_secret",
-                b"credential",
-                b"credentials",
-                b"auth_token",
-                b"secret_key",
-                // Phase 2 context-based suffixes
-                b"datadog_api_key",
-                b"datadog_app_key",
-                b"azure_ad_client_secret",
-                b"npm_token",
-                b"nuget_api_key",
-                b"pagerduty_key",
-                b"pagerduty_integration_key",
-                b"snyk_token",
-                b"sonar_token",
-                b"newrelic_license_key",
-                b"newrelic_insights_key",
-                b"splunk_observability_token",
-                b"intercom_api_key",
-                b"vultr_api_key",
-                b"trello_api_key",
-                b"postman_api_key",
-                b"unsplash_api_key",
-                b"sumologic_access_id",
-                b"sumologic_access_key",
-                b"grafana_service_account",
-                b"honeycomb_api_key",
-                b"logdna_api_key",
-                b"zoom_oauth_client_secret",
-            ]
-            .iter()
-            .any(|s| self.name.field(s))
+        self.has_password_field || self.aws || (self.authorization && self.bearer) || self.generic
+    }
+    fn resolve_operator(&mut self, registry: &Registry) -> Result<bool, ScanError> {
+        let probe_len = self.operator_len;
+        let association = classify_association(
+            self.syntax,
+            self.before_name,
+            &self.operator_probe[..probe_len],
+        );
+        let replay = probe_len > association.operator_len;
+        if association.kind == AssociationKind::NonAssociation {
+            if association.operator_len > 0 {
+                self.significant = Some(self.operator_probe[association.operator_len - 1]);
+            }
+            self.mode = ContextMode::Search;
+        } else {
+            self.prepare_name(registry);
+            self.mode = ContextMode::BeforeValue;
+            self.significant = Some(self.operator_probe[association.operator_len - 1]);
+        }
+        self.operator_len = 0;
+        Ok(replay)
     }
     fn begin_value(&mut self, b: u8, _registry: &Registry) {
         self.value.clear();
@@ -574,9 +591,11 @@ impl ContextState {
         if b != 0 {
             self.value.push(b);
             self.value_len = 1;
+            self.significant = Some(b);
         }
     }
     fn capture(&mut self, b: u8) -> Result<(), ScanError> {
+        self.significant = Some(b);
         self.value_len = self
             .value_len
             .checked_add(1)
@@ -628,11 +647,11 @@ impl ContextState {
         if value.len() > MAX_CANDIDATE_BYTES {
             return Err(ScanError::CandidateLimit);
         }
-        if reference(value) {
+        if classify_reference(value, self.quoted_value, self.syntax) != ReferenceKind::None {
             increment(&mut suppressions.reference)?;
             return Ok(());
         }
-        if placeholder(value, self.password, self.aws) {
+        if placeholder(value, self.has_password_field, self.aws) {
             increment(&mut suppressions.placeholder)?;
             return Ok(());
         }
@@ -683,6 +702,9 @@ impl ContextState {
         suppressions: &mut Suppressions,
         emit: &mut impl FnMut(Candidate<'_>),
     ) -> Result<(), ScanError> {
+        if self.mode == ContextMode::OperatorProbe {
+            self.resolve_operator(registry)?;
+        }
         if self.mode == ContextMode::Pending {
             self.emit_value(registry, histogram, suppressions, emit)?;
         } else if self.mode == ContextMode::UnquotedValue {
@@ -718,28 +740,24 @@ fn normalized(bytes: &[u8]) -> Vec<u8> {
     }
     result
 }
-fn field(name: &[u8], suffix: &[u8]) -> bool {
-    name == suffix
-        || name
-            .strip_suffix(suffix)
-            .is_some_and(|prefix| prefix.ends_with(b"_"))
+fn previous_significant(bytes: &[u8], index: usize) -> Option<u8> {
+    let mut i = index;
+    while i > 0 && bytes[i - 1].is_ascii_whitespace() {
+        i -= 1;
+    }
+    i.checked_sub(1).map(|position| bytes[position])
 }
-fn reference(value: &[u8]) -> bool {
-    value.starts_with(b"$")
-        || value.starts_with(b"{{")
-        || value.starts_with(b"<")
-        || [
-            b"process.env".as_slice(),
-            b"os.getenv",
-            b"os.environ",
-            b"env(",
-            b"getenv(",
-            b"config.",
-            b"settings.",
-            b"ENV[",
-        ]
-        .iter()
-        .any(|prefix| value.starts_with(prefix))
+fn checksum_name(name: &[u8]) -> bool {
+    [
+        b"checksum".as_slice(),
+        b"digest",
+        b"sha256",
+        b"sha512",
+        b"sha1",
+        b"md5",
+    ]
+    .iter()
+    .any(|part| name.split(|b| *b == b'_').any(|value| value == *part))
 }
 fn placeholder(value: &[u8], password: bool, aws: bool) -> bool {
     if aws && value == b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" {
@@ -805,6 +823,7 @@ fn sequential(value: &[u8]) -> bool {
 /// Scan supported assignments and header forms; every value remains borrowed.
 pub(super) fn detect(
     bytes: &[u8],
+    syntax: SourceSyntax,
     registry: &Registry,
     histogram: &mut Histogram,
     suppressions: &mut Suppressions,
@@ -815,6 +834,7 @@ pub(super) fn detect(
         if bytes[i] == b'#' || bytes[i..].starts_with(b"//") {
             break;
         }
+        let candidate_start = i;
         let (name_start, name_end, after_name) = if matches!(bytes[i], b'\'' | b'"') {
             let Some(end) = quoted(bytes, i) else {
                 break;
@@ -832,15 +852,27 @@ pub(super) fn detect(
         };
         let name = normalized(&bytes[name_start..name_end]);
         let separator = space(bytes, after_name);
-        if !bytes
-            .get(separator)
-            .is_some_and(|b| matches!(b, b'=' | b':'))
-        {
+        let Some(&delimiter) = bytes.get(separator) else {
+            i = after_name;
+            continue;
+        };
+        if !matches!(delimiter, b'=' | b':') {
             i = after_name;
             continue;
         }
-        let mut start = space(bytes, separator + 1);
-        let authorization = name == b"authorization";
+        let operator_end = (separator + 3).min(bytes.len());
+        let association = classify_association(
+            syntax,
+            previous_significant(bytes, candidate_start),
+            &bytes[separator..operator_end],
+        );
+        if association.kind == AssociationKind::NonAssociation {
+            i = (separator + association.operator_len.max(1)).max(after_name);
+            continue;
+        }
+        let mut start = space(bytes, separator + association.operator_len);
+        let fields = classify_fields(&name, name.len(), checksum_name(&name));
+        let authorization = fields.authorization;
         let mut bearer = false;
         if authorization
             && bytes
@@ -861,8 +893,9 @@ pub(super) fn detect(
         } else {
             let mut end = start;
             while end < bytes.len()
-                && !bytes[end].is_ascii_whitespace()
-                && !matches!(bytes[end], b',' | b';' | b'}' | b'#')
+                && !(bytes[end].is_ascii_whitespace()
+                    || matches!(bytes[end], b',' | b';' | b'}' | b'#')
+                    || syntax == SourceSyntax::Code && bytes[end] == b')')
             {
                 end += 1;
             }
@@ -877,33 +910,12 @@ pub(super) fn detect(
             bearer = true;
         }
         i = next.max(after_name);
-        let password = field(&name, b"password") || field(&name, b"passwd");
-        let aws = name == b"aws_secret_access_key" || name == b"secret_access_key";
-        let strong = password
-            || aws
-            || (authorization && bearer)
-            || [
-                b"api_key".as_slice(),
-                b"access_token",
-                b"client_secret",
-                b"credential",
-                b"credentials",
-                b"auth_token",
-                b"secret_key",
-            ]
-            .iter()
-            .any(|suffix| field(&name, suffix));
-        let checksum = [
-            b"checksum".as_slice(),
-            b"digest",
-            b"sha256",
-            b"sha512",
-            b"sha1",
-            b"md5",
-        ]
-        .iter()
-        .any(|part| name.split(|b| *b == b'_').any(|v| v == *part));
-        let password_enabled = password && !registry.disabled.contains(&RuleId::PasswordAssignment);
+        let password_field = fields.password;
+        let aws = fields.aws;
+        let strong = password_field || aws || (authorization && bearer) || fields.generic;
+        let checksum = fields.checksum;
+        let password_enabled =
+            password_field && !registry.disabled.contains(&RuleId::PasswordAssignment);
         let aws_enabled = aws && !registry.disabled.contains(&RuleId::AwsSecretAccessKey);
         let generic_enabled = !registry.disabled.contains(&RuleId::ContextSecret);
         // Disabled branches do not evaluate candidates. Digest metadata remains
@@ -918,11 +930,11 @@ pub(super) fn detect(
         if span.len() > MAX_CANDIDATE_BYTES {
             return Err(ScanError::CandidateLimit);
         }
-        if reference(value) {
+        if classify_reference(value, is_quoted, syntax) != ReferenceKind::None {
             increment(&mut suppressions.reference)?;
             continue;
         }
-        if placeholder(value, password, aws) {
+        if placeholder(value, password_field, aws) {
             increment(&mut suppressions.placeholder)?;
             continue;
         }
