@@ -77,10 +77,10 @@ fn inline_comments_suppress_only_their_physical_line() {
 #[test]
 fn jose_structure_supports_unsecured_jws_and_jwe_without_eyj_prefix() {
     for token in [
-        b"eyJhbGciOiJIUzI1NiJ9.e30.AAAA".as_slice(),
-        b"eyJhbGciOiJub25lIn0.e30.",
-        b"eyAiYWxnIiA6ICJSU0EyNTYiIH0.e30.AAAA",
-        b"eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..AAAA.AAAA.AAAA",
+        b"eyJhbGciOiJIUzI1NiJ9.e30.AAAA".as_slice(), // rayloc:ignore
+        b"eyJhbGciOiJub25lIn0.e30.",                 // rayloc:ignore
+        b"eyAiYWxnIiA6ICJSU0EyNTYiIH0.e30.AAAA",     // rayloc:ignore
+        b"eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..AAAA.AAAA.AAAA", // rayloc:ignore
     ] {
         assert_eq!(rules(token).len(), 1);
         assert_eq!(rules(token)[0].0, "jose-token");
@@ -213,11 +213,11 @@ fn strong_context_words_use_snake_and_camel_boundaries() {
 #[test]
 fn trailing_ignore_after_an_unquoted_webhook_is_a_directive() {
     assert!(
-        rules(b"webhook=https://hooks.slack.com/services/T/B/synthetic-secret # rayloc:ignore")
+        rules(b"webhook=https://hooks.slack.com/services/T/B/synthetic-secret # rayloc:ignore") // rayloc:ignore
             .is_empty()
     );
     assert_eq!(
-        rules(b"webhook=https://hooks.slack.com/services/T/B/synthetic-secret").len(),
+        rules(b"webhook=https://hooks.slack.com/services/T/B/synthetic-secret").len(), // rayloc:ignore
         1
     );
 }

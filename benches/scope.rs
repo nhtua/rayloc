@@ -33,7 +33,7 @@ fn main() {
         for &count in &counts {
             let temp = support::TempDir::new();
             let content = if dense {
-                b"ghp_abcdefghijklmnop\n".repeat(100)
+                b"ghp_abcdefghijklmnop\n".repeat(100) // rayloc:ignore
             } else {
                 let mut content = b"ordinary code line\n".repeat(bytes.div_ceil(19));
                 content.extend_from_slice(&[

@@ -8,7 +8,7 @@ fn main() {
     )
     .unwrap();
     let registry = Registry::compile(policy).unwrap();
-    let record = b"ordinary content\nkey=ghp_SyntheticBenchmark0123456789\npassword='aaaaaaaa'\napi_key=Q7v2n9B4x6M1z8K3\ncorp_0123456789AbCdEf\ntoken='eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2ln'\npassword=${PASSWORD}\npassword_sha256=9f21c7ab6e40d835\nkey=ghp_abcdefghijklmnop # rayloc:ignore\n";
+    let record = b"ordinary content\nkey=ghp_SyntheticBenchmark0123456789\npassword='aaaaaaaa'\napi_key=Q7v2n9B4x6M1z8K3\ncorp_0123456789AbCdEf\ntoken='eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.c2ln'\npassword=${PASSWORD}\npassword_sha256=9f21c7ab6e40d835\nkey=ghp_abcdefghijklmnop # rayloc:ignore\n"; // rayloc:ignore
     let input = record.repeat(1024);
     let mut samples = Vec::new();
     let mut detected = 0;
