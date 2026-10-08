@@ -105,7 +105,7 @@ for alphabet in (string.ascii_letters + string.digits, "0123456789abcdef"):
 ### Private-key and Base64 checks
 
 Applying the original header regex using Python's regex engine rejected
-`-----BEGIN PRIVATE KEY-----` but matched the RSA, EC, ENCRYPTED, and OPENSSH
+`-----BEGIN PRIVATE KEY-----` but matched the RSA, EC, ENCRYPTED, and OPENSSH // rayloc:ignore
 variants. This establishes the optional-label bug; it does not verify Rust
 regex performance or key validity. The corrected pattern includes all five.
 

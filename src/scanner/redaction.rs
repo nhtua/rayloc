@@ -19,6 +19,34 @@ pub struct RedactedString {
     length: usize,
 }
 
+/// A full matched value retained only for an explicitly unredacted report.
+/// Formatting escapes control characters, while debug output remains masked.
+#[derive(Clone)]
+pub struct UnredactedString(Box<[u8]>);
+
+impl UnredactedString {
+    pub fn new(value: &[u8]) -> Self {
+        Self(value.into())
+    }
+}
+
+impl fmt::Display for UnredactedString {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for character in String::from_utf8_lossy(&self.0).chars() {
+            for escaped in character.escape_debug() {
+                fmt::Write::write_char(formatter, escaped)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for UnredactedString {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("[REDACTED]")
+    }
+}
+
 impl RedactedString {
     pub fn new(value: &[u8]) -> Self {
         let mut length = PREVIEW_BYTES.min(value.len() / 4);

@@ -127,7 +127,7 @@ fn padded_app_jwt_segments_are_rejected_without_emitting_a_truncated_prefix() {
         assert_eq!(outcome.exit_code(), 0);
         assert!(outcome.findings.is_empty());
     }
-    let token = "ghs_1234_eyJhbGciOiJIUzI1NiJ9.e30.AAAA";
+    let token = "ghs_1234_eyJhbGciOiJIUzI1NiJ9.e30.AAAA"; // rayloc:ignore
     let outcome = scan_reader_with_registry(&mut Cursor::new(token), 1, &policy);
     assert_eq!(outcome.findings.len(), 1);
     assert_eq!(

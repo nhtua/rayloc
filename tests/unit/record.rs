@@ -4,7 +4,7 @@ use super::super::fingerprint::FindingId;
 use super::super::parallel_support::{semantic_key, token_line};
 use super::super::{ScanError, ScanOutcome};
 use super::{RecordContext, evaluate_record, prepare_finding, publish_finding};
-use crate::rules::{Registry, context::Suppressions, entropy::Histogram};
+use crate::rules::{Registry, builtin::RuleId, context::Suppressions, entropy::Histogram};
 use std::sync::Mutex;
 
 fn make_test_registry() -> Registry {
@@ -46,6 +46,7 @@ fn evaluation_preserves_spans_ids_priority_and_acceptance() {
         source_id,
         path,
         registry: &registry,
+        retain_unredacted_value: false,
     };
 
     // Collect findings via callback
@@ -115,6 +116,7 @@ fn publication_is_redacted_and_nonterminal_limits_are_preserved() {
         source_id,
         path,
         registry,
+        retain_unredacted_value: false,
     };
     let mut suppressions = Suppressions::default();
     let mut findings = Vec::new();
@@ -213,6 +215,7 @@ fn semantic_key_matches_serial_equivalent_outcomes() {
         source_id,
         path,
         registry: builtins(),
+        retain_unredacted_value: false,
     };
     let mut s1 = Suppressions::default();
     evaluate_record(line, 1, ctx1, &mut h1, &mut s1, |f| {
@@ -227,6 +230,7 @@ fn semantic_key_matches_serial_equivalent_outcomes() {
         source_id,
         path,
         registry: builtins(),
+        retain_unredacted_value: false,
     };
     let mut s2 = Suppressions::default();
     evaluate_record(line, 1, ctx2, &mut h2, &mut s2, |f| {
@@ -240,13 +244,14 @@ fn semantic_key_matches_serial_equivalent_outcomes() {
 /// Test prepare_finding returns None for accepted IDs.
 #[test]
 fn prepare_finding_skips_accepted_ids() {
-    let registry = make_test_registry();
+    let mut registry = make_test_registry();
     let bytes = b"EARLY";
-    // Compute the FindingId that would match "k3mnp" for path "test.rs" + "EARLY"
+    registry.accepted.insert(FindingId::new(b"test.rs", bytes));
     let ctx = RecordContext {
         source_id: 1,
         path: b"test.rs",
         registry: &registry,
+        retain_unredacted_value: false,
     };
     let span = 0..5;
 
@@ -258,15 +263,57 @@ fn prepare_finding_skips_accepted_ids() {
         crate::rules::builtin::RuleId::Custom(1, crate::rules::builtin::Severity::Medium),
         span,
     );
-    assert!(result.is_some());
+    assert!(result.is_none());
 
-    // Use a value whose FindingId IS the accepted ID "k3mnp"
-    // We can't easily reverse the hash, so instead test with a custom ID
-    let _test_id = FindingId::parse("k3mnp").unwrap();
-    // Since we can't construct a value that hashes to "k3mnp", test that
-    // prepare_finding correctly checks the accepted set
-    // by creating a finding manually and checking if it would be accepted
-    // when the ID matches
+    let accepted_value = b"EARLYCAPTURE";
+    let path = b"input.rs";
+    registry
+        .accepted
+        .insert(FindingId::new(path, accepted_value));
+    let mut findings = Vec::new();
+    let mut suppressions = Suppressions::default();
+    evaluate_record(
+        b"EARLYCAPTURE ghp_abcdefghijklmnop",
+        2,
+        RecordContext {
+            source_id: 1,
+            path,
+            registry: &registry,
+            retain_unredacted_value: false,
+        },
+        &mut Histogram::new(),
+        &mut suppressions,
+        |finding| findings.push(finding),
+    )
+    .unwrap();
+    assert_eq!(suppressions.accepted, 1);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].rule, RuleId::GithubToken);
+}
+
+#[test]
+fn prepare_finding_retains_full_value_only_when_requested() {
+    let line = b"ghp_abcdefghijklmnop";
+    let registry = builtins();
+    let finding = prepare_finding(
+        line,
+        3,
+        RecordContext {
+            source_id: 7,
+            path: b"secrets.txt",
+            registry,
+            retain_unredacted_value: true,
+        },
+        RuleId::GithubToken,
+        0..line.len(),
+    )
+    .expect("finding should not be accepted");
+    let value = finding
+        .unredacted_value
+        .as_ref()
+        .expect("explicitly requested");
+    assert_eq!(value.to_string(), "ghp_abcdefghijklmnop");
+    assert!(!format!("{finding:?}").contains("ghp_abcdefghijklmnop"));
 }
 
 /// Test that suppressions merge correctly when evaluate_record encounters errors.
@@ -278,6 +325,7 @@ fn evaluate_record_counts_accepted_before_registry_error() {
         source_id: 1,
         path: b"test.rs",
         registry: &registry,
+        retain_unredacted_value: false,
     };
     let mut suppressions = Suppressions::default();
     let mut histogram = Histogram::new();

@@ -9,6 +9,7 @@ use crate::rules::builtin::RuleId;
 use crate::scanner::fingerprint::FindingId;
 use crate::scanner::redaction::RedactedString;
 use crate::scanner::{Finding, ScanOutcome};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -33,6 +34,7 @@ fn make_finding(id: u32) -> Finding {
         end_column: 10,
         rule: RuleId::AwsAccessKeyId,
         value: RedactedString::new(b"test-secret"),
+        unredacted_value: None,
         id: FindingId::new(b"test/path.rs", b"test-secret"),
     }
 }
@@ -82,6 +84,63 @@ fn terminal_emitter_formats_source_locations_consistently() {
     emitter.emit_finding(&make_finding(1), Some("src/key.pem"));
     let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
     assert!(text.contains("\nFile: src/key.pem:1:1\n"));
+}
+
+#[test]
+fn terminal_emitter_prints_full_value_only_when_configured() {
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let finding = Finding {
+        unredacted_value: Some(crate::scanner::redaction::UnredactedString::new(
+            b"prefix-ghp_secret-suffix",
+        )),
+        ..make_finding(1)
+    };
+    assert!(!format!("{finding:?}").contains("prefix-ghp_secret-suffix"));
+    let mut emitter = TerminalEmitter::new(Capture(output.clone())).with_no_redact(true);
+    emitter.emit_finding(&finding, Some("secret.txt"));
+    let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+    assert!(text.contains("Value: prefix-ghp_secret-suffix"));
+    assert!(!text.contains("key=prefix-ghp_secret-suffix"));
+
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let mut emitter = TerminalEmitter::new(Capture(output.clone()));
+    emitter.emit_finding(&finding, Some("secret.txt"));
+    let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+    assert!(!text.contains("prefix-ghp_secret-suffix"));
+    assert!(text.contains("Value: te********"));
+
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let mut emitter = TerminalEmitter::new(Capture(output.clone())).with_no_redact(true);
+    emitter.emit_finding(&make_finding(2), Some("secret.txt"));
+    let text = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+    assert!(text.contains("Value: te********"));
+}
+
+#[derive(Clone)]
+struct DefaultRedactionEmitter(Arc<AtomicBool>);
+
+impl FindingEmitter for DefaultRedactionEmitter {
+    fn begin_scan(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    fn emit_finding(&mut self, _finding: &Finding, _source_path: Option<&str>) {}
+
+    fn finish_scan(&mut self, _outcome: &ScanOutcome) {}
+}
+
+#[test]
+fn shared_emitter_calls_begin_and_defaults_to_redaction() {
+    let began = Arc::new(AtomicBool::new(false));
+    let emitter = SharedEmitter::new(Box::new(DefaultRedactionEmitter(Arc::clone(&began))));
+    assert!(!emitter.no_redact());
+    emitter.begin_scan();
+    assert!(began.load(Ordering::SeqCst));
+}
+
+#[test]
+fn byte_formatter_handles_the_largest_value() {
+    assert_eq!(super::format_bytes(u64::MAX), "16 EiB");
 }
 
 #[test]

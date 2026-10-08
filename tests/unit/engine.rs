@@ -289,6 +289,50 @@ fn worker_file_batch_path_scans_large_sources_and_excludes_binary_files() {
 }
 
 #[test]
+fn worker_file_paths_report_missing_source_errors_in_serial_and_batch_modes() {
+    let directory = support::TempDir::new();
+    let missing = directory.path().join("missing.rs");
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut worker = Worker::new();
+    let serial = worker.file(
+        &missing,
+        Path::new("missing.rs"),
+        1,
+        &registry,
+        &Mutex::new(Collector::new(100)),
+        None,
+    );
+    assert_eq!(serial.errors[0].error, ScanError::Open);
+
+    let limits = crate::scanner::batch::BATCH_LIMITS;
+    let helpers = crate::scanner::batch::HelperPool::new(2, limits);
+    let batched = worker.file_with_batches(
+        &missing,
+        Path::new("missing.rs"),
+        1,
+        &registry,
+        &helpers,
+        limits,
+        &Mutex::new(Collector::new(100)),
+        None,
+    );
+    assert_eq!(batched.outcome.errors[0].error, ScanError::Open);
+
+    let binary = directory.path().join("binary.rs");
+    fs::write(&binary, b"\0binary data\n").unwrap();
+    let serial_binary = worker.file(
+        &binary,
+        Path::new("binary.rs"),
+        2,
+        &registry,
+        &Mutex::new(Collector::new(100)),
+        None,
+    );
+    assert_eq!(serial_binary.stats.files_excluded, 1);
+    assert_eq!(serial_binary.stats.files_completed, 0);
+}
+
+#[test]
 fn helper_detection_errors_stop_the_wave_after_committed_records() {
     let mut input = b"clean\n".to_vec();
     input.extend_from_slice(b"ghp_");
@@ -907,6 +951,7 @@ fn reusable_file_buffers_and_worker_failures_preserve_counts() {
             end_column: 2,
             rule: crate::rules::builtin::RuleId::GithubToken,
             value: RedactedString::new(b"x"),
+            unredacted_value: None,
             id: FindingId::new(b"", b"x"),
         },
         b"test/path",

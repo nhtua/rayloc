@@ -868,12 +868,12 @@ const SLACK_PREFIXES: &[&[u8]] = &[
     b"https://hooks.slack-gov.com/services/",
 ];
 const PRIVATE_KEY_MARKERS: &[&[u8]] = &[
-    b"-----BEGIN PRIVATE KEY-----",
-    b"-----BEGIN RSA PRIVATE KEY-----",
-    b"-----BEGIN EC PRIVATE KEY-----",
-    b"-----BEGIN DSA PRIVATE KEY-----",
-    b"-----BEGIN OPENSSH PRIVATE KEY-----",
-    b"-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    b"-----BEGIN PRIVATE KEY-----",           // rayloc:ignore
+    b"-----BEGIN RSA PRIVATE KEY-----",       // rayloc:ignore
+    b"-----BEGIN EC PRIVATE KEY-----",        // rayloc:ignore
+    b"-----BEGIN DSA PRIVATE KEY-----",       // rayloc:ignore
+    b"-----BEGIN OPENSSH PRIVATE KEY-----",   // rayloc:ignore
+    b"-----BEGIN ENCRYPTED PRIVATE KEY-----", // rayloc:ignore
 ];
 
 // LLM provider API key prefixes

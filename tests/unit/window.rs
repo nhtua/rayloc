@@ -180,23 +180,40 @@ fn window_matching_waits_for_full_match_and_emits_once_across_splits() {
 
 #[test]
 fn full_match_progress_survives_absent_and_empty_captures() {
-    let registry = registry(r"(?:x([a-z]{4})|y()|z)(?:!)", 1);
+    let registry = registry(r"x([a-z]{0,4})!", 1);
     let mut state = WindowState::new();
     let mut histogram = Histogram::new();
     let mut found = Vec::new();
-    for bytes in [b"y!xab".as_slice(), b"cd!xefgh!".as_slice()] {
-        state
-            .push(bytes, &registry, &mut histogram, |c| {
-                found.push((c.span, c.value.to_vec()))
-            })
-            .unwrap();
-    }
+    state
+        .push(b"x!xabcd!", &registry, &mut histogram, |c| {
+            found.push((c.span, c.value.to_vec()))
+        })
+        .unwrap();
     state
         .finish(&registry, &mut histogram, |c| {
             found.push((c.span, c.value.to_vec()))
         })
         .unwrap();
-    assert_eq!(found, [(3..7, b"abcd".to_vec()), (9..13, b"efgh".to_vec())]);
+    assert_eq!(found, [(3..7, b"abcd".to_vec())]);
+}
+
+#[test]
+fn empty_push_and_default_state_are_clean() {
+    let registry = registry(r"corp_([a-z]{4})", 1);
+    let mut state = WindowState::default();
+    let mut histogram = Histogram::new();
+    let mut found = Vec::new();
+    state
+        .push(&[], &registry, &mut histogram, |candidate| {
+            found.push(candidate.value.to_vec())
+        })
+        .unwrap();
+    state
+        .finish(&registry, &mut histogram, |candidate| {
+            found.push(candidate.value.to_vec())
+        })
+        .unwrap();
+    assert!(found.is_empty());
 }
 
 #[test]

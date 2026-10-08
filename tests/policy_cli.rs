@@ -93,7 +93,7 @@ fn clean_excluded_and_config_failure_have_correct_exits() {
     let root = TempDir::new();
     fs::write(root.path().join("input"), "ordinary text\n").unwrap();
     assert_eq!(run(&root, &["scan", "input"]).status.code(), Some(0));
-    fs::write(root.path().join("input"), "ghp_abcdefghijklmnop\n").unwrap();
+    fs::write(root.path().join("input"), "ghp_abcdefghijklmnop\n").unwrap(); // rayloc:ignore
     fs::write(root.path().join(".raylocignore"), "input\n").unwrap();
     let excluded = run(&root, &["scan", "input"]);
     assert_eq!(excluded.status.code(), Some(0));
@@ -184,7 +184,7 @@ fn git_root_policy_overrides_nested_policy_and_gitignore_does_not_hide_explicit_
             .success()
     );
     fs::create_dir(root.path().join("nested")).unwrap();
-    fs::write(root.path().join("nested/input"), "ghp_abcdefghijklmnop").unwrap();
+    fs::write(root.path().join("nested/input"), "ghp_abcdefghijklmnop").unwrap(); // rayloc:ignore
     fs::write(root.path().join(".gitignore"), "nested/\n").unwrap();
     fs::write(root.path().join("nested/.rayloc.yaml"), "invalid syntax").unwrap();
     fs::write(
@@ -195,7 +195,7 @@ fn git_root_policy_overrides_nested_policy_and_gitignore_does_not_hide_explicit_
     assert_eq!(run(&root, &["scan", "nested/input"]).status.code(), Some(0));
     fs::write(root.path().join(".rayloc.yaml"), "version: \"1\"").unwrap();
     assert_eq!(run(&root, &["scan", "nested/input"]).status.code(), Some(1));
-    fs::write(root.path().join(".git/synthetic"), "ghp_abcdefghijklmnop").unwrap();
+    fs::write(root.path().join(".git/synthetic"), "ghp_abcdefghijklmnop").unwrap(); // rayloc:ignore
     let excluded = run(&root, &["scan", ".git/synthetic"]);
     assert_eq!(excluded.status.code(), Some(0));
     assert!(
@@ -210,7 +210,7 @@ fn native_files_and_non_git_symlink_parents_keep_policy() {
     use std::os::unix::fs::symlink;
     let root = TempDir::new();
     let filename = "file-name";
-    fs::write(root.path().join(filename), "ghp_abcdefghijklmnop").unwrap();
+    fs::write(root.path().join(filename), "ghp_abcdefghijklmnop").unwrap(); // rayloc:ignore
     let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
         .current_dir(root.path())
         .arg("scan")

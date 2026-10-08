@@ -51,6 +51,7 @@ fn outcomes_obey_exit_precedence_and_deduplicate_errors() {
         end_column: 28,
         rule: RuleId::GithubToken,
         value: RedactedString::new(sentinel),
+        unredacted_value: None,
         id: super::fingerprint::FindingId::new(b"", sentinel),
     });
     assert_eq!(outcome.exit_code(), 1);

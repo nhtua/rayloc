@@ -39,7 +39,7 @@ fn text(output: &Output) -> String {
 fn secret(root: &TempDir, path: &str) {
     let path = root.path().join(path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, "ghp_abcdefghijklmnop\n").unwrap();
+    fs::write(path, "ghp_abcdefghijklmnop\n").unwrap(); // rayloc:ignore
 }
 
 #[test]
@@ -276,7 +276,7 @@ fn newline_paths_and_duplicate_index_stages_keep_raw_order() {
     let root = TempDir::new();
     git(&root, &["init", "--quiet"]);
     for name in ["a\nkey", "zkey"] {
-        fs::write(root.path().join(name), "ghp_abcdefghijklmnop").unwrap();
+        fs::write(root.path().join(name), "ghp_abcdefghijklmnop").unwrap(); // rayloc:ignore
     }
     git(&root, &["add", "."]);
     let hash = Command::new("git")
@@ -519,7 +519,7 @@ fn review_nested_worktrees_exclude_both_git_and_common_administration() {
             "HEAD",
         ],
     );
-    fs::write(root.path().join("admin/secret"), "ghp_abcdefghijklmnop").unwrap();
+    fs::write(root.path().join("admin/secret"), "ghp_abcdefghijklmnop").unwrap(); // rayloc:ignore
     secret(&root, "nested/key");
     secret(&root, "linked/key");
     let output = run(&root, &["scan", "."]);

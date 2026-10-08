@@ -482,6 +482,8 @@ pub(super) fn detect_record(
         source_id,
         path,
         registry,
+        retain_unredacted_value: emitter
+            .is_some_and(crate::report::emitter::SharedEmitter::no_redact),
     };
     let mut findings = Vec::new();
     let result = evaluate_record(
@@ -596,6 +598,8 @@ fn read_file_with_batches(
         source_id,
         path,
         registry,
+        retain_unredacted_value: emitter
+            .is_some_and(crate::report::emitter::SharedEmitter::no_redact),
     };
     let mut helper_batches_enabled = true;
     let mut progress = super::chunk::ReadProgress::default();

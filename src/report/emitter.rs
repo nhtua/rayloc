@@ -102,6 +102,11 @@ pub trait FindingEmitter {
 
     /// Called at the end of a scan to render the summary.
     fn finish_scan(&mut self, outcome: &ScanOutcome);
+
+    /// Whether finding records should retain and print their full matched values.
+    fn no_redact(&self) -> bool {
+        false
+    }
 }
 
 /// Thread-safe wrapper that delegates to the underlying emitter.
@@ -145,12 +150,20 @@ impl SharedEmitter {
             .expect("emitter lock not poisoned")
             .finish_scan(outcome);
     }
+
+    pub fn no_redact(&self) -> bool {
+        self.inner
+            .lock()
+            .expect("emitter lock is not poisoned")
+            .no_redact()
+    }
 }
 
 /// Terminal output emitter that streams findings immediately.
 pub struct TerminalEmitter<W: Write + 'static> {
     output: W,
     silent: bool,
+    no_redact: bool,
 }
 
 impl<W: Write + 'static> TerminalEmitter<W> {
@@ -158,12 +171,19 @@ impl<W: Write + 'static> TerminalEmitter<W> {
         Self {
             output,
             silent: false,
+            no_redact: false,
         }
     }
 
     /// Suppress individual finding blocks while retaining the final summary.
     pub fn with_silent(mut self, silent: bool) -> Self {
         self.silent = silent;
+        self
+    }
+
+    /// Print full matched values in findings instead of their redacted preview.
+    pub fn with_no_redact(mut self, no_redact: bool) -> Self {
+        self.no_redact = no_redact;
         self
     }
 }
@@ -186,18 +206,26 @@ impl<W: Write + 'static> FindingEmitter for TerminalEmitter<W> {
         } else {
             let _ = write!(self.output, "\nFile: source #{}", finding.source_id);
         }
-        let _ = writeln!(
+        let _ = write!(
             self.output,
-            ":{}:{}\nRule: {} ({})\nSeverity: {}; {}\nValue: {}\nID: {}",
+            ":{}:{}\nRule: {} ({})\nSeverity: {}; {}\nValue: ",
             finding.line,
             finding.start_column,
             metadata.description,
             metadata.id,
             metadata.severity,
             metadata.confidence,
-            finding.value,
-            finding.id,
         );
+        if self.no_redact {
+            if let Some(value) = &finding.unredacted_value {
+                let _ = write!(self.output, "{value}");
+            } else {
+                let _ = write!(self.output, "{}", finding.value);
+            }
+        } else {
+            let _ = write!(self.output, "{}", finding.value);
+        }
+        let _ = writeln!(self.output, "\nID: {}", finding.id);
     }
 
     fn finish_scan(&mut self, outcome: &ScanOutcome) {
@@ -253,5 +281,9 @@ impl<W: Write + 'static> FindingEmitter for TerminalEmitter<W> {
             );
         }
         let _ = self.output.flush();
+    }
+
+    fn no_redact(&self) -> bool {
+        self.no_redact && !self.silent
     }
 }
