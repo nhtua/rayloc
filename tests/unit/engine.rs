@@ -972,3 +972,98 @@ fn buffered_read_error_propagates_without_diagnostics() {
     };
     assert!(reader.read(&mut [0; 8]).is_err());
 }
+
+#[test]
+fn helper_batches_and_serial_scanning_agree_on_source_syntax() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let batch_limits = crate::scanner::batch::BatchLimits {
+        target_bytes: 32,
+        hard_bytes: 64,
+        max_batches: 8,
+        max_findings: 0,
+    };
+    let inputs = [
+        (
+            b"source.ts".as_slice(),
+            b"api_key=client.secret\npassword=aaaaaaaa\napi_key=crate::TOKEN\npassword === 'weakweak'\n".as_slice(),
+        ),
+        (
+            b"values.env".as_slice(),
+            b"password=self.DUMMY_API_KEY\npassword=aaaaaaaa\npassword=config.password\n".as_slice(),
+        ),
+    ];
+
+    for (source_id, (path, input)) in inputs.into_iter().enumerate() {
+        let source_id = source_id as u32 + 1;
+        let helpers = crate::scanner::batch::HelperPool::new(3, batch_limits);
+        let _held = helpers.try_acquire();
+        let collector = Mutex::new(Collector::new(100));
+        let mut batched = ScanOutcome::default();
+        assert!(
+            read_file_with_batches(
+                &mut Cursor::new(input),
+                source_id,
+                path,
+                &registry,
+                &helpers,
+                batch_limits,
+                &mut batched,
+                &collector,
+                None,
+            )
+            .is_ok()
+        );
+        collector
+            .into_inner()
+            .expect("collector lock is not poisoned")
+            .finish(&mut batched);
+
+        let serial_collector = Mutex::new(Collector::new(100));
+        let mut serial = ScanOutcome::default();
+        assert!(
+            read_records_into(
+                &mut Cursor::new(input),
+                source_id,
+                path,
+                &mut serial,
+                Limits {
+                    line_bytes: usize::MAX,
+                    findings: 100,
+                },
+                &registry,
+                &mut super::super::stream::LineSession::new(),
+                &mut Histogram::new(),
+                &serial_collector,
+                None,
+            )
+            .is_ok()
+        );
+        serial_collector
+            .into_inner()
+            .expect("collector lock is not poisoned")
+            .finish(&mut serial);
+
+        let locations = |outcome: &ScanOutcome| {
+            outcome
+                .findings
+                .iter()
+                .map(|finding| {
+                    (
+                        finding.source_id,
+                        finding.line,
+                        finding.start_column,
+                        finding.end_column,
+                        finding.rule.metadata().id,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(locations(&batched), locations(&serial));
+        assert_eq!(batched.stats.suppressions, serial.stats.suppressions);
+        assert_eq!(batched.stats.bytes_read, serial.stats.bytes_read);
+        assert_eq!(batched.stats.lines_scanned, serial.stats.lines_scanned);
+        assert_eq!(batched.exit_code(), serial.exit_code());
+        assert!(helpers.snapshot().helper_batches > 0);
+        assert!(helpers.snapshot().capacity_replays > 0);
+    }
+}

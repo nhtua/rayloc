@@ -123,6 +123,28 @@ fn omitted_directory_and_brace_globs_include_hidden_and_lockfiles() {
 }
 
 #[test]
+fn directory_scans_select_source_grammar_per_file_path() {
+    let root = TempDir::new();
+    fs::write(
+        root.path().join("member.ts"),
+        "api_key=args.vllm_api_key\npassword=config.password\n",
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("values.env"),
+        "password=self.DUMMY_API_KEY\n",
+    )
+    .unwrap();
+
+    let output = run(&root, &["scan", "--threads", "2", "."]);
+    assert_eq!(output.status.code(), Some(1), "{}", text(&output));
+    let report = text(&output);
+    assert!(report.contains("values.env:1:"), "{report}");
+    assert!(!report.contains("member.ts:"), "{report}");
+    assert!(report.contains("1 finding(s)"), "{report}");
+}
+
+#[test]
 fn git_tracked_exceptions_nested_policy_and_scanner_priority_are_preserved() {
     let root = TempDir::new();
     git(&root, &["init", "--quiet"]);

@@ -1,7 +1,7 @@
 use rayloc::{
     config::Config,
     rules::{Registry, entropy::Histogram},
-    scanner::engine::scan_reader_with_registry,
+    scanner::engine::{scan_file_with_registry, scan_reader_with_registry},
 };
 use std::io::Cursor;
 mod support;
@@ -65,6 +65,80 @@ fn contexts_support_short_random_hex_headers_json_and_escaped_quotes() {
     assert_eq!(
         rules(b"aws_secret_access_key=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCD")[0].0,
         "aws-secret-access-key"
+    );
+}
+
+#[test]
+fn file_scanning_uses_grammar_without_trusting_code_paths() {
+    let directory = support::TempDir::new();
+    let registry = Registry::compile(Config::default()).unwrap();
+    for name in ["member.py", "member.rs", "member.ts"] {
+        let path = directory.path().join(name);
+        std::fs::write(
+            &path,
+            b"api_key=args.vllm_api_key\npassword=self.DUMMY_API_KEY\n",
+        )
+        .unwrap();
+        let outcome = scan_file_with_registry(&path, &path, 1, &registry);
+        assert_eq!(outcome.exit_code(), 0, "{name}: {:?}", outcome.errors);
+        assert_eq!(outcome.stats.suppressions.reference, 2, "{name}");
+    }
+
+    for name in ["values.env", "values.sh", "values.unknown"] {
+        let path = directory.path().join(name);
+        std::fs::write(&path, b"password=self.DUMMY_API_KEY\n").unwrap();
+        let outcome = scan_file_with_registry(&path, &path, 1, &registry);
+        assert_eq!(outcome.exit_code(), 1, "{name}: {:?}", outcome.errors);
+        assert_eq!(
+            outcome.findings[0].rule.metadata().id,
+            "password-assignment"
+        );
+    }
+
+    for name in ["values.env", "values.sh", "values.unknown"] {
+        let path = directory.path().join(format!("controls.{name}"));
+        std::fs::write(
+            &path,
+            b"api_key=Q7v2n9B4x6M1z8K3\npassword=aaaaaaaa\npassword='weakweak'\n",
+        )
+        .unwrap();
+        let outcome = scan_file_with_registry(&path, &path, 1, &registry);
+        assert_eq!(outcome.findings.len(), 3, "{name}");
+    }
+
+    let path = directory.path().join("positive.ts");
+    std::fs::write(
+        &path,
+        b"api_key=Q7v2n9B4x6M1z8K3\npassword=aaaaaaaa\npassword='self.DUMMY_API_KEY'\nauth_token='ANTHROPIC_AUTH_TOKEN'\n",
+    )
+    .unwrap();
+    let outcome = scan_file_with_registry(&path, &path, 1, &registry);
+    assert_eq!(outcome.exit_code(), 1);
+    assert_eq!(outcome.findings.len(), 4);
+
+    let path = directory.path().join("selectors.ts");
+    std::fs::write(
+        &path,
+        b"const key = route.auth === \"api_key\" ? \"ANTHROPIC_API_KEY\" : \"ANTHROPIC_AUTH_TOKEN\";\nif (password === 'weakweak') {}\n",
+    )
+    .unwrap();
+    let outcome = scan_file_with_registry(&path, &path, 1, &registry);
+    assert_eq!(outcome.exit_code(), 1);
+    assert_eq!(outcome.findings.len(), 1);
+    assert_eq!(
+        outcome.findings[0].rule.metadata().id,
+        "password-assignment"
+    );
+
+    let unnamed = scan_reader_with_registry(
+        &mut Cursor::new(b"password=self.DUMMY_API_KEY".as_slice()),
+        1,
+        &registry,
+    );
+    assert_eq!(unnamed.exit_code(), 1);
+    assert_eq!(
+        unnamed.findings[0].rule.metadata().id,
+        "password-assignment"
     );
 }
 

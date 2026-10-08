@@ -9,7 +9,7 @@ use super::{
 use crate::{
     report::emitter::SharedEmitter,
     rules::{
-        Registry,
+        Registry, SourceSyntax,
         builtin::ProviderState,
         context::{ContextState, DirectiveState, Suppressions},
         entropy::Histogram,
@@ -26,6 +26,7 @@ struct Pending {
 
 /// Holds long-line matches privately until the real line terminator is seen.
 pub(crate) struct LineSession {
+    syntax: SourceSyntax,
     short: Vec<u8>,
     legacy: Vec<u8>,
     legacy_overflow: bool,
@@ -48,6 +49,7 @@ pub(crate) struct LineSession {
 impl LineSession {
     pub(crate) fn new() -> Self {
         Self {
+            syntax: SourceSyntax::Text,
             short: Vec::with_capacity(crate::scanner::chunk::CHUNK_BYTES),
             legacy: Vec::new(),
             legacy_overflow: false,
@@ -66,6 +68,11 @@ impl LineSession {
             by_span: BTreeMap::new(),
             pending_overflow: false,
         }
+    }
+
+    pub(crate) fn begin_source(&mut self, syntax: SourceSyntax) {
+        self.syntax = syntax;
+        self.context = ContextState::with_syntax(syntax);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -92,6 +99,7 @@ impl LineSession {
                 fragment.payload,
                 source_id,
                 path,
+                self.syntax,
                 fragment.line,
                 outcome,
                 limits,
@@ -149,6 +157,7 @@ impl LineSession {
                     &self.short,
                     source_id,
                     path,
+                    self.syntax,
                     fragment.line,
                     outcome,
                     limits,

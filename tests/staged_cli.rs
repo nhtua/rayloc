@@ -98,6 +98,40 @@ fn staged_policy_ignores_unstaged_edits_and_gitignore_never_hides_forced_entries
     fs::write(root.join(".gitignore"), "visible\n").unwrap();
     check(scan(root, &[]), 1, 1);
 }
+
+#[test]
+fn staged_code_references_preserve_index_scope_and_path_syntax() {
+    let dir = repo();
+    let root = dir.path();
+    fs::write(root.join("options.ts"), "const options = {\n};\n").unwrap();
+    git(root, &["add", "options.ts"]);
+    git(root, &["commit", "-qm", "base"]);
+
+    fs::write(
+        root.join("options.ts"),
+        concat!(
+            "const options = {\n",
+            "  api_key: 'Q7v2n9B4x6M1z8K3',\n",
+            "};\n",
+            "const key = route.auth === \\\"api_key\\\" ? \\\"ANTHROPIC_API_KEY\\\" : \\\"ANTHROPIC_AUTH_TOKEN\\\";\n",
+            "password='self.DUMMY_API_KEY'\n",
+            "api_key=args.vllm_api_key\n",
+        ),
+    )
+    .unwrap();
+    fs::write(root.join("values.env"), "password=self.DUMMY_API_KEY\n").unwrap();
+    git(root, &["add", "options.ts", "values.env"]);
+
+    // The staged snapshot has three genuine positives. Later worktree edits,
+    // an untracked file, and unchanged context must not affect the result.
+    fs::write(root.join("options.ts"), "safe unstaged replacement\n").unwrap();
+    fs::write(root.join("values.env"), "safe unstaged replacement\n").unwrap();
+    fs::write(root.join("untracked.ts"), "password='aaaaaaaa'\n").unwrap();
+    let text = check(scan(root, &[]), 1, 3);
+    assert!(text.contains("options.ts:2:"), "{text}");
+    assert!(text.contains("options.ts:5:"), "{text}");
+    assert!(text.contains("values.env:1:"), "{text}");
+}
 #[test]
 fn staged_argument_conflicts_and_nonrepository_fail_safely() {
     let dir = repo();

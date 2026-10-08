@@ -104,6 +104,35 @@ fn working_tree_policy_and_safe_reference_errors() {
         check(out, 2, 0);
     }
 }
+
+#[test]
+fn reference_diff_uses_path_syntax_and_scans_only_added_tracked_lines() {
+    let dir = repo();
+    let root = dir.path();
+    fs::write(root.join("options.ts"), "const options = {\n};\n").unwrap();
+    fs::write(root.join("values.env"), "safe\n").unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-qm", "base"]);
+
+    fs::write(
+        root.join("options.ts"),
+        concat!(
+            "const options = {\n",
+            "  api_key: 'Q7v2n9B4x6M1z8K3',\n",
+            "};\n",
+            "const key = route.auth === \\\"api_key\\\" ? \\\"ANTHROPIC_API_KEY\\\" : \\\"ANTHROPIC_AUTH_TOKEN\\\";\n",
+            "password='self.DUMMY_API_KEY'\n",
+            "api_key=args.vllm_api_key\n",
+        ),
+    )
+    .unwrap();
+    fs::write(root.join("values.env"), "password=self.DUMMY_API_KEY\n").unwrap();
+    fs::write(root.join("untracked.ts"), "password='aaaaaaaa'\n").unwrap();
+    let text = check(scan(root, &[]), 1, 3);
+    assert!(text.contains("options.ts:2:"), "{text}");
+    assert!(text.contains("options.ts:5:"), "{text}");
+    assert!(text.contains("values.env:1:"), "{text}");
+}
 #[test]
 fn modes_empty_sides_symlinks_and_sha256_preserve_strict_patch_contract() {
     use std::os::unix::fs::{PermissionsExt, symlink};

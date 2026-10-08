@@ -6,6 +6,104 @@ use crate::scanner::stream::LineSession;
 use std::io::Cursor;
 use std::sync::Mutex;
 
+#[allow(clippy::too_many_arguments)]
+fn feed_source_line(
+    session: &mut LineSession,
+    line: &[u8],
+    line_number: u64,
+    source_id: u32,
+    path: &[u8],
+    registry: &Registry,
+    outcome: &mut ScanOutcome,
+    collector: &Mutex<Collector>,
+) {
+    let limits = Limits {
+        findings: 10_000,
+        line_bytes: usize::MAX,
+    };
+    for (index, fragment) in line.chunks(crate::scanner::chunk::CHUNK_BYTES).enumerate() {
+        let column = index * crate::scanner::chunk::CHUNK_BYTES + 1;
+        session
+            .push(
+                LineFragment {
+                    payload: fragment,
+                    line: line_number,
+                    column: column as u64,
+                    end: (column + fragment.len() - 1 == line.len())
+                        .then_some(crate::scanner::chunk::LineEnd::Eof),
+                },
+                source_id,
+                path,
+                registry,
+                outcome,
+                collector,
+                None,
+                limits,
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn source_syntax_survives_long_line_promotion_and_resets_between_sources() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let collector = Mutex::new(Collector::new(10_000));
+    let mut outcome = ScanOutcome::default();
+    let mut session = LineSession::new();
+
+    let mut long = b"password === 'weakweak'; ".to_vec();
+    let before_probe = crate::scanner::chunk::CHUNK_BYTES - 1 - long.len() - b"api_key".len();
+    long.extend(std::iter::repeat_n(b' ', before_probe));
+    long.extend_from_slice(b"api_key");
+    assert_eq!(long.len(), crate::scanner::chunk::CHUNK_BYTES - 1);
+    long.extend_from_slice(b"=client.secret; ");
+    long.resize(2 * crate::scanner::chunk::CHUNK_BYTES + 64, b' ');
+    long.extend_from_slice(b"password=aaaaaaaa; password=\"self.DUMMY_API_KEY\"");
+    assert!(long.len() > 2 * crate::scanner::chunk::CHUNK_BYTES);
+
+    session.begin_source(crate::rules::SourceSyntax::Code);
+    feed_source_line(
+        &mut session,
+        &long,
+        1,
+        1,
+        b"long.ts",
+        &registry,
+        &mut outcome,
+        &collector,
+    );
+    assert_eq!(outcome.stats.findings_detected, 3);
+    assert_eq!(outcome.stats.suppressions.reference, 1);
+
+    session.begin_source(crate::rules::SourceSyntax::Text);
+    feed_source_line(
+        &mut session,
+        b"password=self.DUMMY_API_KEY",
+        2,
+        2,
+        b"values.env",
+        &registry,
+        &mut outcome,
+        &collector,
+    );
+    assert_eq!(outcome.stats.findings_detected, 4);
+
+    session.abort_line();
+    session.begin_source(crate::rules::SourceSyntax::Code);
+    feed_source_line(
+        &mut session,
+        b"api_key=client.secret",
+        3,
+        3,
+        b"next.ts",
+        &registry,
+        &mut outcome,
+        &collector,
+    );
+    assert_eq!(outcome.stats.findings_detected, 4);
+    assert_eq!(outcome.stats.suppressions.reference, 2);
+}
+
 const AWS: &[u8] = b"AKIA1234567890ABCDEF";
 
 #[test]
