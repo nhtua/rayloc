@@ -282,7 +282,7 @@ and both Python test modules passed.
 - [x] Use the candidate Rayloc to re-preview vLLM and the equivalent Paperclip relative glob; source review is now authorized. Compare source/input hashes and occurrence locations, not just totals. With unchanged policy/input, all 18 verified members plus the one environment-selector error should disappear and the 24 literal/provider/marker occurrences should remain. Investigate drift without adding dummy exceptions, auto-accepting findings, or modifying target files. The vLLM run removed all 8 baseline locations; Paperclip removed 11 and retained the other 24 exactly. Input identity hashes and the per-location deltas are recorded in the results report. Neither target repository's tracked files were modified.
 - [x] Produce safe results documenting changes, per-family/length/context confusion, occurrence counts, all performance/RSS gates, resource/error checks, and limitations. Do not commit raw preview output, positive values, or source excerpts. State whether any gate is unmet. None of the specified accuracy, performance, test, or production coverage gates is unmet.
 - [x] Commit documentation/results as `docs: record builtin detection precision and performance`.
-- [ ] Request review of the actual implementation and evidence before integration/release. Execution approval does not authorize publishing or merging.
+- [x] Request review of the actual implementation and evidence before integration/release. An independent read-only review of `b0ecc6e..6f8d6fb` found no blocking or minor issues; it recommended keeping the recorded accuracy/performance evidence attached. Execution approval does not authorize publishing or merging.
 
 ## Plan review and execution boundary
 
