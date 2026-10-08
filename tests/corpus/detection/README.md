@@ -49,6 +49,10 @@ report compared by `--check`; the historical committed report remains the
 default. Invalid, absolute, or traversing source basenames and incomplete scans
 are evaluation errors. Reports contain aggregate metadata only and never print
 fixture values.
+The original record report stays frozen. Its two quoted-reference labels now
+produce intentional record-level drift because quoted programming-looking text
+is eligible as a literal; compare subsequent builds with a reviewed candidate
+report via `--expected` rather than rewriting the historical report.
 
 Committed records store `text_parts` and `value_parts` as strings of at most
 eight characters. The evaluator joins them only at runtime, writes the original
