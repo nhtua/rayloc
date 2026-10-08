@@ -74,11 +74,9 @@ fn no_redact_shows_full_matching_value_only_when_requested() {
         .output()
         .unwrap();
     assert!(help.status.success());
-    assert!(
-        String::from_utf8(help.stdout)
-            .unwrap()
-            .contains("--no-redact")
-    );
+    let help = String::from_utf8(help.stdout).unwrap();
+    assert!(help.contains("--no-redact"));
+    assert!(help.contains("preview [scan arguments]"));
 
     let redacted = Command::new(env!("CARGO_BIN_EXE_rayloc"))
         .current_dir(directory.path())
@@ -125,6 +123,27 @@ fn no_redact_shows_full_matching_value_only_when_requested() {
             .unwrap()
             .contains(&format!("Value: {token}"))
     );
+}
+
+#[test]
+fn preview_shortcut_scans_with_full_matched_values() {
+    let directory = support::TempDir::new();
+    let token = "ghp_PreviewShortcutSecret0123456789"; // rayloc:ignore
+    std::fs::write(
+        directory.path().join("secret.txt"),
+        format!("key={token}\n"),
+    )
+    .unwrap();
+
+    let preview = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(directory.path())
+        .args(["preview", "secret.txt"])
+        .output()
+        .unwrap();
+    assert_eq!(preview.status.code(), Some(1));
+    let preview_stdout = String::from_utf8(preview.stdout).unwrap();
+    assert!(preview_stdout.contains(&format!("Value: {token}")));
+    assert!(!preview_stdout.contains(&format!("key={token}")));
 }
 
 #[test]

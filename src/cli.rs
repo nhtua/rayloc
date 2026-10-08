@@ -23,6 +23,9 @@ Commands:
                   --no-redact prints full matched values
                   --silent hides individual findings and prints only the summary
 
+  preview [scan arguments]
+                  Preview findings with full matched values (same as scan --no-redact)
+
   accept <id>     Accept a reviewed finding by its report ID in the root .rayloc.yaml;
                   the ID covers that value in that file only
 
@@ -60,6 +63,11 @@ fn run_with_args(
             format_args!("rayloc {}", env!("CARGO_PKG_VERSION")),
         ),
         Some("scan") => scan(args, output, errors),
+        Some("preview") => scan(
+            std::iter::once(OsString::from("--no-redact")).chain(args),
+            output,
+            errors,
+        ),
         Some("accept") => accept(args, output, errors),
         Some("hook") => {
             if args.next().as_deref() != Some(std::ffi::OsStr::new("install"))
