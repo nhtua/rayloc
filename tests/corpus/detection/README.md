@@ -45,14 +45,17 @@ For these explicitly annotated partitions the evaluator compares multisets of
 `{rule, line, column}` records and reports occurrence TP/FP/FN, mismatching-row
 count, supported-positive misses, and supported-negative extras. `--corpus
 LABEL=PATH` adds an independent JSONL partition. `--expected PATH` selects the
-report compared by `--check`; the historical committed report remains the
-default. Invalid, absolute, or traversing source basenames and incomplete scans
+report compared by `--check`; the current reviewed report in
+`docs/research/detection-baseline.json` is the default. Invalid, absolute, or
+traversing source basenames and incomplete scans
 are evaluation errors. Reports contain aggregate metadata only and never print
 fixture values.
-The original record report stays frozen. Its two quoted-reference labels now
-produce intentional record-level drift because quoted programming-looking text
-is eligible as a literal; compare subsequent builds with a reviewed candidate
-report via `--expected` rather than rewriting the historical report.
+The original corpus bytes and labels stay frozen. Its two quoted-reference
+labels per partition now produce intentional false positives because quoted
+programming-looking text is eligible as a password literal. The default report
+was refreshed on 2026-10-08 after reviewing these cases; original P4 measurements
+and the changed counts are documented in `docs/research/detection-baseline.md`.
+Use `--expected` to check an alternate reviewed report for expanded corpora.
 
 Committed records store `text_parts` and `value_parts` as strings of at most
 eight characters. The evaluator joins them only at runtime, writes the original

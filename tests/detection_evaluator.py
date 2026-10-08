@@ -14,6 +14,17 @@ spec.loader.exec_module(baseline)
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_cli_default_check_matches_committed_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / 'accuracy.json'
+            result = subprocess.run(
+                [sys.executable, str(ROOT / 'scripts/detection_baseline.py'),
+                 '--check', '--output', str(report)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(report.is_file())
+
     def test_source_paths_preserve_unquoted_configuration_detection(self):
         rows = [
             dict(family='reference', context='assignment', length=17,

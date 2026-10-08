@@ -28,9 +28,13 @@ annotated ignored-line occurrence, as expected.
 
 These compact synthetic partitions validate the reviewed grammar cases. Their
 perfect candidate score is not an estimate of accuracy on arbitrary
-repositories. The older committed evaluator report remains unchanged; its
-quoted-reference suppression count differs because quoted strings stay eligible.
-Expanded checks explicitly compare against the reviewed candidate report.
+repositories. The [committed evaluator report](detection-baseline.json) was
+refreshed for CI after reviewing the older corpus: two quoted password literals
+per partition now count as false positives against the preserved labels, and
+reference suppressions fall from three to one. Positive predictions are unchanged.
+The [baseline notes](detection-baseline.md) preserve the original P4 measurements
+and explain the refreshed counts. Expanded checks explicitly compare against the
+reviewed candidate report.
 
 ## Performance and resource use
 
