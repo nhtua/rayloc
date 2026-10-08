@@ -8,7 +8,9 @@ use super::{
     fingerprint::FindingId,
     redaction::RedactedString,
 };
-use crate::rules::{Registry, builtin::RuleId, context::Suppressions, entropy::Histogram};
+use crate::rules::{
+    Registry, SourceSyntax, builtin::RuleId, context::Suppressions, entropy::Histogram,
+};
 use std::{ops::Range, sync::Mutex};
 
 /// Context shared across record preparation.
@@ -16,6 +18,7 @@ use std::{ops::Range, sync::Mutex};
 pub struct RecordContext<'a> {
     pub source_id: u32,
     pub path: &'a [u8],
+    pub syntax: SourceSyntax,
     pub registry: &'a Registry,
     pub retain_unredacted_value: bool,
 }
@@ -65,8 +68,9 @@ pub fn evaluate_record(
     mut emit: impl FnMut(Finding),
 ) -> Result<(), ScanError> {
     let mut accepted = 0u64;
-    let result = context.registry.detect_line_with_suppressions(
+    let result = context.registry.detect_line_in_source(
         bytes,
+        context.syntax,
         histogram,
         suppressions,
         |rule, span| {

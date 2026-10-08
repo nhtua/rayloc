@@ -67,6 +67,33 @@ scan throughput result. The extended run uses a 1.024-GB decimal file with bound
 records and a mandatory finding at the end. JSON records the exact executable
 SHA-256 and size. Percentiles use nearest ranks, with conventional median.
 
+For the source-aware builtin precision change, compare frozen baseline and
+candidate executables with the paired workload harness:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/context_precision_measure.py \
+  --binary baseline=target/precision-baseline-rayloc \
+  --binary candidate=target/release/rayloc --samples 21 --threads 1 8 \
+  --output target/context-precision-performance.json
+```
+
+It alternates binary order for each sample, creates and warms fixtures outside
+the timed run, and uses the native `wait4` launcher so Python fixture memory is
+excluded from peak RSS. It checks expected finding counts separately for both
+binaries and checks every report's scanned byte count before accepting a timing.
+Workloads include clean and reference-heavy 16-MiB code files, dense selectors,
+a >512-KiB source line, literal/password/provider/JOSE/custom-rule controls, a
+2,000-file mixed directory at one and eight workers, and staged addition sizes
+of 0/10/100/1,000 lines. Large fixed workloads use the 3% median gate; startup
+and staged workloads use the `max(0.5 ms, 5%)` p95 gate. Every case uses the
+`max(256 KiB, 1%)` peak-RSS gate. JSON records binary and source archive hashes,
+corpus hashes, exact bytes/findings/exits, paired percentiles, ratios, hardware,
+and gate results. A scope mismatch, incomplete scan, leaked fixture, or
+unexpected diagnostic aborts the measurement instead of counting as speed.
+The reviewed 21-sample comparison, safe aggregate JSON, fixture hashes, and
+gate summary are recorded in the
+[builtin precision results](../docs/research/builtin-detection-precision-results.md).
+
 [Recorded baseline](../docs/research/release-baseline.md) contains measured results
 and regression policy. Under 5 ms startup-inclusive staged latency and
 500 MB/s/core remain unmet stretch goals on this workload. Compare only identical

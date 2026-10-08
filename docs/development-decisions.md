@@ -285,3 +285,29 @@ switches did not resolve the observation on local Git 2.55 or2.30, so no race
 safeguard was weakened; this remains a documented conservative limitation.
 Deferred P4/P5 delimiter/glob/duplicate-ignore-compile minors are recorded in the
 release baseline for final whole-branch review.
+
+## Builtin detection precision (2026-10-08)
+
+The generic assignment detector uses a bounded source-syntax hint for `.py`,
+`.pyi`, `.rs`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts`, and `.cts`.
+Other suffixes and pathless readers keep text behavior. This hint prevents
+unquoted qualified references and non-binding ternary labels from being treated
+as assigned secrets while retaining quoted values, equality comparisons,
+unresolved bare values, weak passwords, provider signatures, custom rules, and
+existing field evidence including `allow_credentials`. It is not a language
+parser or symbol resolver; source paths, test directories, dummy values, and
+field names are not exemptions. Existing `rayloc:ignore` and `rayloc accept`
+controls remain the review mechanisms for intentional findings.
+
+The change adds no dependencies and carries one `SourceSyntax` value through
+serial, helper-batched, streaming, staged, and reference paths. Calibration and
+held-out occurrence fixtures report zero supported-positive misses and zero
+supported-negative extras; their hashes and boundaries are recorded in the
+[results](research/builtin-detection-precision-results.md). Performance was
+measured against the frozen base executable on the same host with paired warm
+runs. All 14 latency/RSS gates passed; the full aggregate is linked from the
+[benchmark procedure](../benches/README.md). These local warm-cache measurements
+do not establish universal performance or repository-level precision.
+
+The precision work preserves the coverage contract at >=95% line and region
+coverage and >=98% function coverage; no production code is excluded to meet it.

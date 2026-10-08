@@ -355,6 +355,7 @@ pub(super) fn consume_resolved(
         let mut parser =
             Parser::new(binding, empty_blob.as_bytes()).map_err(|_| ScanError::GitMetadata)?;
         let mut session = LineSession::new();
+        session.begin_source(crate::rules::SourceSyntax::from_path(label));
         let mut scan_error = None;
         let mut first = true;
         while let Some(end_record) = lookahead {

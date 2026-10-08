@@ -8,11 +8,34 @@ accuracy on this small corpus, not estimates for real repositories or live
 credential validity. All supported mandatory Rust fixture assertions pass;
 this broader corpus deliberately includes policy exclusions and known limitations.
 
+The committed JSON is the current CI expectation, refreshed on 2026-10-08 for
+the builtin precision changes. The original P4 table further below preserves
+the first measurements.
+The refreshed results use the same corpus bytes, labels and entropy thresholds:
+
+| Current partition / policy | TP | FP | FN | TN | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Calibration, normal | 48 | 3 | 2 | 17 | 94.1176% | 96% |
+| Held-out, normal | 49 | 3 | 1 | 17 | 94.2308% | 98% |
+| Calibration, no inline ignores | 48 | 5 | 2 | 15 | 90.5660% | 96% |
+| Held-out, no inline ignores | 49 | 5 | 1 | 15 | 90.7407% | 98% |
+
+In each partition, records 56 and 57 are quoted password literals with
+reference-like spellings. They now remain eligible for password detection;
+their original non-secret labels are preserved, so they count as two additional
+false positives. The template in record 55 remains suppressed. Reference
+suppressions consequently fall from three to one per partition under both
+inline policies. All other suppression counts and positive predictions remain
+unchanged. The current normal-policy false positives per clean decimal MB are
+3,968.25 for calibration and 3,846.15 for held-out. The separate
+[precision results](builtin-detection-precision-results.md) cover real code
+references and the new occurrence annotations.
+
 Reproduce from the repository root:
 
 ```sh
 cargo build --release
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/detection_baseline.py
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/detection_baseline.py --check
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p detection_evaluator.py
 ```
 
@@ -24,11 +47,11 @@ context, byte-length, suppression and clean-byte metrics. The corpus and label
 semantics are in [the corpus README](../../tests/corpus/detection/README.md).
 
 The stored corpus uses short string chunks to avoid committing complete synthetic
-credential shapes. The evaluator reconstructs the original bytes; labels,
-predictions, and all accuracy/suppression metrics are unchanged. Corpus hashes
+credential shapes. Encoding fixtures this way preserved their original bytes,
+labels, predictions and accuracy/suppression metrics. Corpus hashes
 identify the encoded JSONL files, including this storage change.
 
-| Partition / policy | TP | FP | FN | TN | Precision | Recall |
+| Original P4 partition / policy | TP | FP | FN | TN | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Calibration, normal | 48 | 1 | 2 | 19 | 97.9592% | 96% |
 | Held-out, normal | 49 | 1 | 1 | 19 | 98% | 98% |
@@ -66,15 +89,15 @@ from the Base64 generator and one from the other-byte generator contain only
 alphanumeric bytes. The calibration miss described above uses the alphanumeric
 class. No labels, values or thresholds changed during this correction.
 
-Each normal-policy partition records two inline suppressions, three placeholders,
-three references, three checksum contexts and two generic homogeneity/sequence
-filters. Disabling directives changes two deliberately ignored records to policy
+Each original P4 normal-policy partition recorded two inline suppressions,
+three placeholders, three references, three checksum contexts and two generic
+homogeneity/sequence filters. Disabling directives changes two deliberately ignored records to policy
 false positives per partition; the other suppression counts remain unchanged.
 These are reason counts with different units, described in
 [the detection contract](p4-context-jose.md), not a claim that every exclusion
 would otherwise be a detection.
 
-There are only 756 calibration and 780 held-out clean bytes. The corresponding
+There are only 756 calibration and 780 held-out clean bytes. The original P4
 1,322.75 and 1,282.05 false positives per clean decimal MB are arithmetically
 correct but unstable tiny-denominator metrics. The corpus does not establish a
 real-world false-positive budget; reviewed clean repositories and substantially

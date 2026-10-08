@@ -161,6 +161,7 @@ fn prepared_batches_match_serial_records_without_publication() {
     use crate::rules::BUILTINS;
     let token = token_line();
     let context = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id: 1,
         path: b"input.rs",
         registry: &BUILTINS,
@@ -203,6 +204,7 @@ fn prepared_batches_replay_at_129_without_losing_findings() {
     use crate::rules::BUILTINS;
     let token = token_line();
     let context = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id: 1,
         path: b"input.rs",
         registry: &BUILTINS,
@@ -306,6 +308,7 @@ fn accepted_ignored_and_reused_batches_do_not_consume_capacity() {
     .unwrap();
 
     let context = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id: 1,
         path: b"input.rs",
         registry: &registry,
@@ -487,6 +490,7 @@ fn publishing_a_terminal_batch_error_returns_it() {
     )
     .unwrap();
     let context = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id: 1,
         path: b"input.rs",
         registry: &registry,
@@ -538,6 +542,7 @@ fn counter_overflow_replays_the_helper_batch() {
     )
     .unwrap();
     let context = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id: 1,
         path: b"input.rs",
         registry: &registry,
@@ -589,6 +594,7 @@ fn publication_replays_when_line_or_progress_counters_overflow() {
         )
         .unwrap();
         let context = RecordContext {
+            syntax: crate::rules::SourceSyntax::Text,
             source_id: 1,
             path: b"input.rs",
             registry: &registry,
@@ -641,6 +647,7 @@ fn publication_replays_when_line_or_progress_counters_overflow() {
 #[test]
 fn preparing_one_record_at_the_max_line_number_does_not_overflow() {
     let context = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id: 1,
         path: b"input.rs",
         registry: &crate::rules::BUILTINS,
@@ -698,6 +705,7 @@ fn preparing_a_second_record_after_the_max_line_number_is_terminal() {
             lines: 2,
         },
         RecordContext {
+            syntax: crate::rules::SourceSyntax::Text,
             source_id: 1,
             path: b"input.rs",
             registry: &crate::rules::BUILTINS,
@@ -745,6 +753,7 @@ fn executing_an_empty_wave_does_not_change_scan_progress() {
         b"",
         &plan,
         RecordContext {
+            syntax: crate::rules::SourceSyntax::Text,
             source_id: 1,
             path: b"input.rs",
             registry: &registry,
@@ -813,6 +822,7 @@ fn serial_fallback_accounts_committed_bytes_before_a_later_record_error() {
         &input,
         &plan,
         RecordContext {
+            syntax: crate::rules::SourceSyntax::Text,
             source_id: 1,
             path: b"input.rs",
             registry: &crate::rules::BUILTINS,

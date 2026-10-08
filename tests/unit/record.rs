@@ -43,6 +43,7 @@ fn evaluation_preserves_spans_ids_priority_and_acceptance() {
     let mut suppressions = Suppressions::default();
 
     let ctx = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id,
         path,
         registry: &registry,
@@ -113,6 +114,7 @@ fn publication_is_redacted_and_nonterminal_limits_are_preserved() {
 
     // Use evaluate_record to get findings
     let ctx = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id,
         path,
         registry,
@@ -173,6 +175,7 @@ fn near_max_counter_overflow_records_without_registry_error() {
         line,
         source_id,
         path,
+        crate::rules::SourceSyntax::Text,
         1,
         &mut outcome,
         limits,
@@ -212,6 +215,7 @@ fn semantic_key_matches_serial_equivalent_outcomes() {
     let mut h1 = Histogram::new();
     let c1 = Mutex::new(Collector::new(10));
     let ctx1 = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id,
         path,
         registry: builtins(),
@@ -227,6 +231,7 @@ fn semantic_key_matches_serial_equivalent_outcomes() {
     let mut h2 = Histogram::new();
     let c2 = Mutex::new(Collector::new(10));
     let ctx2 = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id,
         path,
         registry: builtins(),
@@ -248,6 +253,7 @@ fn prepare_finding_skips_accepted_ids() {
     let bytes = b"EARLY";
     registry.accepted.insert(FindingId::new(b"test.rs", bytes));
     let ctx = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id: 1,
         path: b"test.rs",
         registry: &registry,
@@ -276,6 +282,7 @@ fn prepare_finding_skips_accepted_ids() {
         b"EARLYCAPTURE ghp_abcdefghijklmnop",
         2,
         RecordContext {
+            syntax: crate::rules::SourceSyntax::Text,
             source_id: 1,
             path,
             registry: &registry,
@@ -299,6 +306,7 @@ fn prepare_finding_retains_full_value_only_when_requested() {
         line,
         3,
         RecordContext {
+            syntax: crate::rules::SourceSyntax::Text,
             source_id: 7,
             path: b"secrets.txt",
             registry,
@@ -322,6 +330,7 @@ fn evaluate_record_counts_accepted_before_registry_error() {
     let registry = make_test_registry();
     let line = b"EARLYCAPTURE ghp_abcdefghijklmnop";
     let ctx = RecordContext {
+        syntax: crate::rules::SourceSyntax::Text,
         source_id: 1,
         path: b"test.rs",
         registry: &registry,

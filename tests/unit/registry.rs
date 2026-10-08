@@ -1,4 +1,33 @@
 use super::*;
+
+#[test]
+fn pathless_detection_defaults_to_text_and_source_api_is_additive() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let line = b"password=self.DUMMY_API_KEY";
+    let mut pathless = Vec::new();
+    registry
+        .detect_line(line, &mut Histogram::new(), |rule, span| {
+            pathless.push((rule, span));
+        })
+        .unwrap();
+    assert_eq!(pathless.len(), 1);
+    assert_eq!(pathless[0].0, RuleId::PasswordAssignment);
+
+    let mut code = Vec::new();
+    let mut suppressions = context::Suppressions::default();
+    registry
+        .detect_line_in_source(
+            line,
+            SourceSyntax::Code,
+            &mut Histogram::new(),
+            &mut suppressions,
+            |rule, span| code.push((rule, span)),
+        )
+        .unwrap();
+    assert!(code.is_empty());
+    assert_eq!(suppressions.reference, 1);
+}
+
 fn build_registry(text: &str) -> Registry {
     Registry::compile(crate::config::parse(text.as_bytes()).unwrap()).unwrap()
 }

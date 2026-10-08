@@ -2,7 +2,7 @@
 use super::{
     Finding, ScanError, ScanOutcome, ScanStats, binary::detect_binary, redaction::safe_label,
 };
-use crate::rules::{BUILTINS, Registry, entropy::Histogram};
+use crate::rules::{BUILTINS, Registry, SourceSyntax, entropy::Histogram};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
@@ -454,6 +454,7 @@ fn scan_record_into(
         line,
         source_id,
         path,
+        SourceSyntax::from_path(path),
         outcome.stats.lines_scanned,
         outcome,
         limits,
@@ -468,6 +469,7 @@ pub(super) fn detect_record(
     line: &[u8],
     source_id: u32,
     path: &[u8],
+    syntax: SourceSyntax,
     line_number: u64,
     outcome: &mut ScanOutcome,
     limits: Limits,
@@ -481,6 +483,7 @@ pub(super) fn detect_record(
     let ctx = RecordContext {
         source_id,
         path,
+        syntax,
         registry,
         retain_unredacted_value: emitter
             .is_some_and(crate::report::emitter::SharedEmitter::no_redact),
@@ -597,6 +600,7 @@ fn read_file_with_batches(
     let context = super::record::RecordContext {
         source_id,
         path,
+        syntax: SourceSyntax::from_path(path),
         registry,
         retain_unredacted_value: emitter
             .is_some_and(crate::report::emitter::SharedEmitter::no_redact),
@@ -604,6 +608,7 @@ fn read_file_with_batches(
     let mut helper_batches_enabled = true;
     let mut progress = super::chunk::ReadProgress::default();
     let mut line = super::stream::LineSession::new();
+    line.begin_source(context.syntax);
     let mut partial_column = 1u64;
     let mut partial_line = false;
     let mut buffer = vec![0u8; READ_BUFFER_BYTES];
@@ -841,6 +846,7 @@ fn read_records_into(
     collector: &Mutex<Collector>,
     emitter: Option<&crate::report::emitter::SharedEmitter>,
 ) -> Result<(), ScanError> {
+    line.begin_source(SourceSyntax::from_path(path));
     let mut progress = super::chunk::ReadProgress::default();
     let result = super::chunk::visit_line_fragments(reader, &mut progress, |fragment| {
         line.push(

@@ -26,6 +26,37 @@ secret field names illustrate a false positive. No token is a live credential an
 no activity was verified. Labels and predictions are at record level, not
 per-occurrence span matching.
 
+`precision-calibration.jsonl` and `precision-held-out.jsonl` add source suffixes
+and exact expected occurrences for this source-aware detector change. Their
+`expected_findings` arrays contain only rule IDs and 1-based line/byte-column
+locations; `expected_findings_no_inline` independently describes the
+`--no-inline-ignores` policy when present. Each row's optional `source_path` is a
+safe basename passed to the real scanner, so `.py`, `.rs`, `.ts`, and `.env`
+exercise the same suffix selection used for repository files. Omitted paths keep
+the original pathless Text behavior. Opaque positive values are distinct across
+the two new partitions. Unresolved bare aliases remain unsupported observations
+with their labeled expected finding list; they are included in record-level
+precision/recall and are not used to waive supported occurrence errors.
+The frozen partition SHA-256 values are `f4ea1e3bde4ea0d68d102069f771b9be4ad4d291b5147b6421b84a74c110e893`
+for calibration and `24afc5096207825f2544edf7e36309d0ff2625055ef74ca495b0caf892b3186c`
+for held-out.
+
+For these explicitly annotated partitions the evaluator compares multisets of
+`{rule, line, column}` records and reports occurrence TP/FP/FN, mismatching-row
+count, supported-positive misses, and supported-negative extras. `--corpus
+LABEL=PATH` adds an independent JSONL partition. `--expected PATH` selects the
+report compared by `--check`; the current reviewed report in
+`docs/research/detection-baseline.json` is the default. Invalid, absolute, or
+traversing source basenames and incomplete scans
+are evaluation errors. Reports contain aggregate metadata only and never print
+fixture values.
+The original corpus bytes and labels stay frozen. Its two quoted-reference
+labels per partition now produce intentional false positives because quoted
+programming-looking text is eligible as a password literal. The default report
+was refreshed on 2026-10-08 after reviewing these cases; original P4 measurements
+and the changed counts are documented in `docs/research/detection-baseline.md`.
+Use `--expected` to check an alternate reviewed report for expanded corpora.
+
 Committed records store `text_parts` and `value_parts` as strings of at most
 eight characters. The evaluator joins them only at runtime, writes the original
 source bytes to isolated temporary files, and still checks the complete expected
