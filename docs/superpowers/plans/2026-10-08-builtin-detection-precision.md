@@ -216,7 +216,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/detection_baseline.py \
 ```
 
 - [x] Require zero FPs for supported qualified-reference/key-expression fixtures and zero supported-positive misses; check the frozen baseline and candidate on exact same fixture hashes and inspect per-partition occurrence changes. Preserve the historical report and known limitations. Keep the reviewed candidate report as the later `--expected` input.
-- [ ] Commit the evaluator change and tests as `test: evaluate source-aware detection precision by occurrence`. Commit reviewed safe aggregate accuracy evidence with Task 6.
+- [x] Commit the evaluator change and tests as `test: evaluate source-aware detection precision by occurrence` (`6962b65`). Commit reviewed safe aggregate accuracy evidence with Task 6.
 
 ### Task 5: Measure the precision change without reducing scanned scope
 
@@ -229,11 +229,11 @@ hashes, exact bytes, findings, exits, median/p95, peak RSS, hardware/toolchain/c
 metadata, per-workload ratios, and each spec gate outcome. Any incomplete sample
 is an error rather than a speed result.
 
-- [ ] Write `test_precision_measurement_checks_scope_and_gate_boundaries`: fixed mock samples at 1.03 baseline time, +0.5 ms/+5% p95, and +256 KiB/+1% RSS pass exactly at their specified bounds and fail above them. Missing bytes, exit 2, missing expected positives, swapped executable labels, and invalid sample counts fail. Tests contain no actual benchmark timing assertions.
-- [ ] Run `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p context_precision_measure.py`; expect failure because the harness is absent.
-- [ ] Implement a stdlib harness with paired alternating binary order, untimed fixture creation/warmup, bounded fixture generation, scanner-only native RSS, and `scan --silent` output parsing. Keep fixed workloads below the 10,000-finding cap for both binaries. Declare baseline and candidate expected findings independently where reference filtering intentionally changes counts.
-- [ ] Cover a 16 MiB clean code file; a 16 MiB file with 4,096 member-reference assignments among clean lines; a small dense-reference/metadata-selector file below 8,000 baseline findings; a >512 KiB single code line with <=512 associations; accepted/rejected generic literals and unresolved opaque identifiers in code; weak passwords and strong-field comparisons; provider/JOSE/custom fixtures; a 2,000-file mixed code/config directory; and staged 0/10/100/1,000 added lines. Include split operators, long-line boundaries and helper batches. Every positive workload has mandatory detection and byte assertions; candidate zero-reference/key-error output is also asserted.
-- [ ] Run the harness unit tests, then the paired CLI harness. Run unchanged `cargo bench --bench engine` on baseline and candidate workspaces with 40 samples, and the other repository benchmarks. Use the same rules, fixtures, compiler, workers, and machine; report rendering/startup exclusions for each measurement.
+- [x] Write `test_precision_measurement_checks_scope_and_gate_boundaries`: fixed mock samples at 1.03 baseline time, +0.5 ms/+5% p95, and +256 KiB/+1% RSS pass exactly at their specified bounds and fail above them. Missing bytes, exit 2, missing expected positives, swapped executable labels, and invalid sample counts fail. Tests contain no actual benchmark timing assertions.
+- [x] Run the new measurement-harness unittest module before implementation; import failed because the harness did not exist.
+- [x] Implement the stdlib paired harness with alternating binary order, one untimed warmup per binary/workload, bounded fixture writing, native scanner-only RSS, and `scan --silent` parsing. Exact finding counts, exits, bytes, redaction, and diagnostics are checked for each binary. Custom cases stay below the 10,000-finding cap.
+- [x] Cover the 16 MiB clean source, 16 MiB/4,096-reference source (directory batch path), a 6,000-baseline-finding dense file, a >512 KiB line with 256 references and an operator split at 256 KiB, generic accept/reject and unresolved alias controls, weak/equality passwords, provider/JOSE/marker/custom cases, 2,000 mixed files at one/eight workers, and 0/10/100/1,000 staged additions. Every positive has per-binary mandatory findings and byte assertions; candidate reference-only scopes have zero findings.
+- [x] Run measurement unit tests and the paired CLI harness for 21 alternating samples. Run the 40-sample engine benchmark and full repository benchmarks in both baseline and candidate worktrees on the same host/toolchain. The native RSS tool excludes Python fixture memory; CLI timings include scanner startup/Git/report summary.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/context_precision_measure.py \
@@ -245,7 +245,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/e2e_measure.py \
   --samples 3 --large-mb 1024 --output target/precision-e2e-extended.json
 ```
 
-- [ ] Confirm all spec non-regression gates. Repeat a paired comparison when an outlier exceeds a bound; investigate persistent failures before completing. Do not cite a single target preview elapsed time as proof of unchanged speed. Three extended samples establish completion/byte/RSS behavior only.
+- [x] Confirm all spec gates across 14 paired workloads: candidate median ratios are 0.176–1.010, all large fixed medians are within 3%, every startup/staged p95 increase is below 0.5 ms, and every RSS change is within `max(256 KiB, 1%)`. No gate required a repeat. The engine microbenchmark is 7.720 ms candidate vs 7.637 ms baseline median (1.011x), with 8.228 vs 8.172 ms p95. Full scope benchmark 4,096-file/16-KiB cases measure 2.655/1.354/0.363 s candidate and 2.677/1.372/0.373 s baseline at 1/2/8 workers. Record the complete safe aggregate in Task 6; these are warm-cache local measurements, not universal speed guarantees.
 - [ ] Commit as `perf: measure builtin precision without narrowing scan scope`.
 
 ### Task 6: Validate and document the completed change for approval
