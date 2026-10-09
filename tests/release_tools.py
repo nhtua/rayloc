@@ -55,6 +55,34 @@ class ReleaseTests(unittest.TestCase):
                     stamp(invalid, copy)
         self.run_tool('stamp', '--version', '2026.10.04', code=2)
 
+    def test_sync_doc_moves_readme_pins_and_rejects_invalid_versions(self):
+        import shutil
+        import sys
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        from release import sync_doc
+        original = (ROOT / 'README.md').read_text().splitlines(keepends=True)
+        with tempfile.TemporaryDirectory() as directory:
+            copy = Path(directory)
+            shutil.copyfile(ROOT / 'README.md', copy / 'README.md')
+            sync_doc('2026.12.31', copy)
+            updated = (copy / 'README.md').read_text()
+            self.assertEqual(len(original), len(updated.splitlines(keepends=True)))
+            changed = [i for i, (before, after) in enumerate(zip(original, updated.splitlines(keepends=True))) if before != after]
+            self.assertEqual(len(changed), 3)
+            self.assertTrue(all('RAYLOC_VERSION' in original[i] or 'rev:' in original[i] for i in changed))
+            for pinned in ('Pin a release, e.g. `v2026.12.31`', 'RAYLOC_VERSION=v2026.12.31 sh', 'rev: v2026.12.31'):
+                self.assertIn(pinned, updated)
+            self.assertIn('pre-commit==4.6.2', updated)
+            sync_doc('2026.12.31', copy)
+            self.assertEqual((copy / 'README.md').read_text(), updated)
+            (copy / 'README.md').write_text('# rayloc\n')
+            with self.assertRaises(ValueError):
+                sync_doc('2026.12.31', copy)
+            for invalid in ('2026.12.04', 'v2026.12.31', '2026.12', '', None):
+                with self.assertRaises(ValueError):
+                    sync_doc(invalid, copy)
+        self.run_tool('sync-doc', '--version', '2026.12.04', code=2)
+
     def test_install_script_verifies_checksum_and_installs_host_binary(self):
         import json
         import os

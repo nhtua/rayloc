@@ -14,6 +14,17 @@ TARGETS = ('x86_64-unknown-linux-musl', 'aarch64-unknown-linux-musl',
            'x86_64-apple-darwin', 'aarch64-apple-darwin')
 ROOT = Path(__file__).resolve().parent.parent
 
+VERSION_FORMAT = re.compile(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)')
+RELEASE_TAG = re.compile(r'v?\d+\.\d+\.\d+')
+DOC_PINS = (('RAYLOC_VERSION', 'release pin'), ('rev:', 'pre-commit revision pin'))
+
+
+def validate_version(version):
+    """Return the version when it is a bare MAJOR.MINOR.PATCH release version."""
+    if not VERSION_FORMAT.fullmatch(version or ''):
+        raise ValueError('release version must be MAJOR.MINOR.PATCH without leading zeros')
+    return version
+
 
 def linkage(binary, target):
     subprocess.run(['file', str(binary)], check=True)
@@ -78,8 +89,7 @@ def checksums(output, verify=False):
 
 def stamp(version, root=ROOT):
     """Write a release version into the package manifest and its lock entry."""
-    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version or ''):
-        raise ValueError('release version must be MAJOR.MINOR.PATCH without leading zeros')
+    version = validate_version(version)
     edits = (('Cargo.toml', r'(\[package\]\nname = "rayloc"\nversion = ")[^"]*(")'),
              ('Cargo.lock', r'(\[\[package\]\]\nname = "rayloc"\nversion = ")[^"]*(")'))
     for name, pattern in edits:
@@ -91,9 +101,28 @@ def stamp(version, root=ROOT):
     print(f'stamped rayloc {version}')
 
 
+def sync_doc(version, root=ROOT):
+    """Point the documented release pins of README.md at the given version."""
+    version = validate_version(version)
+    path = root / 'README.md'
+    lines = path.read_text().splitlines(keepends=True)
+    moved = {marker: 0 for marker, _ in DOC_PINS}
+    for index, line in enumerate(lines):
+        for marker in moved:
+            if marker in line:
+                lines[index], count = RELEASE_TAG.subn(
+                    lambda match: f'v{version}' if match.group(0).startswith('v') else version, line)
+                moved[marker] += count
+    for marker, label in DOC_PINS:
+        if moved[marker] == 0:
+            raise ValueError(f'no {label} in README.md')
+    path.write_text(''.join(lines))
+    print(f'synced {sum(moved.values())} release pins in README.md to {version}')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('archive', 'linkage', 'checksums', 'verify', 'stamp'))
+    parser.add_argument('action', choices=('archive', 'linkage', 'checksums', 'verify', 'stamp', 'sync-doc'))
     parser.add_argument('--binary', type=Path)
     parser.add_argument('--target', choices=TARGETS)
     parser.add_argument('--output', type=Path, default=ROOT / 'dist')
@@ -102,6 +131,8 @@ def main():
     try:
         if args.action == 'stamp':
             stamp(args.version)
+        elif args.action == 'sync-doc':
+            sync_doc(args.version)
         elif args.action in ('archive', 'linkage'):
             if args.binary is None or args.target is None:
                 parser.error('--binary and --target required')

@@ -58,6 +58,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           python3 scripts/release.py stamp --version "$VERSION"
+          python3 scripts/release.py sync-doc --version "$VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Main already carries this version when a deleted release is republished.
