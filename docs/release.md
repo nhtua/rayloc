@@ -36,9 +36,11 @@ per day. To publish, run Actions > Release > Run workflow on `main`. The workflo
 2. runs this validation matrix with the version stamped into `Cargo.toml` and
    `Cargo.lock` (`python3 scripts/release.py stamp --version VERSION`), so the
    archives and `rayloc --version` carry it;
-3. commits the version bump to `main` as `chore(release): vVERSION`, tags that
-   commit `vVERSION`, and creates a GitHub release with the four archives and
-   `SHA256SUMS`.
+3. rewrites the release pins of `README.md` to `vVERSION`
+   (`python3 scripts/release.py sync-doc --version VERSION`), commits the version
+   bump to `main` as `chore(release): vVERSION`, tags that commit `vVERSION`, and
+   creates a GitHub release with the four archives and `SHA256SUMS`. The archives
+   are built by step 2, so the `README.md` inside them names the previous release.
 
 The push is atomic and fails if `main` moved after the dispatched commit; rerun
 the workflow in that case. If `main` is protected, allow GitHub Actions to push

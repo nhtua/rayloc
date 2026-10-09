@@ -78,6 +78,15 @@ curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | sh
 | `RAYLOC_VERSION`     | Pin a release, e.g. `v2026.10.8`         |
 | `RAYLOC_INSTALL_DIR` | Install somewhere other than `~/.local/bin` |
 
+The default is the newest release, so you only need `RAYLOC_VERSION` to install an
+older one. Put the variable in front of the `sh` at the **end** of the pipeline —
+that is the command that runs the script. Writing it before `curl` has no effect,
+because it then applies to `curl` only:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | RAYLOC_VERSION=v2026.10.4 sh
+```
+
 ### Prebuilt binaries
 
 [GitHub Releases](https://github.com/nhtua/rayloc/releases) has binaries for Linux
