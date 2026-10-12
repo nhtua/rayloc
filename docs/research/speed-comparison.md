@@ -6,11 +6,11 @@ Measured on 2026-10-07 using the installed scanner binaries and the eight reposi
 
 | Aspect | rayloc ⭐ | trufflehog | gitleaks | betterleaks |
 | --- | --- | --- | --- | --- |
-| Avg elapsed time per MB (s/MB) | 0.008240 (+88.36%) | 0.065088 (+8.05%) | 0.070790 (0%) | 0.008976 (+87.32%) |
-| Avg CPU time per MB (CPU s/MB) | 0.044926 (+91.56%) | 0.158976 (+70.14%) | 0.532378 (0%) | 0.064619 (+87.86%) |
-| Avg peak resident memory (MB) | 10.892 (+97.15%) | 382.050 (0%) | 121.009 (+68.33%) | 135.781 (+64.46%) |
+| Avg elapsed time per MB (s/MB) | 0.008240 (+859.10%) | 0.065088 (+108.76%) | 0.070790 (0%) | 0.008976 (+788.66%) |
+| Avg CPU time per MB (CPU s/MB) | 0.044926 (+1185.01%) | 0.158976 (+334.88%) | 0.532378 (0%) | 0.064619 (+823.87%) |
+| Avg peak resident memory (MB) | 10.892 (+3507.62%) | 382.050 (0%) | 121.009 (+315.72%) | 135.781 (+281.37%) |
 
-For the pivot and per-target elapsed-time tables, each row’s largest value is labeled `(0%)`. `(+x%)` means a value is x% lower than that baseline: `(baseline − value) / baseline × 100`, rounded to two decimal places using the displayed values.
+For the pivot and per-target elapsed-time tables, each row’s largest value is labeled `(0%)` as a baseline marker. For other values, `(+x%)` expresses the baseline-to-value ratio as a percentage: `baseline / value × 100`, rounded to two decimal places using the displayed values. For example, `382.050 / 10.892 ≈ 35.0762×`, shown as `(+3507.62%)`. These percentages express fold ratios, rather than percentage reductions; an equal value would have a ratio of 100%, but baseline cells use the `0%` marker by convention.
 
 Each tool has 24 measurements: three runs for each of eight targets. These are arithmetic means of each run’s normalized value, with equal weight per target. MB means 1,000,000 bytes.
 
@@ -34,14 +34,14 @@ Seconds, averaged over three runs. Lower values mean less wall time for the spec
 
 | Target | rayloc ⭐ | trufflehog | gitleaks | betterleaks |
 | --- | --- | --- | --- | --- |
-| llama.cpp | 0.943 (+78.76%) | 3.680 (+17.12%) | 4.440 (0%) | 0.820 (+81.53%) |
-| vllm | 1.093 (+75.51%) | 2.490 (+44.21%) | 4.463 (0%) | 0.697 (+84.38%) |
-| claude-code | 0.157 (+84.90%) | 1.040 (0%) | 0.290 (+72.12%) | 0.190 (+81.73%) |
-| opencode | 0.827 (+48.73%) | 1.613 (0%) | 1.460 (+9.49%) | 0.423 (+73.78%) |
-| ponytail | 0.010 (+98.90%) | 0.910 (0%) | 0.210 (+76.92%) | 0.077 (+91.54%) |
-| OpenShell | 0.180 (+86.50%) | 1.333 (0%) | 1.133 (+15.00%) | 0.327 (+75.47%) |
-| paperclip | 0.833 (+86.95%) | 2.223 (+65.17%) | 6.383 (0%) | 0.590 (+90.76%) |
-| hindsight | 1.520 (+35.95%) | 2.180 (+8.13%) | 2.373 (0%) | 0.583 (+75.43%) |
+| llama.cpp | 0.943 (+470.84%) | 3.680 (+120.65%) | 4.440 (0%) | 0.820 (+541.46%) |
+| vllm | 1.093 (+408.33%) | 2.490 (+179.24%) | 4.463 (0%) | 0.697 (+640.32%) |
+| claude-code | 0.157 (+662.42%) | 1.040 (0%) | 0.290 (+358.62%) | 0.190 (+547.37%) |
+| opencode | 0.827 (+195.04%) | 1.613 (0%) | 1.460 (+110.48%) | 0.423 (+381.32%) |
+| ponytail | 0.010 (+9100.00%) | 0.910 (0%) | 0.210 (+433.33%) | 0.077 (+1181.82%) |
+| OpenShell | 0.180 (+740.56%) | 1.333 (0%) | 1.133 (+117.65%) | 0.327 (+407.65%) |
+| paperclip | 0.833 (+766.27%) | 2.223 (+287.13%) | 6.383 (0%) | 0.590 (+1081.86%) |
+| hindsight | 1.520 (+156.12%) | 2.180 (+108.85%) | 2.373 (0%) | 0.583 (+407.03%) |
 
 ## Mean reported processed volume by target
 
