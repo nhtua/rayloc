@@ -323,15 +323,17 @@ Across 96 offline scans of eight repositories, `rayloc` had the lowest averages 
 
 | Measure | rayloc ⭐ | trufflehog | gitleaks | betterleaks |
 | --- | ---: | ---: | ---: | ---: |
-| Avg elapsed time per MB (s/MB) | 0.008240 (+88.36%) | 0.065088 (+8.05%) | 0.070790 (0%) | 0.008976 (+87.32%) |
-| Avg CPU time per MB (CPU s/MB) | 0.044926 (+91.56%) | 0.158976 (+70.14%) | 0.532378 (0%) | 0.064619 (+87.86%) |
-| Avg peak resident memory (MB) | 10.892 (+97.15%) | 382.050 (0%) | 121.009 (+68.33%) | 135.781 (+64.46%) |
+| Avg elapsed time per MB (s/MB) | 0.008240 (+859.10%) | 0.065088 (+108.76%) | 0.070790 (0%) | 0.008976 (+788.66%) |
+| Avg CPU time per MB (CPU s/MB) | 0.044926 (+1185.01%) | 0.158976 (+334.88%) | 0.532378 (0%) | 0.064619 (+823.87%) |
+| Avg peak resident memory (MB) | 10.892 (+3507.62%) | 382.050 (0%) | 121.009 (+315.72%) | 135.781 (+281.37%) |
 
 - **Elapsed time per MB** is GNU Time's wall time divided by each tool's reported processed MB. Smaller means less waiting per reported MB; the report also records whole-repository wall times.
 - **CPU time per MB** is GNU Time's user plus system CPU seconds divided by reported processed MB. Smaller means less measured CPU work per reported MB. This measures CPU cost, not parallel utilization or algorithm quality.
 - **Peak resident memory** is the average of each scan's maximum resident set size, converted to MB. It is an absolute memory measurement, not memory per processed MB; smaller means a lower resident memory footprint.
 
-Each row's largest value is the `(0%)` baseline. `(+x%)` means x% lower than that value. GNU Time's CPU utilization percentage, retained in the detailed results, describes how many cores were busy on average. A higher percentage can indicate effective parallel processing when throughput improves and should not be read as a flaw.
+Each row's largest value is the `(0%)` baseline marker. For other values, `(+x%)` expresses the baseline-to-value ratio as a percentage: `baseline / value × 100`, rounded to two decimal places using the displayed values. For example, `382.050 / 10.892 ≈ 35.0762×`, shown as `(+3507.62%)`. These percentages express fold ratios, rather than percentage reductions; an equal value would have a ratio of 100%, but baseline cells use the `0%` marker by convention.
+
+GNU Time's CPU utilization percentage, retained in the detailed results, describes how many cores were busy on average. A higher percentage can indicate effective parallel processing when throughput improves and should not be read as a flaw.
 
 The normalized rows use each tool's own reported volume, which differs substantially between scanners. They do not establish equal scan coverage or detection accuracy. Whole-repository wall time measures how long users wait for a complete command: Betterleaks recorded the lowest mean time on five targets and rayloc on three. See the [full results and methodology](docs/research/speed-comparison.md) for the per-run data and these comparison limits.
 
