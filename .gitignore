@@ -1,5 +1,6 @@
 /target/
 /.worktrees/
+/.superpowers/
 
 # Local credentials and environment files
 .env
