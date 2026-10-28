@@ -94,6 +94,9 @@ When editing or extending `rayloc`, strict adherence to the following rules is r
 
 ## 4. Development Workflow & Commands
 
+Create Git worktrees inside the current project directory at `.worktrees/<name>`.
+Verify that `.worktrees/` is ignored by Git before creating a worktree.
+
 AI agents must verify changes using the following toolchain commands:
 
 ```bash
