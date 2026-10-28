@@ -441,6 +441,51 @@ fn long_line_jose_token_is_emitted_when_stream_finishes() {
 }
 
 #[test]
+fn long_line_emits_jose_and_custom_matches_before_final_fragment() {
+    let config =
+        crate::config::parse(b"version: '1'\nrules: [{id: corporate, regex: 'corp_[A-Z]{8}'}]")
+            .unwrap();
+    let registry = Registry::compile(config).unwrap();
+    let mut line = b"corp_ABCDEFGH eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c ".to_vec();
+    line.resize(2 * crate::scanner::chunk::CHUNK_BYTES + 32, b' ');
+    let outcome =
+        crate::scanner::engine::scan_reader_with_registry(&mut Cursor::new(line), 1, &registry);
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(
+        outcome
+            .findings
+            .iter()
+            .any(|finding| finding.rule == crate::rules::builtin::RuleId::JoseToken)
+    );
+    assert!(
+        outcome
+            .findings
+            .iter()
+            .any(|finding| matches!(finding.rule, crate::rules::builtin::RuleId::Custom(..)))
+    );
+}
+
+#[test]
+fn long_line_legacy_regex_emits_the_captured_secret() {
+    let config = crate::config::parse(
+        b"version: '1'\nrules: [{id: anchored, regex: '^.*(corp_[A-Z]{8})', secret_group: 1}]",
+    )
+    .unwrap();
+    let registry = Registry::compile(config).unwrap();
+    let mut line = vec![b' '; crate::scanner::chunk::CHUNK_BYTES + 10];
+    line.extend_from_slice(b"corp_ABCDEFGH");
+    let outcome =
+        crate::scanner::engine::scan_reader_with_registry(&mut Cursor::new(line), 1, &registry);
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(
+        outcome
+            .findings
+            .iter()
+            .any(|finding| matches!(finding.rule, crate::rules::builtin::RuleId::Custom(..)))
+    );
+}
+
+#[test]
 fn long_line_context_secret_is_emitted_from_streamed_fragments() {
     let mut line = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES];
     line.extend_from_slice(b" api_key=Q7v2n9B4x6M1z8K3");

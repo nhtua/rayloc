@@ -867,7 +867,7 @@ const SLACK_PREFIXES: &[&[u8]] = &[
     b"https://hooks.slack.com/services/",
     b"https://hooks.slack-gov.com/services/",
 ];
-const PRIVATE_KEY_MARKERS: &[&[u8]] = &[
+pub(crate) const PRIVATE_KEY_MARKERS: &[&[u8]] = &[
     b"-----BEGIN PRIVATE KEY-----",           // rayloc:ignore
     b"-----BEGIN RSA PRIVATE KEY-----",       // rayloc:ignore
     b"-----BEGIN EC PRIVATE KEY-----",        // rayloc:ignore

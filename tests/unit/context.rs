@@ -76,6 +76,37 @@ fn context_stream_matches_complete_line_across_every_split() {
         b"password='weakweak'",
         b"Authorization: Bearer Q7v2n9B4x6M1z8K3",
         b"Authorization: \"Bearer Q7v2n9B4x6M1z8K3\"",
+        b"Authorization: \"Be\"",
+        b"Authorization: \"B\\a\"",
+        b"Authorization: \"\"",
+        b"Authorization: Basic Q7v2n9B4x6M1z8K3",
+        b"Authorization: \"Bearer    Q7v2n9B4x6M1z8K3\"",
+        b"Authorization: \"Basic Q7v2n9B4x6M1z8K3\"",
+        b"Authorization: Bzzzz",
+        b"api_key=${ENV_API_KEY}",
+        b"api_key=\"${ENV_API_KEY}\"",
+        b"password=false",
+        b"password='weak\\\'pass'",
+        b"api_key=1234567890123456",
+        b"api_key=Q7v2n9B4x6M1z8K3; other=x",
+        b"aws_secret_access_key=abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        b"api_key: Q7v2n9B4x6M1z8K3",
+        b"api_key=",
+        b"password",
+        b"password==aaaaaaaa",
+        b"password!=aaaaaaaa",
+        b"password === 'weakweak'",
+        b"api_key: null",
+        b"api_key: false",
+        b"api_key='a\\\"b'",
+        b"api_key = environment.API_KEY",
+        b"api_key=process.env.API_KEY",
+        b"api_key=Q7v2n9B4x6M1z8K3, next=1",
+        b"api_key=Q7v2n9B4x6M1z8K3 # comment",
+        b"Authorization: \"Bearer \"",
+        b"Authorization: \"Bearer  token\"",
+        b"Authorization: \"B\\e\"",
+        b"Authorization: \"Bearer",
         b"clientSecret=Q7v2n9B4x6M1z8K3",
         b"password='changeme'",
         b"api_key_sha256=9f21c7ab6e40d835",
@@ -346,6 +377,57 @@ fn code_members_do_not_become_generic_or_password_findings() {
             stream_with_syntax(line, crate::rules::SourceSyntax::Code, split);
         assert_eq!(streamed, findings, "split {split}");
         assert_eq!(counters, suppressions, "split {split}");
+    }
+}
+
+#[test]
+fn context_scanning_agrees_for_common_assignments_and_split_points() {
+    for syntax in [
+        crate::rules::SourceSyntax::Text,
+        crate::rules::SourceSyntax::Code,
+    ] {
+        for name in [
+            "password",
+            "api_key",
+            "client_secret",
+            "authorization",
+            "aws_secret_access_key",
+            "api_key_sha256",
+            "token",
+            "PASSWORD",
+            "key",
+        ] {
+            for operator in ["=", ":", " == ", " != ", "===", "=>", " : "] {
+                for value in [
+                    "'weakweak'",
+                    "Q7v2n9B4x6M1z8K3",
+                    "${ENV_VAR}",
+                    "null",
+                    "false",
+                    "args.value",
+                    "'Bearer Q7v2n9B4x6M1z8K3'",
+                    "1234567890123456",
+                    "'Be'",
+                    "'B\\a'",
+                    "'Bearer '",
+                    "Bearer Q7v2n9B4x6M1z8K3",
+                    "'Bearer    Q7v2n9B4x6M1z8K3'",
+                    "abc123abc123abc123abc123abc123abc123abcd",
+                    "[]",
+                    "''",
+                ] {
+                    let line = format!("{name}{operator}{value}");
+                    let expected = detect_with_syntax(line.as_bytes(), syntax);
+                    for split in [0, line.len() / 2, line.len()] {
+                        assert_eq!(
+                            stream_with_syntax(line.as_bytes(), syntax, split),
+                            expected,
+                            "{line:?}, {syntax:?}, split {split}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
 

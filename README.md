@@ -131,8 +131,46 @@ rayloc scan .env.production                  # a single file
 rayloc scan --glob '**/*.{pem,key,yaml}'     # a repository-relative glob
 rayloc scan --staged                         # lines added to the index
 rayloc scan --diff main                      # tracked changes against a commit
+rayloc redact < application.log              # redact stdin to stdout
+rayloc redact application.log                # redact a file to stdout
+rayloc redact -- application --option        # redact stdout and stderr separately
 rayloc accept 7kq2m                          # accept a reviewed false positive
 ```
+
+### Stream redaction
+
+`redact` preserves the input bytes and line endings outside detected values,
+which become `[REDACTED]`. It flushes complete lines as they arrive; an
+unterminated line waits for EOF. Lines longer than 1 MiB fail without emitting
+the incomplete line. Each invocation writes a private summary to
+`/tmp/rayloc-report-<time>-<pid>-<collision>.txt` and does not add diagnostics
+to the output streams.
+
+The command form preserves both channels and inherits the application's stdin:
+
+```sh
+rayloc redact -- application arguments
+rayloc redact --stderr=false -- application arguments
+```
+
+Both channels are filtered by default. `--stdout=false` and `--stderr=false`
+pass the selected channel through unchanged, including any secrets. Exit 0 means
+no redactions, 1 means redactions, and 2 means incomplete processing or an
+unsuccessful child; the report records the child's status. A downstream reader
+that stops consuming can block output, as with other Unix pipelines.
+
+For Bash, two independent filters can preserve the application's channels:
+
+```bash
+application > >(rayloc redact) 2> >(rayloc redact >&2)
+```
+
+This starts two Rayloc processes and creates two reports. Bash runs process
+substitutions asynchronously; scripts that need their statuses or completion
+must wait for them explicitly. `application 2>&1 | rayloc redact` instead sends
+both streams through one filter as merged stdout. `--config <file>` applies an
+additional policy. Inline ignores and accepted file IDs do not bypass redaction.
+Detection follows configured rules and does not guarantee detection of every secret.
 
 | Option                | Description                                         |
 | --------------------- | --------------------------------------------------- |

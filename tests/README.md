@@ -22,6 +22,15 @@ The direct-reference cancellation characterization documents a conservative
 exit-2 limitation when Git rewrites its index cache during acquisition. Other
 snapshot-race safeguards remain mandatory.
 
+Stream redaction is exercised by `cargo test --test redact_cli` and the owning
+module's unit tests. The integration suite covers file and pipe input, separately
+captured child channels, passthrough flags, reports, process substitution, and
+large files. Validate the measurement helpers with:
+
+```sh
+python3 -m unittest discover -s tests -p redaction_measurement_tools.py
+```
+
 After `cargo build --locked --release`, run the actual release/tooling tests:
 
 ```sh

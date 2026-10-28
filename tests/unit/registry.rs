@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn legacy_whole_line_rules_emit_captures_and_reject_oversized_values() {
+    let registry = Registry::compile(
+        crate::config::parse(
+            b"version: '1'\nrules: [{id: legacy, regex: '^(abc)?D+' , secret_group: 1}]",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut histogram = Histogram::new();
+    let mut spans = Vec::new();
+    registry
+        .detect_legacy_line(b"D", &mut histogram, |candidate| spans.push(candidate.span))
+        .unwrap();
+    assert!(spans.is_empty());
+    registry
+        .detect_legacy_line(b"abcDDD", &mut histogram, |candidate| {
+            spans.push(candidate.span)
+        })
+        .unwrap();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0], 0..3);
+    let registry = Registry::compile(
+        crate::config::parse(b"version: '1'\nrules: [{id: legacy, regex: '^D+'}]").unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        registry.detect_legacy_line(
+            &vec![b'D'; builtin::MAX_CANDIDATE_BYTES + 1],
+            &mut histogram,
+            |_| {}
+        ),
+        Err(crate::scanner::ScanError::CandidateLimit)
+    );
+}
+
+#[test]
 fn pathless_detection_defaults_to_text_and_source_api_is_additive() {
     let registry = Registry::compile(crate::config::Config::default()).unwrap();
     let line = b"password=self.DUMMY_API_KEY";

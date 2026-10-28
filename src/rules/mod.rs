@@ -103,6 +103,9 @@ fn alphabet(hir: &Hir, bins: &mut [bool; 256]) {
     }
 }
 impl Registry {
+    pub(crate) fn private_key_enabled(&self) -> bool {
+        !self.disabled.contains(&RuleId::PrivateKeyMarker)
+    }
     /// Run only the provider recognizers, using this registry's disabled rules.
     #[allow(dead_code)] // Consumed by the line session in Task 5.
     pub(crate) fn detect_provider_line(
