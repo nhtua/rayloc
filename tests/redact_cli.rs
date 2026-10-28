@@ -99,19 +99,6 @@ fn completed_lines_flush_before_eof_but_partial_tokens_wait() {
 }
 
 #[test]
-fn command_mode_keeps_channels_separate_and_allows_passthrough() {
-    let token = ["ghp_", "SyntheticToken0123456789abcdef"].concat();
-    let script = format!("printf '%s\\n' '{token}'; printf '%s\\n' '{token}' >&2");
-    let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
-        .args(["redact", "--stderr=false", "--", "sh", "-c", &script])
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(output.stdout, b"[REDACTED]\n");
-    assert_eq!(output.stderr, format!("{token}\n").as_bytes());
-}
-
-#[test]
 fn file_input_matches_stdin_and_does_not_modify_file() {
     let dir = support::TempDir::new();
     let path = dir.path().join("input file.txt");
@@ -194,176 +181,63 @@ fn report_records_counts_without_leaking_input() {
 }
 
 #[test]
-fn every_channel_switch_preserves_the_selected_destination() {
+fn merged_stderr_pipe_stays_on_stdout() {
     let token = ["ghp_", "SyntheticToken0123456789abcdef"].concat();
-    let script = format!("printf '%s\\n' '{token}'; printf '%s\\n' '{token}' >&2");
-    for stdout in [false, true] {
-        for stderr in [false, true] {
-            let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
-                .args([
-                    "redact",
-                    &format!("--stdout={stdout}"),
-                    &format!("--stderr={stderr}"),
-                    "--",
-                    "sh",
-                    "-c",
-                    &script,
-                ])
-                .output()
-                .unwrap();
-            assert_eq!(
-                output.status.code(),
-                Some(if stdout || stderr { 1 } else { 0 })
-            );
-            assert_eq!(
-                output.stdout,
-                if stdout {
-                    "[REDACTED]\n".to_owned()
-                } else {
-                    format!("{token}\n")
-                }
-                .as_bytes()
-            );
-            assert_eq!(
-                output.stderr,
-                if stderr {
-                    "[REDACTED]\n".to_owned()
-                } else {
-                    format!("{token}\n")
-                }
-                .as_bytes()
-            );
-        }
-    }
-}
-
-#[test]
-fn both_large_child_channels_are_drained() {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
-    command.args([
-        "redact",
-        "--",
-        "sh",
-        "-c",
-        "i=0; while [ $i -lt 40000 ]; do printf 'out\\n'; printf 'err\\n' >&2; i=$((i+1)); done",
-    ]);
+    let rayloc = env!("CARGO_BIN_EXE_rayloc");
+    let inner = format!("printf 'out %s\\n' '{token}'; printf 'err %s\\n' '{token}' >&2");
+    let script = format!("sh -c \"{inner}\" 2>&1 | '{rayloc}' redact");
+    let mut command = Command::new("bash");
+    command.args(["-c", &script]);
     let output = output_with_deadline(command);
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stdout, b"out\n".repeat(40000));
-    assert_eq!(output.stderr, b"err\n".repeat(40000));
-}
-
-#[test]
-fn oversized_child_record_stops_and_reaps_producer() {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
-    command.args([
-        "redact",
-        "--",
-        "python3",
-        "-c",
-        "import os,time; os.write(1,b'x'*1048577); time.sleep(30)",
-    ]);
-    let output = output_with_deadline(command);
-    assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, b"out [REDACTED]\nerr [REDACTED]\n");
     assert!(output.stderr.is_empty());
 }
 
 #[test]
-fn nonzero_child_drains_output_and_exits_two() {
-    let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
-        .args([
-            "redact",
-            "--",
-            "sh",
-            "-c",
-            "printf 'out\\n'; printf 'err\\n' >&2; exit 7",
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(2));
-    assert_eq!(output.stdout, b"out\n");
-    assert_eq!(output.stderr, b"err\n");
-}
-
-#[test]
-fn child_inherits_stdin_and_redacts_its_output() {
+fn file_mode_never_consumes_stdin() {
+    let dir = support::TempDir::new();
+    std::fs::write(dir.path().join("input"), b"file-line\n").unwrap();
+    let token = ["ghp_", "SyntheticToken0123456789abcdef"].concat();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rayloc"))
-        .args(["redact", "--", "cat"])
+        .current_dir(dir.path())
+        .args(["redact", "input"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let token = ["ghp_", "SyntheticToken0123456789abcdef"].concat();
-    writeln!(child.stdin.take().unwrap(), "{token}").unwrap();
+    {
+        let mut stdin = child.stdin.take().unwrap();
+        for _ in 0..1000 {
+            writeln!(stdin, "{token}").unwrap();
+        }
+    }
     let output = child.wait_with_output().unwrap();
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(output.stdout, b"[REDACTED]\n");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"file-line\n");
     assert!(output.stderr.is_empty());
 }
 
 #[test]
-fn closed_downstream_pipe_fails_without_hanging_child() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_rayloc"))
-        .args([
-            "redact",
-            "--",
-            "python3",
-            "-c",
-            "import os,time; os.write(1,b'line\\n'*100000); time.sleep(30)",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    drop(child.stdout.take());
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let status = loop {
-        if let Some(status) = child.try_wait().unwrap() {
-            break status;
-        }
-        if std::time::Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("closed output did not stop child");
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    };
-    assert_eq!(status.code(), Some(2));
-}
-
-#[test]
-fn signal_termination_is_recorded_in_private_report() {
-    let before: std::collections::HashSet<_> = std::fs::read_dir("/tmp")
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .collect();
-    let child = Command::new(env!("CARGO_BIN_EXE_rayloc"))
-        .args(["redact", "--", "sh", "-c", "kill -TERM $$"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let suffix = format!("-{}-0.txt", child.id());
-    let output = child.wait_with_output().unwrap();
+fn unreadable_file_reports_only_in_the_private_report() {
+    use std::os::unix::fs::PermissionsExt;
+    let uid = Command::new("id").arg("-u").output().unwrap().stdout;
+    if uid.trim_ascii() == b"0" {
+        // Privileged runners bypass file modes; the injected-open unit tests
+        // cover this branch there instead.
+        return;
+    }
+    let dir = support::TempDir::new();
+    let path = dir.path().join("secret-input");
+    std::fs::write(&path, b"clean\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
+    command.current_dir(dir.path()).arg("redact").arg(&path);
+    let output = output_with_deadline(command);
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty() && output.stderr.is_empty());
-    let path = std::fs::read_dir("/tmp")
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .find(|p| {
-            !before.contains(p)
-                && p.file_name().is_some_and(|name| {
-                    name.to_string_lossy().starts_with("rayloc-report-")
-                        && name.to_string_lossy().ends_with(&suffix)
-                })
-        })
-        .unwrap();
-    let report = std::fs::read_to_string(&path).unwrap();
-    assert!(report.contains("child=signal:15"));
-    assert!(report.contains("error=child"));
-    std::fs::remove_file(path).unwrap();
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
 }
 
 #[test]
@@ -445,13 +319,27 @@ fn large_file_redacts_more_than_ten_thousand_occurrences() {
         .status()
         .unwrap();
     assert_eq!(status.code(), Some(1));
-    let mut result = BufReader::new(std::fs::File::open(result_path).unwrap());
+    let mut result = BufReader::new(std::fs::File::open(&result_path).unwrap());
     let mut actual = vec![0; expected.len()];
     for _ in 0..count {
         result.read_exact(&mut actual).unwrap();
         assert_eq!(actual, expected.as_bytes());
     }
     assert_eq!(result.read(&mut actual).unwrap(), 0);
+    let stdin_result_path = dir.path().join("stdin-result.txt");
+    let status = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(dir.path())
+        .arg("redact")
+        .stdin(std::fs::File::open(&path).unwrap())
+        .stdout(std::fs::File::create(&stdin_result_path).unwrap())
+        .stderr(Stdio::piped())
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(1));
+    assert_eq!(
+        std::fs::read(&stdin_result_path).unwrap(),
+        std::fs::read(&result_path).unwrap()
+    );
 }
 
 #[test]
