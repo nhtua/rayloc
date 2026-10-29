@@ -75,7 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | sh
 
 | Variable             | Purpose                                  |
 | -------------------- | ---------------------------------------- |
-| `RAYLOC_VERSION`     | Pin a release, e.g. `v2026.10.8`         |
+| `RAYLOC_VERSION`     | Pin a release, e.g. `v2026.10.29`         |
 | `RAYLOC_INSTALL_DIR` | Install somewhere other than `~/.local/bin` |
 
 The default is the newest release, so you only need `RAYLOC_VERSION` to install an
@@ -84,7 +84,7 @@ that is the command that runs the script. Writing it before `curl` has no effect
 because it then applies to `curl` only:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | RAYLOC_VERSION=v2026.10.4 sh
+curl -fsSL https://raw.githubusercontent.com/nhtua/rayloc/main/install.sh | RAYLOC_VERSION=v2026.10.29 sh
 ```
 
 ### Prebuilt binaries
@@ -208,7 +208,7 @@ installed `rayloc`. Add this to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/nhtua/rayloc
-    rev: v2026.10.8
+    rev: v2026.10.29
     hooks:
       - id: rayloc-staged
 ```
