@@ -349,115 +349,43 @@ fn signal_termination_is_recorded_in_private_report() {
     std::fs::remove_file(path).unwrap();
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn child_process_spawn_failure_is_a_silent_exit_two() {
     let _spawn_guard = serialize_process_spawns();
     let program = env!("CARGO_BIN_EXE_rayloc");
-    // RLIMIT_NPROC enforces against the live per-user task count; a margin
-    // below the measured count makes the child fork fail with EAGAIN. The
-    // ladder absorbs ambient churn.
-    let mut outcome = None;
-    for margin in [6, 12, 18, 24] {
-        let shell = format!(
-            "cd /; pids=$(cat /sys/fs/cgroup/user.slice/pids.current); ulimit -u $((pids - {margin})); exec {program} redact -- true"
-        );
-        let before: std::collections::HashSet<_> = std::fs::read_dir("/tmp")
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .collect();
-        let child = Command::new("sh")
-            .arg("-c")
-            .arg(&shell)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let suffix = format!("-{}-0.txt", child.id());
-        let output = child.wait_with_output().unwrap();
-        let path = std::fs::read_dir("/tmp")
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .find(|p| {
-                !before.contains(p)
-                    && p.file_name().is_some_and(|name| {
-                        name.to_string_lossy().starts_with("rayloc-report-")
-                            && name.to_string_lossy().ends_with(&suffix)
-                    })
-            })
-            .unwrap();
-        let report = std::fs::read_to_string(&path).unwrap();
-        std::fs::remove_file(&path).unwrap();
-        assert!(output.stdout.is_empty() && output.stderr.is_empty());
-        if report.contains("error=spawn") {
-            assert!(report.contains("status=failed"));
-            outcome = Some(());
-            break;
-        }
-    }
-    assert!(
-        outcome.is_some(),
-        "child spawn never failed under the pinned limits"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn worker_thread_spawn_failure_is_a_silent_exit_two() {
-    let _spawn_guard = serialize_process_spawns();
-    let program = env!("CARGO_BIN_EXE_rayloc");
-    // RLIMIT_NPROC enforces against the live per-user task count. The
-    // shell tree transient (this shell plus the counter subshell) exits
-    // before rayloc forks, so at the sampled count the child fork lands
-    // one task below the limit, and the two worker threads spawn at the
-    // limit and one above it: deltas 1 and 2 make the first spawn failure
-    // a worker thread. The neighbouring deltas absorb counter lag.
-    let mut outcome = None;
-    for _ in 0..3 {
-        for delta in [2, 1, 3, 0, -1] {
-            let shell = format!(
-                "cd /; pids=$(cat /sys/fs/cgroup/user.slice/pids.current); ulimit -u $((pids + ({delta}))); exec {program} redact -- true"
-            );
-            let before: std::collections::HashSet<_> = std::fs::read_dir("/tmp")
-                .unwrap()
-                .map(|entry| entry.unwrap().path())
-                .collect();
-            let child = Command::new("sh")
-                .arg("-c")
-                .arg(&shell)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .unwrap();
-            let suffix = format!("-{}-0.txt", child.id());
-            let output = child.wait_with_output().unwrap();
-            let path = std::fs::read_dir("/tmp")
-                .unwrap()
-                .map(|entry| entry.unwrap().path())
-                .find(|p| {
-                    !before.contains(p)
-                        && p.file_name().is_some_and(|name| {
-                            name.to_string_lossy().starts_with("rayloc-report-")
-                                && name.to_string_lossy().ends_with(&suffix)
-                        })
+    let directory = support::TempDir::new();
+    let missing_command = directory.path().join("missing-command");
+    let before: std::collections::HashSet<_> = std::fs::read_dir("/tmp")
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    let child = Command::new(program)
+        .current_dir("/")
+        .arg("redact")
+        .arg("--")
+        .arg(missing_command)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let suffix = format!("-{}-0.txt", child.id());
+    let output = child.wait_with_output().unwrap();
+    let path = std::fs::read_dir("/tmp")
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|p| {
+            !before.contains(p)
+                && p.file_name().is_some_and(|name| {
+                    name.to_string_lossy().starts_with("rayloc-report-")
+                        && name.to_string_lossy().ends_with(&suffix)
                 })
-                .unwrap();
-            let report = std::fs::read_to_string(&path).unwrap();
-            std::fs::remove_file(&path).unwrap();
-            assert!(output.stdout.is_empty() && output.stderr.is_empty());
-            if report.contains("error=worker") {
-                assert!(report.contains("status=failed"));
-                assert!(output.status.code() == Some(2));
-                outcome = Some(());
-                break;
-            }
-        }
-        if outcome.is_some() {
-            break;
-        }
-    }
-    assert!(
-        outcome.is_some(),
-        "worker thread spawn never failed under the pinned limits"
-    );
+        })
+        .unwrap();
+    let report = std::fs::read_to_string(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+    assert!(report.contains("error=spawn"));
+    assert!(report.contains("status=failed"));
 }

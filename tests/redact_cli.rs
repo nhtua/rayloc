@@ -345,6 +345,7 @@ fn large_file_redacts_more_than_ten_thousand_occurrences() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn bash_process_substitution_preserves_both_destinations() {
     let token = ["ghp_", "SyntheticToken0123456789abcdef"].concat();
@@ -427,7 +428,7 @@ fn existing_file_scan_handles_anchored_custom_rule_on_long_record() {
     );
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[test]
 fn file_mode_accepts_non_utf8_paths() {
     use std::os::unix::ffi::OsStringExt;
@@ -522,16 +523,19 @@ fn parse_policy_and_filter_failures_are_silent_in_subprocesses() {
     assert!(output.stdout.is_empty() && output.stderr.is_empty());
 
     std::fs::remove_file(dir.path().join(".rayloc.yaml")).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
-        .current_dir(dir.path())
-        .args(["redact", "input"])
-        .stdin(Stdio::null())
-        .stdout(std::fs::File::create("/dev/full").unwrap())
-        .stderr(Stdio::piped())
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(2));
-    assert!(output.stderr.is_empty());
+    #[cfg(target_os = "linux")]
+    {
+        let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+            .current_dir(dir.path())
+            .args(["redact", "input"])
+            .stdin(Stdio::null())
+            .stdout(std::fs::File::create("/dev/full").unwrap())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stderr.is_empty());
+    }
 
     let fifo_dir = support::TempDir::new();
     assert!(

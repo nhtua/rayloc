@@ -1,5 +1,7 @@
 //! Child capture with concurrent per-channel workers and cleanup.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::{
     ffi::OsString,
     io::{self, BufRead, BufReader, Write},
@@ -13,6 +15,18 @@ use crate::rules::Registry;
 use super::{Stats, Summary, filter::filter};
 
 static PANIC_HOOK_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+thread_local! {
+    static FAIL_NEXT_WORKER_SPAWN: Cell<bool> = const { Cell::new(false) };
+}
+
+fn should_fail_worker_spawn() -> bool {
+    #[cfg(test)]
+    return FAIL_NEXT_WORKER_SPAWN.with(|fail| fail.replace(false));
+    #[cfg(not(test))]
+    false
+}
 
 type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Sync + Send + 'static>;
 struct PanicHookGuard(Option<PanicHook>);
@@ -79,18 +93,19 @@ pub(super) fn command(
             }
             if let Some(input) = child_stdout {
                 let tx = tx.clone();
-                if std::thread::Builder::new()
-                    .spawn_scoped(scope, move || {
-                        let mut stats = Stats::default();
-                        let result = worker(
-                            &mut BufReader::with_capacity(256 * 1024, input),
-                            &mut io::stdout(),
-                            registry,
-                            &mut stats,
-                        );
-                        let _ = tx.send(("stdout", stats, result));
-                    })
-                    .is_ok()
+                if !should_fail_worker_spawn()
+                    && std::thread::Builder::new()
+                        .spawn_scoped(scope, move || {
+                            let mut stats = Stats::default();
+                            let result = worker(
+                                &mut BufReader::with_capacity(256 * 1024, input),
+                                &mut io::stdout(),
+                                registry,
+                                &mut stats,
+                            );
+                            let _ = tx.send(("stdout", stats, result));
+                        })
+                        .is_ok()
                 {
                     remaining += 1;
                 } else {
@@ -99,18 +114,19 @@ pub(super) fn command(
             }
             if let Some(input) = child_stderr {
                 let tx = tx.clone();
-                if std::thread::Builder::new()
-                    .spawn_scoped(scope, move || {
-                        let mut stats = Stats::default();
-                        let result = worker(
-                            &mut BufReader::with_capacity(256 * 1024, input),
-                            &mut io::stderr(),
-                            registry,
-                            &mut stats,
-                        );
-                        let _ = tx.send(("stderr", stats, result));
-                    })
-                    .is_ok()
+                if !should_fail_worker_spawn()
+                    && std::thread::Builder::new()
+                        .spawn_scoped(scope, move || {
+                            let mut stats = Stats::default();
+                            let result = worker(
+                                &mut BufReader::with_capacity(256 * 1024, input),
+                                &mut io::stderr(),
+                                registry,
+                                &mut stats,
+                            );
+                            let _ = tx.send(("stderr", stats, result));
+                        })
+                        .is_ok()
                 {
                     remaining += 1;
                 } else {

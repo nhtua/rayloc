@@ -280,7 +280,7 @@ fn token_match_padded_installation_tokens_and_min_body() {
 #[test]
 fn uri_match_stops_at_delimiters_and_requires_credentials() {
     let redis: &[&[u8]] = &[b"redis://", b"rediss://"];
-    for delimiter in [b',', b' ', b';', b')', b'\t', b'\n'] {
+    for delimiter in *b", ;)\t\n" {
         let input = [
             b"redis://user:pass123@host:6379/db".as_slice(), // rayloc:ignore
             &[delimiter][..],

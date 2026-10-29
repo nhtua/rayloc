@@ -145,6 +145,25 @@ fn command_reports_worker_failure_when_the_child_overruns_the_record_limit() {
 }
 
 #[test]
+fn command_reports_worker_thread_spawn_failure_and_reaps_child() {
+    FAIL_NEXT_WORKER_SPAWN.with(|fail| fail.set(true));
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut summary = Summary::default();
+    let result = command(
+        "sh".into(),
+        vec!["-c".into(), "sleep 5".into()],
+        true,
+        false,
+        &registry,
+        &mut summary,
+    );
+    assert_eq!(result, Err(()));
+    assert_eq!(summary.error, Some("worker"));
+    assert!(summary.child_started);
+    assert!(summary.child.is_some_and(|status| !status.success()));
+}
+
+#[test]
 fn command_silences_the_process_hook_while_workers_run() {
     let registry = Registry::compile(crate::config::Config::default()).unwrap();
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
