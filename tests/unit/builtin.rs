@@ -1,4 +1,83 @@
 use super::*;
+
+#[test]
+fn specialized_provider_boundaries_and_oversize_inputs_are_safe() {
+    let long = "a".repeat(MAX_CANDIDATE_BYTES + 1);
+    assert_eq!(
+        sendgrid_match(format!("SG.{long}").as_bytes()),
+        Err(ScanError::CandidateLimit)
+    );
+    assert_eq!(
+        sendgrid_match(format!("SG.{}.{long}", "a".repeat(22)).as_bytes()),
+        Err(ScanError::CandidateLimit)
+    );
+    assert!(docker_swarm_match(format!("SWMTKN-1-{long}").as_bytes()).is_none());
+    assert!(docker_swarm_match(format!("SWMTKN-1-a-{long}").as_bytes()).is_none());
+    assert!(docker_swarm_match(format!("SWMKEY-1-{long}").as_bytes()).is_none());
+    assert!(telegram_match(format!("12345:A{long}").as_bytes()).is_none());
+    assert!(stripe_payment_intent_match(format!("pi_{long}").as_bytes()).is_none());
+    assert!(stripe_payment_intent_match(format!("pi_a_secret_{long}").as_bytes()).is_none());
+    assert!(api_key_match_with_min(format!("hf_{long}").as_bytes(), &[b"hf_"], 20).is_err());
+    assert!(telegram_match(b"12345:Bshort").is_none());
+    assert!(telegram_match(b"12345:Ashort").is_none());
+    assert!(stripe_payment_intent_match(b"pi_missing").is_none());
+    assert!(stripe_payment_intent_match(b"pi_a_secret").is_none());
+    assert!(stripe_payment_intent_match(b"pi_a_secret_").is_none());
+    assert!(
+        uri_match(
+            b"postgres://user@host/db",
+            &[b"postgres://"],
+            RuleId::PostgresUri
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn specialized_provider_matches_respect_disabled_rules() {
+    let cases: Vec<(Vec<u8>, RuleId)> = vec![
+        (
+            format!("SWMTKN-1-a-{}", "a".repeat(24)).into_bytes(),
+            RuleId::DockerSwarmJoin,
+        ),
+        (
+            format!("SWMKEY-1-{}", "a".repeat(40)).into_bytes(),
+            RuleId::DockerSwarmUnlock,
+        ),
+        (
+            format!("SG.{}.{}", "a".repeat(22), "b".repeat(40)).into_bytes(),
+            RuleId::SendgridApiKey,
+        ),
+        (
+            format!("xkeysib-{}", "a".repeat(81)).into_bytes(),
+            RuleId::SendinblueApiKey,
+        ),
+        (
+            format!("AC{}", "a".repeat(32)).into_bytes(),
+            RuleId::TwilioAccountSid,
+        ),
+        (
+            format!("SK{}", "a".repeat(32)).into_bytes(),
+            RuleId::TwilioApiKey,
+        ),
+        (
+            format!("12345:A{}", "a".repeat(34)).into_bytes(),
+            RuleId::TelegramBotToken,
+        ),
+        (b"pi_a_secret_b".to_vec(), RuleId::StripePaymentIntent),
+        (
+            format!("FLWSECK-{}", "a".repeat(32)).into_bytes(),
+            RuleId::FlutterwaveKey,
+        ),
+    ];
+    for (input, rule) in cases {
+        assert_eq!(match_at(&input, &[]).unwrap().map(|(id, _)| id), Some(rule));
+        assert_ne!(
+            match_at(&input, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule)
+        );
+    }
+}
 type Streamed = Vec<(RuleId, Range<u64>, Vec<u8>)>;
 
 fn matches(bytes: &[u8]) -> Vec<(RuleId, Range<usize>)> {

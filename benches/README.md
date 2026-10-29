@@ -4,6 +4,19 @@ Use release builds and record hardware/CPU/OS/Rust/Git, binary size, corpus byte
 active policy, worker count and cache state. Decimal MB means 1,000,000 bytes.
 Warm-cache results do not establish cold-cache or production guarantees.
 
+For stream redaction, build a release binary and run:
+
+```sh
+python3 scripts/measure_redaction.py target/release/rayloc --size-mib 16 --samples 3
+python3 scripts/measure_redaction.py target/release/rayloc --size-mib 16 --samples 3 --command
+```
+
+The harness validates the output digest and reports elapsed time and `wait4`
+peak RSS for clean and synthetic-token workloads. The Python launcher's memory
+may contribute to peak RSS, so use the native launcher below for precise RSS
+comparisons. Preliminary observations are in
+[stream-redaction results](../docs/research/stream-redaction-results.md).
+
 `cargo bench --bench engine` precompiles all ten built-ins plus one entropy-gated
 custom rule and scans preloaded synthetic records. Each block exercises provider,
 JOSE, generic entropy, weak-password and custom acceptance plus directive,

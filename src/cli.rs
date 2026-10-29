@@ -17,6 +17,7 @@ Options:
   -V, --version    Print version
 
 Commands:
+  redact [<file> | -- <command>...]  Redact secrets from a stream
   scan [<file|directory> | --glob <pattern> | --staged | --diff <ref>] [--threads <count>] [--config <file>] [--no-inline-ignores] [--no-redact] [-s|--silent]
                   Scan files, a directory (default: current directory), or a glob
                   --threads applies to directory and glob scans (1-64)
@@ -35,11 +36,16 @@ Staged mode scans added index lines; --diff scans tracked additions against a co
 
 /// Run the CLI, returning exit code 2 for unsupported operations.
 pub fn run() -> ExitCode {
+    let mut args = std::env::args_os().skip(1);
+    let first = args.next();
+    if first.as_deref() == Some(std::ffi::OsStr::new("redact")) {
+        return ExitCode::from(crate::redact::run(args.collect()));
+    }
     // Pass the unlocked stdout handle: worker threads acquire stdout during
     // the scan to emit redacted findings, and the main thread's lock must
     // not be held while they do so.
     ExitCode::from(run_with_args(
-        std::env::args_os().skip(1),
+        first.into_iter().chain(args),
         &mut io::stdout(),
         &mut io::stderr().lock(),
     ))

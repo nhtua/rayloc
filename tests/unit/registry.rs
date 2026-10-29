@@ -1,6 +1,86 @@
 use super::*;
 
 #[test]
+fn legacy_whole_line_rules_emit_captures_and_reject_oversized_values() {
+    let registry = Registry::compile(
+        crate::config::parse(
+            b"version: '1'\nrules: [{id: legacy, regex: '^(abc)?D+' , secret_group: 1}]",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut histogram = Histogram::new();
+    let mut spans = Vec::new();
+    registry
+        .detect_legacy_line(b"D", &mut histogram, |candidate| spans.push(candidate.span))
+        .unwrap();
+    assert!(spans.is_empty());
+    registry
+        .detect_legacy_line(b"abcDDD", &mut histogram, |candidate| {
+            spans.push(candidate.span)
+        })
+        .unwrap();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0], 0..3);
+    let registry = Registry::compile(
+        crate::config::parse(b"version: '1'\nrules: [{id: legacy, regex: '^D+'}]").unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        registry.detect_legacy_line(
+            &vec![b'D'; builtin::MAX_CANDIDATE_BYTES + 1],
+            &mut histogram,
+            |_| {}
+        ),
+        Err(crate::scanner::ScanError::CandidateLimit)
+    );
+}
+
+#[test]
+fn legacy_entropy_gate_is_evaluated_for_matching_candidates() {
+    let registry = build_registry(
+        "version: \"1\"\nrules: [{id: legacy, regex: '^corp_([a-z]+)$', secret_group: 1, entropy: 1.5}]",
+    );
+    assert!(registry.legacy_line_rules().next().is_some());
+
+    let mut candidates = Vec::new();
+    registry
+        .detect_legacy_line(b"corp_abcdef", &mut Histogram::new(), |candidate| {
+            candidates.push(candidate.span)
+        })
+        .unwrap();
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0], 5..11);
+}
+
+#[test]
+fn windowed_rules_only_yields_enabled_custom_rules_with_byte_limits() {
+    let registry = build_registry(
+        "version: \"1\"\ndisabled_rules: [off]\nrules: [{id: bounded, regex: 'corp_[a-z]{3}'}, {id: streaming, regex: 'corp_.*'}, {id: off, regex: 'corp_[a-z]{4}'}]",
+    );
+    let entries: Vec<_> = registry.windowed_rules().collect();
+    assert_eq!(
+        entries.len(),
+        1,
+        "disabled rules and unbounded rules leave the window"
+    );
+    let (index, _regex, _group, _entropy, id, maximum) = entries[0];
+    assert_eq!(index, 0);
+    assert!(matches!(id, RuleId::Custom(1, _)));
+    assert_eq!(maximum, 8);
+    // The disabled and unbounded companions stay reachable for the other feeds.
+    assert_eq!(registry.legacy_line_rules().count(), 1);
+    assert_eq!(
+        registry
+            .legacy_line_rules()
+            .map(|(_, _, _, _, id)| id)
+            .collect::<Vec<_>>(),
+        [RuleId::Custom(2, builtin::Severity::High)]
+    );
+}
+
+#[test]
 fn pathless_detection_defaults_to_text_and_source_api_is_additive() {
     let registry = Registry::compile(crate::config::Config::default()).unwrap();
     let line = b"password=self.DUMMY_API_KEY";
@@ -184,6 +264,90 @@ fn aggregate_compiled_set_budget_rejects_many_individually_valid_programs() {
             .join(",")
     );
     assert!(Registry::compile(crate::config::parse(many.as_bytes()).unwrap()).is_err());
+}
+
+#[test]
+fn whole_line_rules_reject_records_beyond_the_legacy_window() {
+    let registry = build_registry("version: \"1\"\nrules: [{id: streaming, regex: 'corp_.*'}]");
+    assert!(registry.requires_whole_line());
+    let over = vec![b'x'; LEGACY_LINE_BYTES + 1];
+    assert_eq!(
+        registry.detect_line(&over, &mut Histogram::new(), |_, _| {}),
+        Err(ScanError::RuleWindowLimit)
+    );
+    // The window limit is strict: the exact boundary line is still accepted.
+    let boundary = vec![b'x'; LEGACY_LINE_BYTES];
+    registry
+        .detect_line(&boundary, &mut Histogram::new(), |_, _| {})
+        .unwrap();
+    // Bounded rules keep long lines readable because they never need the line.
+    let bounded = build_registry("version: \"1\"\nrules: [{id: bounded, regex: 'corp_[a-z]{3}'}]");
+    assert!(!bounded.requires_whole_line());
+    assert_eq!(
+        bounded.detect_line(&over, &mut Histogram::new(), |_, _| {}),
+        Ok(())
+    );
+}
+
+#[test]
+fn entropy_gates_read_the_top_level_capture_and_its_alphabet() {
+    // `(abc)` exposes its capture directly, so group 1 resolves at the root.
+    let registry = build_registry(
+        "version: \"1\"\nrules: [{id: top, regex: '(abc)', secret_group: 1, entropy: 1}, {id: literal, regex: 'abcdef', entropy: 1}]",
+    );
+    let mut findings = Vec::new();
+    registry
+        .detect_line(b"abc abcdef", &mut Histogram::new(), |id, span| {
+            findings.push((id, span))
+        })
+        .unwrap();
+    assert_eq!(
+        findings
+            .iter()
+            .map(|(_, span)| span.clone())
+            .collect::<Vec<_>>(),
+        [0..3, 4..7, 4..10]
+    );
+    // Rule 1 also matches the `abc` prefix of `abcdef`, so each rule reports
+    // exactly the spans its own capture produces.
+    assert_eq!(
+        findings
+            .iter()
+            .map(|(id, _)| matches!(id, RuleId::Custom(1, _)))
+            .collect::<Vec<_>>(),
+        [true, true, false]
+    );
+    // A byte class alphabet counts its range: 6 symbols over 4 bytes allow 2 bits.
+    assert!(
+        Registry::compile(
+            crate::config::parse(
+                b"version: \"1\"\nrules: [{id: bytes, regex: '(?-u:[a-f]{4})', entropy: 2}]"
+            )
+            .unwrap()
+        )
+        .is_ok()
+    );
+    assert!(
+        Registry::compile(
+            crate::config::parse(
+                b"version: \"1\"\nrules: [{id: bytes, regex: '(?-u:[a-f]{4})', entropy: 2.1}]"
+            )
+            .unwrap()
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn identical_spans_from_two_custom_rules_emit_once() {
+    let registry = build_registry(
+        "version: \"1\"\nrules: [{id: one, regex: 'corp_[a-z]{3}'}, {id: two, regex: 'corp_[a-z]{3}'}]",
+    );
+    let mut count = 0;
+    registry
+        .detect_line(b"corp_abc", &mut Histogram::new(), |_, _| count += 1)
+        .unwrap();
+    assert_eq!(count, 1, "the duplicate span is deduplicated");
 }
 
 #[test]

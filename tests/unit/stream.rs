@@ -441,6 +441,51 @@ fn long_line_jose_token_is_emitted_when_stream_finishes() {
 }
 
 #[test]
+fn long_line_emits_jose_and_custom_matches_before_final_fragment() {
+    let config =
+        crate::config::parse(b"version: '1'\nrules: [{id: corporate, regex: 'corp_[A-Z]{8}'}]")
+            .unwrap();
+    let registry = Registry::compile(config).unwrap();
+    let mut line = b"corp_ABCDEFGH eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c ".to_vec();
+    line.resize(2 * crate::scanner::chunk::CHUNK_BYTES + 32, b' ');
+    let outcome =
+        crate::scanner::engine::scan_reader_with_registry(&mut Cursor::new(line), 1, &registry);
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(
+        outcome
+            .findings
+            .iter()
+            .any(|finding| finding.rule == crate::rules::builtin::RuleId::JoseToken)
+    );
+    assert!(
+        outcome
+            .findings
+            .iter()
+            .any(|finding| matches!(finding.rule, crate::rules::builtin::RuleId::Custom(..)))
+    );
+}
+
+#[test]
+fn long_line_legacy_regex_emits_the_captured_secret() {
+    let config = crate::config::parse(
+        b"version: '1'\nrules: [{id: anchored, regex: '^.*(corp_[A-Z]{8})', secret_group: 1}]",
+    )
+    .unwrap();
+    let registry = Registry::compile(config).unwrap();
+    let mut line = vec![b' '; crate::scanner::chunk::CHUNK_BYTES + 10];
+    line.extend_from_slice(b"corp_ABCDEFGH");
+    let outcome =
+        crate::scanner::engine::scan_reader_with_registry(&mut Cursor::new(line), 1, &registry);
+    assert_eq!(outcome.exit_code(), 1);
+    assert!(
+        outcome
+            .findings
+            .iter()
+            .any(|finding| matches!(finding.rule, crate::rules::builtin::RuleId::Custom(..)))
+    );
+}
+
+#[test]
 fn long_line_context_secret_is_emitted_from_streamed_fragments() {
     let mut line = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES];
     line.extend_from_slice(b" api_key=Q7v2n9B4x6M1z8K3");
@@ -724,5 +769,145 @@ fn long_line_propagates_provider_candidate_limit() {
             .errors
             .iter()
             .any(|error| error.error == ScanError::CandidateLimit)
+    );
+}
+
+fn probe_finding(start: usize, end: usize) -> Finding {
+    Finding {
+        source_id: 1,
+        line: 7,
+        start_column: start,
+        end_column: end,
+        rule: crate::rules::builtin::RuleId::GithubToken,
+        value: RedactedString::new(b"synthetic-probe"),
+        unredacted_value: None,
+        id: FindingId::new(b"probe", b"synthetic-probe"),
+    }
+}
+
+#[test]
+fn offer_replaces_weaker_same_span_candidates_and_keeps_strongest() {
+    let mut session = LineSession::new();
+    session.offer((2, probe_finding(5, 10)));
+    assert_eq!(session.pending.len(), 1);
+    // A weaker candidate claiming the same span must not displace the best.
+    session.offer((4, probe_finding(5, 10)));
+    assert_eq!(session.pending.len(), 1);
+    assert_eq!(session.by_span[&(4u64, 9u64)], (2u16, 4u64, 9u64));
+    // A stronger candidate for the same span replaces the stored entry.
+    session.offer((0, probe_finding(5, 10)));
+    assert_eq!(session.pending.len(), 1);
+    assert_eq!(session.by_span[&(4u64, 9u64)], (0u16, 4u64, 9u64));
+    assert!(session.pending.contains_key(&(0u16, 4u64, 9u64)));
+    assert!(!session.pending.contains_key(&(2u16, 4u64, 9u64)));
+}
+
+#[test]
+fn offer_overflow_evicts_the_worst_pending_candidate() {
+    let mut session = LineSession::new();
+    for index in 0..=MAX_FINDINGS {
+        session.offer((1, probe_finding(index, index + 1)));
+    }
+    assert!(session.pending_overflow);
+    assert_eq!(session.pending.len(), MAX_FINDINGS);
+    assert_eq!(session.by_span.len(), MAX_FINDINGS);
+    // The greatest ordering key is the one evicted to keep the best cap.
+    assert!(
+        !session
+            .by_span
+            .contains_key(&(MAX_FINDINGS as u64, (MAX_FINDINGS + 1) as u64,))
+    );
+    assert!(session.by_span.contains_key(&(0u64, 1u64)));
+}
+
+#[test]
+fn safe_path_drops_empty_and_non_utf8_labels() {
+    assert_eq!(safe_path(b""), None);
+    assert_eq!(safe_path(&[0xff, 0xfe, 0xfd]), None);
+    assert_eq!(safe_path(b"src/main.rs").as_deref(), Some("src/main.rs"));
+}
+
+#[test]
+fn streaming_line_limit_counts_across_fragment_growth() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let collector = Mutex::new(Collector::new(10));
+    let mut session = LineSession::new();
+    let mut outcome = ScanOutcome::default();
+    let limits = Limits {
+        findings: 10,
+        line_bytes: 10,
+    };
+    let mut push = |session: &mut LineSession, payload: &[u8], column: u64, end: bool| {
+        session.push(
+            LineFragment {
+                payload,
+                line: 1,
+                column,
+                end: end.then_some(crate::scanner::chunk::LineEnd::Lf),
+            },
+            1,
+            b"small.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        )
+    };
+    push(&mut session, b"abcde", 1, false).unwrap();
+    // The exact remaining budget is accepted at the boundary.
+    push(&mut session, b"67890", 6, false).unwrap();
+    // Any additional fragment exceeds the per-line budget after growth.
+    assert_eq!(
+        push(&mut session, b"x", 11, true),
+        Err(ScanError::LineLimit)
+    );
+}
+
+#[test]
+fn fragment_from_the_next_line_is_rejected_as_counter_overflow() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let collector = Mutex::new(Collector::new(10));
+    let mut session = LineSession::new();
+    let mut outcome = ScanOutcome::default();
+    let limits = Limits {
+        findings: 10,
+        line_bytes: usize::MAX,
+    };
+    session
+        .push(
+            LineFragment {
+                payload: b"ab",
+                line: 1,
+                column: 1,
+                end: None,
+            },
+            1,
+            b"t.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        )
+        .unwrap();
+    // A fragment carrying a later line number cannot extend this line.
+    assert_eq!(
+        session.push(
+            LineFragment {
+                payload: b"cd",
+                line: 2,
+                column: 3,
+                end: None,
+            },
+            1,
+            b"t.rs",
+            &registry,
+            &mut outcome,
+            &collector,
+            None,
+            limits,
+        ),
+        Err(ScanError::CounterOverflow)
     );
 }

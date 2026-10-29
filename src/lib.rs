@@ -6,6 +6,7 @@
 pub mod cli;
 pub mod config;
 mod hook;
+mod redact;
 pub mod report;
 pub mod rules;
 pub mod scanner;

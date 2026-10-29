@@ -113,12 +113,16 @@ fn window_state_reset_clears_cursors() {
 }
 
 fn registry(pattern: &str, group: usize) -> Registry {
+    registry_with(pattern, group, None)
+}
+
+fn registry_with(pattern: &str, group: usize, entropy: Option<f64>) -> Registry {
     let mut config = Config::default();
     config.rules.push(crate::config::CustomRule {
         id: "custom".into(),
         pattern: pattern.into(),
         group,
-        entropy: None,
+        entropy,
         severity: crate::rules::builtin::Severity::High,
     });
     Registry::compile(config).unwrap()
@@ -294,5 +298,220 @@ fn unicode_match_survives_fragment_inside_codepoint() {
                 ..crate::scanner::chunk::CHUNK_BYTES as u64 + 1,
             "é".as_bytes().to_vec()
         )]
+    );
+}
+
+#[test]
+fn cursor_table_starts_at_base_then_tracks_each_index() {
+    let mut state = WindowState::new();
+    assert_eq!(state.cursor(0), state.base); // missing entry falls back to base
+    state.set_cursor(0, 5); // insert arm
+    assert_eq!(state.cursor(0), 5); // found arm
+    state.set_cursor(0, 7); // update arm
+    assert_eq!(state.cursor(0), 7);
+    state.set_cursor(1, 3); // second index inserts alongside the first
+    assert_eq!(
+        (state.cursor(0), state.cursor(1), state.cursor(2)),
+        (7, 3, 0)
+    );
+    state.reset();
+    assert_eq!(state.cursor(0), 0);
+    assert!(state.cursors.is_empty());
+    let fresh = WindowState::default();
+    assert_eq!(
+        (
+            fresh.bytes.len(),
+            fresh.base,
+            fresh.end,
+            fresh.cursors.len()
+        ),
+        (0, 0, 0, 0)
+    );
+}
+
+#[test]
+fn window_defers_until_match_begins_below_mature_end() {
+    let registry = registry("a{6}", 0);
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    let mut found = Vec::new();
+    state
+        .push(b"xxxxxxaaaaaa", &registry, &mut histogram, |c| {
+            found.push((c.span, c.value.to_vec()))
+        })
+        .unwrap();
+    assert!(
+        found.is_empty(),
+        "match begins at mature_end, so it is not mature"
+    );
+    state
+        .finish(&registry, &mut histogram, |c| {
+            found.push((c.span, c.value.to_vec()))
+        })
+        .unwrap();
+    assert_eq!(found, [(6..12, b"aaaaaa".to_vec())]);
+}
+
+#[test]
+fn optional_capture_group_never_emits_when_absent() {
+    let registry = registry(r"k([a-z]{4})?k", 1);
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    let mut found = Vec::new();
+    state
+        .push(b"kkkabcdk", &registry, &mut histogram, |c| {
+            found.push((c.span, c.value.to_vec()))
+        })
+        .unwrap();
+    state
+        .finish(&registry, &mut histogram, |c| {
+            found.push((c.span, c.value.to_vec()))
+        })
+        .unwrap();
+    assert_eq!(found, [(3..7, b"abcd".to_vec())]);
+}
+
+#[test]
+fn entropy_gate_suppresses_flat_captures_and_passes_balanced_ones() {
+    let registry = registry_with(r"k([a-z]{8})", 1, Some(3.0));
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    let mut found = Vec::new();
+    state
+        .push(b"kabcdefgh kaaaaaaaa", &registry, &mut histogram, |c| {
+            found.push((c.span, c.value.to_vec()))
+        })
+        .unwrap();
+    state
+        .finish(&registry, &mut histogram, |c| {
+            found.push((c.span, c.value.to_vec()))
+        })
+        .unwrap();
+    assert_eq!(found, [(1..9, b"abcdefgh".to_vec())]);
+}
+
+#[test]
+fn whole_line_only_registry_leaves_no_window_state() {
+    let registry = registry(r"\bx{4}\b", 0);
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    for fragment in [b"xxxx".as_slice(), b"yyyy"] {
+        state
+            .push(fragment, &registry, &mut histogram, |_| {})
+            .unwrap();
+        assert!(state.bytes.is_empty() && state.cursors.is_empty());
+    }
+    state.finish(&registry, &mut histogram, |_| {}).unwrap();
+    assert_eq!((state.base, state.end), (8, 8));
+}
+
+#[test]
+fn disabled_window_rule_emits_nothing() {
+    let mut config = Config::default();
+    config.rules.push(crate::config::CustomRule {
+        id: "custom".into(),
+        pattern: r"corp_([a-z]{4})".into(),
+        group: 1,
+        entropy: None,
+        severity: crate::rules::builtin::Severity::High,
+    });
+    config.disabled.push("custom".into());
+    let registry = Registry::compile(config).unwrap();
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    let mut found = Vec::new();
+    state
+        .push(b"corp_wxyz corp_qrst", &registry, &mut histogram, |c| {
+            found.push(c.span)
+        })
+        .unwrap();
+    state
+        .finish(&registry, &mut histogram, |c| found.push(c.span))
+        .unwrap();
+    assert!(found.is_empty());
+}
+
+#[test]
+fn two_window_rules_advance_independently_across_pushes() {
+    let mut config = Config::default();
+    for (id, pattern) in [("one", r"aa([a-z]{2})"), ("two", r"b([a-z]{3})z")] {
+        config.rules.push(crate::config::CustomRule {
+            id: id.into(),
+            pattern: pattern.into(),
+            group: 1,
+            entropy: None,
+            severity: crate::rules::builtin::Severity::High,
+        });
+    }
+    let registry = Registry::compile(config).unwrap();
+    let line = b"aazzbbzzbabczaaqqzz";
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    let mut streamed = Vec::new();
+    for fragment in line.chunks(4) {
+        state
+            .push(fragment, &registry, &mut histogram, |c| {
+                streamed.push((c.span.start, c.span.end, c.value.to_vec()))
+            })
+            .unwrap();
+    }
+    state
+        .finish(&registry, &mut histogram, |c| {
+            streamed.push((c.span.start, c.span.end, c.value.to_vec()))
+        })
+        .unwrap();
+    let mut whole: std::collections::BTreeSet<(u64, u64, Vec<u8>)> =
+        std::collections::BTreeSet::new();
+    registry
+        .detect_line(line, &mut Histogram::new(), |_, span| {
+            let entry = (
+                span.start as u64,
+                span.end as u64,
+                line[span.start..span.end].to_vec(),
+            );
+            whole.insert(entry);
+        })
+        .unwrap();
+    assert!(!whole.is_empty(), "fixture must produce windowed matches");
+    let streamed: std::collections::BTreeSet<(u64, u64, Vec<u8>)> = streamed.into_iter().collect();
+    assert_eq!(streamed, whole, "split scans agree with whole-line scans");
+}
+
+#[test]
+fn window_skips_empty_and_entropy_rejected_captures() {
+    let mut config = Config::default();
+    config.rules.push(crate::config::CustomRule {
+        id: "capture".into(),
+        pattern: r"([a-z]{0,3})b".into(),
+        group: 1,
+        entropy: Some(1.0),
+        severity: crate::rules::builtin::Severity::High,
+    });
+    let registry = Registry::compile(config).unwrap();
+    let mut state = WindowState::new();
+    let mut histogram = Histogram::new();
+    let mut found = Vec::new();
+    state
+        .push(b"b ab", &registry, &mut histogram, |candidate| {
+            found.push(candidate.value.to_vec())
+        })
+        .unwrap();
+    state
+        .finish(&registry, &mut histogram, |candidate| {
+            found.push(candidate.value.to_vec())
+        })
+        .unwrap();
+    assert!(found.is_empty());
+}
+
+#[test]
+fn window_capacity_guard_fails_closed() {
+    let registry = registry(r"(secret)", 1);
+    let mut state = WindowState::new();
+    state.bytes.resize(super::MAX_WINDOW_BYTES, b'x');
+    let mut histogram = Histogram::new();
+    assert_eq!(
+        state.push(b"x", &registry, &mut histogram, |_| {}),
+        Err(crate::scanner::ScanError::CounterOverflow)
     );
 }

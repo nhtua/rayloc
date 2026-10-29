@@ -974,6 +974,146 @@ fn buffered_read_error_propagates_without_diagnostics() {
 }
 
 #[test]
+fn collector_deduplicates_and_evicts_to_enforce_the_ordered_cap() {
+    let finding = |line: u64| Finding {
+        source_id: 1,
+        line,
+        start_column: 1,
+        end_column: 2,
+        rule: crate::rules::builtin::RuleId::GithubToken,
+        value: RedactedString::new(b"synthetic-probe"),
+        unredacted_value: None,
+        id: FindingId::new(b"probe", b"synthetic-probe"),
+    };
+    let key = |line: u64| {
+        (
+            1_u32,
+            line,
+            1_usize,
+            2_usize,
+            crate::rules::builtin::RuleId::GithubToken,
+        )
+    };
+    let mut collector = Collector::new(2);
+    assert!(collector.offer(finding(2), b"lane/a.rs"));
+    // A fully duplicate key is rejected without displacing the stored entry.
+    assert!(!collector.offer(finding(2), b"lane/a.rs"));
+    assert!(collector.offer(finding(3), b"lane/a.rs"));
+    // At the cap, keys ordered after the retained worst key are rejected.
+    assert!(!collector.offer(finding(4), b"lane/a.rs"));
+    assert!(collector.entries.contains_key(&key(3)));
+    // An earlier key evicts the retained worst entry and takes its place.
+    assert!(collector.offer(finding(1), b"lane/a.rs"));
+    assert!(collector.entries.contains_key(&key(1)));
+    assert!(!collector.entries.contains_key(&key(3)));
+    assert_eq!(collector.entries.len(), 2);
+    // The label is registered lazily on the first accepted source finding.
+    assert_eq!(
+        collector.labels.get(&1).map(|label| label.as_ref()),
+        Some("lane/a.rs")
+    );
+    // A zero-slot collector rejects every offer with no retained key.
+    let mut capped = Collector::new(0);
+    assert!(!capped.offer(finding(1), b"lane/a.rs"));
+    assert!(capped.entries.is_empty());
+    assert!(capped.labels.is_empty());
+}
+
+#[test]
+fn parallel_options_scan_drives_the_batched_lane_with_an_emitter() {
+    let directory = support::TempDir::new();
+    let source = directory.path().join("large.rs");
+    let mut content = vec![b'x'; 300 * 1024];
+    content.push(b'\n');
+    content.extend_from_slice(&crate::scanner::parallel_support::token_line());
+    fs::write(&source, &content).unwrap();
+
+    let emitter = crate::report::emitter::SharedEmitter::new(Box::new(
+        crate::report::emitter::TerminalEmitter::new(Vec::new()),
+    ));
+    let run = scan_file_with_registry_and_options(
+        &source,
+        Path::new("large.rs"),
+        7,
+        &BUILTINS,
+        FileScanOptions { workers: 2 },
+        Some(emitter),
+    );
+    assert_eq!(run.outcome.stats.files_attempted, 1);
+    assert_eq!(run.outcome.stats.files_completed, 1);
+    assert_eq!(run.outcome.findings.len(), 1);
+    assert_eq!(run.outcome.findings[0].line, 2);
+    assert_eq!(run.outcome.findings[0].source_id, 7);
+    assert!(run.batching.waves > 0);
+
+    // The registry-only wrapper completes the same source on the serial lane.
+    let plain = scan_file_with_registry(&source, Path::new("large.rs"), 8, &BUILTINS);
+    assert_eq!(plain.stats.files_completed, 1);
+    assert_eq!(plain.findings.len(), 1);
+    assert_eq!(plain.findings[0].source_id, 8);
+}
+
+#[test]
+fn batch_lane_serial_path_records_finding_limit_without_completion() {
+    let directory = support::TempDir::new();
+    let path = directory.path().join("dense.rs");
+    fs::write(&path, b"ghp_abcdefghijklmnop\n".repeat(MAX_FINDINGS + 1)).unwrap();
+    let limits = crate::scanner::batch::BATCH_LIMITS;
+    let helpers = crate::scanner::batch::HelperPool::new(1, limits);
+    let mut worker = Worker::new();
+    let run = worker.file_with_batches(
+        &path,
+        Path::new("dense.rs"),
+        1,
+        &BUILTINS,
+        &helpers,
+        limits,
+        &Mutex::new(Collector::new(MAX_FINDINGS)),
+        None,
+    );
+    assert_eq!(
+        run.outcome.errors,
+        [SourceError::new(ScanError::FindingLimit, None)]
+    );
+    assert_eq!(run.outcome.stats.files_completed, 0);
+    assert_eq!(run.outcome.stats.files_attempted, 1);
+    assert_eq!(run.outcome.stats.findings_detected, MAX_FINDINGS as u64 + 1);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn process_memory_source_surfaces_bounded_io_errors_in_both_lanes() {
+    let path = Path::new("/proc/self/mem");
+    let serial = scan_file(path, 1);
+    let limits = crate::scanner::batch::BATCH_LIMITS;
+    let helpers = crate::scanner::batch::HelperPool::new(1, limits);
+    let mut worker = Worker::new();
+    let batched = worker.file_with_batches(
+        path,
+        Path::new("mem"),
+        2,
+        &BUILTINS,
+        &helpers,
+        limits,
+        &Mutex::new(Collector::new(10)),
+        None,
+    );
+    let serial_error = serial.errors[0].error;
+    // Opening the synthetic memory file may be denied by the kernel; a granted
+    // open fails at the first unmapped read offset. Both lanes map this to a
+    // fixed category only, never to reader diagnostics.
+    assert!(matches!(serial_error, ScanError::Open | ScanError::Read));
+    assert!(serial.errors[0].path.is_some());
+    assert_eq!(batched.outcome.errors.len(), 1);
+    assert_eq!(batched.outcome.errors[0].error, serial_error);
+    assert!(batched.outcome.errors[0].path.is_some());
+    assert_eq!(serial.exit_code(), 2);
+    assert_eq!(serial.stats.files_completed, 0);
+    assert_eq!(batched.outcome.stats.files_completed, 0);
+    assert!(!format!("{serial:?}").contains("EIO"));
+}
+
+#[test]
 fn helper_batches_and_serial_scanning_agree_on_source_syntax() {
     let registry = Registry::compile(crate::config::Config::default()).unwrap();
     let batch_limits = crate::scanner::batch::BatchLimits {

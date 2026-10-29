@@ -867,7 +867,7 @@ const SLACK_PREFIXES: &[&[u8]] = &[
     b"https://hooks.slack.com/services/",
     b"https://hooks.slack-gov.com/services/",
 ];
-const PRIVATE_KEY_MARKERS: &[&[u8]] = &[
+pub(crate) const PRIVATE_KEY_MARKERS: &[&[u8]] = &[
     b"-----BEGIN PRIVATE KEY-----",           // rayloc:ignore
     b"-----BEGIN RSA PRIVATE KEY-----",       // rayloc:ignore
     b"-----BEGIN EC PRIVATE KEY-----",        // rayloc:ignore
@@ -1631,3 +1631,7 @@ pub(crate) fn detect_line_with_disabled(
 #[cfg(test)]
 #[path = "../../tests/unit/builtin.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/builtin_coverage.rs"]
+mod coverage_tests;
