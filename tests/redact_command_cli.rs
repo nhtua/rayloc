@@ -328,7 +328,7 @@ fn signal_termination_is_recorded_in_private_report() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let suffix = format!("-{}-0.txt", child.id());
+    let pid = child.id();
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty() && output.stderr.is_empty());
@@ -337,13 +337,15 @@ fn signal_termination_is_recorded_in_private_report() {
         .map(|e| e.unwrap().path())
         .find(|p| {
             !before.contains(p)
-                && p.file_name().is_some_and(|name| {
-                    name.to_string_lossy().starts_with("rayloc-report-")
-                        && name.to_string_lossy().ends_with(&suffix)
-                })
+                && p.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("rayloc-report-"))
+                && std::fs::read_to_string(p)
+                    .is_ok_and(|report| report.lines().any(|line| line == format!("pid={pid}")))
         })
         .unwrap();
     let report = std::fs::read_to_string(&path).unwrap();
+    assert!(report.contains("child_program=sh"));
+    assert!(!report.contains("kill -TERM"));
     assert!(report.contains("child=signal:15"));
     assert!(report.contains("error=child"));
     std::fs::remove_file(path).unwrap();
@@ -369,17 +371,17 @@ fn child_process_spawn_failure_is_a_silent_exit_two() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let suffix = format!("-{}-0.txt", child.id());
+    let pid = child.id();
     let output = child.wait_with_output().unwrap();
     let path = std::fs::read_dir("/tmp")
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .find(|p| {
             !before.contains(p)
-                && p.file_name().is_some_and(|name| {
-                    name.to_string_lossy().starts_with("rayloc-report-")
-                        && name.to_string_lossy().ends_with(&suffix)
-                })
+                && p.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("rayloc-report-"))
+                && std::fs::read_to_string(p)
+                    .is_ok_and(|report| report.lines().any(|line| line == format!("pid={pid}")))
         })
         .unwrap();
     let report = std::fs::read_to_string(&path).unwrap();

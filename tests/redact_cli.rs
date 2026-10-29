@@ -156,16 +156,15 @@ fn report_records_counts_without_leaking_input() {
     writeln!(child.stdin.take().unwrap(), "key={token}").unwrap();
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
-    let suffix = format!("-{pid}-0.txt");
     let path = std::fs::read_dir("/tmp")
         .unwrap()
         .map(|e| e.unwrap().path())
         .find(|p| {
             !before.contains(p)
-                && p.file_name().is_some_and(|n| {
-                    n.to_string_lossy().starts_with("rayloc-report-")
-                        && n.to_string_lossy().ends_with(&suffix)
-                })
+                && p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("rayloc-report-"))
+                && std::fs::read_to_string(p)
+                    .is_ok_and(|report| report.lines().any(|line| line == format!("pid={pid}")))
         })
         .unwrap();
     assert_eq!(
@@ -173,6 +172,7 @@ fn report_records_counts_without_leaking_input() {
         0o600
     );
     let report = std::fs::read_to_string(&path).unwrap();
+    assert!(report.contains("invocation=rayloc redact"));
     assert!(report.contains("mode=stdio"));
     assert!(report.contains("source=stdin state=filtered"));
     assert!(report.contains("redactions=1"));

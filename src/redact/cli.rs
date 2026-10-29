@@ -186,6 +186,7 @@ fn execute(args: Vec<OsString>, summary: &mut Summary) -> Result<bool, ()> {
             })
         }
         Input::Command(program, args, stdout, stderr) => {
+            summary.child_program = super::report::sanitized_program_name(&program);
             super::command::command(program, args, stdout, stderr, &registry, summary)
         }
     }

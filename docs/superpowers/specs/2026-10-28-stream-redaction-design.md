@@ -271,14 +271,18 @@ For every data-processing invocation (including invalid redact arguments), creat
 one report before reading input or starting a child. Proposed filename:
 
 ```text
-/tmp/rayloc-report-<unix-seconds>-<nanoseconds>-<pid>-<collision>.txt
+/tmp/rayloc-report-<YYYY-MM-DDTHH:MM:SS>-<collision-order>.txt
 ```
 
-Use `OpenOptions::create_new(true)` and Unix mode `0600`. Retry existing names
-with a bounded collision counter (64 attempts); never truncate an existing file
-or follow a pre-existing final-component symlink. Use `/tmp` deliberately rather
-than letting an untrusted `TMPDIR` reroute reports. Private test helpers may inject
-a directory and clock/ID values; there is no public report-path flag in v1.
+The filename timestamp is UTC ISO 8601 at whole-second precision (for example,
+`2026-10-29T03:35:57`); do not include fractional seconds or a timezone suffix in
+the filename. The collision order starts at zero and increments when that exact
+timestamp/order name already exists. Use `OpenOptions::create_new(true)` and Unix
+mode `0600`. Retry existing names with a bounded collision counter (64 attempts);
+never truncate an existing file or follow a pre-existing final-component symlink.
+Use `/tmp` deliberately rather than letting an untrusted `TMPDIR` reroute reports.
+Private test helpers may inject a directory and clock values; there is no public
+report-path flag in v1.
 
 Write and flush an initial header with report version, PID, start time, and
 `status=running`. Append a final summary only after processing is done. A report
@@ -289,8 +293,9 @@ may contaminate stdout/stderr. No cleanup/rotation daemon; retain reports for us
 
 ### Summary contents
 
-Record mode (`stdio`, `file`, `command`, or `invalid` for rejected arguments),
-start/end time and elapsed duration, the
+Record the fixed `rayloc redact` invocation label, mode (`stdio`, `file`,
+`command`, or `invalid` for rejected arguments), UTC ISO 8601 start/end date-times,
+elapsed duration in seconds, and the
 applied-policy indicator, source identity (`stdin`, `file`, `stdout`, `stderr`),
 processing/passthrough status, bytes
 read/written, records processed, detector spans found, merged intervals redacted,
@@ -304,9 +309,12 @@ have unknown content counts, not zero scanned bytes. Do not store individual
 findings: aggregate statistics keep memory and report size bounded.
 
 Never include original input, matched bytes (even partially masked), snippets,
-program/argument text, paths, environment values, custom rule names, raw OS error
-strings, or a child panic/error diagnostic in Rayloc-owned report text. Producer
-diagnostics remain data and pass through the selected channel policy.
+arguments, paths, environment values, custom rule names, raw OS error strings, or
+a child panic/error diagnostic in Rayloc-owned report text. In command mode only,
+record the child executable basename when it consists solely of safe ASCII
+filename characters; otherwise record `none`. The upstream shell pipeline command
+is not available to Rayloc and is not inferred. Producer diagnostics remain data
+and pass through the selected channel policy.
 
 ### Exit policy
 
@@ -401,4 +409,3 @@ No release, deployment, or changing existing scan behavior is implied by this
 design. No FIFO/extra-FD input
 API, explicit channel labels embedded in data, general multiline custom matching,
 PTY behavior, prefix previews, report content dumps, or automatic report deletion.
-

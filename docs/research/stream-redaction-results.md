@@ -87,7 +87,7 @@ an idle-machine re-run is planned before final claims. These are local
 measurements on the hardware named at the top of this document, not a
 release performance gate.
 
-The latest strict coverage run is 100% functions, 98.11% lines, and 96.87%
-regions (403 regions missed); the required region threshold remains 97% (at
+The latest strict coverage run is 100% functions, 98.08% lines, and 96.86%
+regions (407 regions missed); the required region threshold remains 97% (at
 most 385 missed). The gate is still failing, and no production code was
 excluded or coverage threshold weakened.

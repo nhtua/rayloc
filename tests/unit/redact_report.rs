@@ -30,6 +30,7 @@ fn summary_rows_are_aggregates_without_source_metadata() {
         mode: "command",
         policy: true,
         sources: vec![("stdout", Some(Stats::default())), ("stderr", None)],
+        child_program: Some("curl".to_owned()),
         ..Summary::default()
     };
     let mut report = Vec::new();
@@ -37,13 +38,35 @@ fn summary_rows_are_aggregates_without_source_metadata() {
     let report = String::from_utf8(report).unwrap();
     assert!(report.contains("mode=command"));
     assert!(report.contains("policy=true"));
-    assert!(report.contains("elapsed_ns=5000000"));
+    assert!(report.contains("duration_seconds=0.005000000"));
+    assert!(!report.contains("elapsed_ns="));
+    assert!(report.contains("invocation=rayloc redact"));
+    assert!(report.contains("child_program=curl"));
+    assert!(report.contains("finished_at="));
     assert!(report.contains("child=not-started"));
     assert!(report.contains("error=none"));
     assert!(report.contains("source=stdout state=filtered bytes_read=0"));
     assert!(report.contains("source=stderr state=passthrough counts=unknown"));
     assert!(report.contains("status=complete"));
     assert!(report.contains("exit=0"));
+}
+
+#[test]
+fn executable_name_is_reduced_to_a_safe_basename() {
+    assert_eq!(
+        sanitized_program_name(OsStr::new("/usr/bin/curl")),
+        Some("curl".to_owned())
+    );
+    assert_eq!(sanitized_program_name(OsStr::new("child\nsecret")), None);
+    assert_eq!(sanitized_program_name(OsStr::new(&"a".repeat(129))), None);
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        assert_eq!(
+            sanitized_program_name(OsStr::from_bytes(b"tool-\xff")),
+            None
+        );
+    }
 }
 
 #[test]
@@ -114,21 +137,38 @@ fn report_creation_refuses_collisions_and_symlinks() {
     let directory = crate::test_support::TempDir::new();
     let target = directory.path().join("sentinel");
     std::fs::write(&target, b"unchanged").unwrap();
-    let first = directory.path().join("rayloc-report-10-0-42-0.txt");
+    let first = directory
+        .path()
+        .join("rayloc-report-1970-01-01T00:00:10-0.txt");
     symlink(&target, &first).unwrap();
     let mut file = report_in(directory.path(), 42, Duration::from_secs(10)).unwrap();
     writeln!(file, "test").unwrap();
-    let created = directory.path().join("rayloc-report-10-0-42-1.txt");
+    let created = directory
+        .path()
+        .join("rayloc-report-1970-01-01T00:00:10-1.txt");
     assert_eq!(
         std::fs::metadata(&created).unwrap().permissions().mode() & 0o777,
         0o600
     );
+    assert!(
+        std::fs::read_to_string(&created)
+            .unwrap()
+            .contains("started_at=1970-01-01T00:00:10Z")
+    );
     assert_eq!(std::fs::read(&target).unwrap(), b"unchanged");
+    let leap_day = report_in(directory.path(), 43, Duration::from_secs(1_709_164_800)).unwrap();
+    drop(leap_day);
+    assert!(
+        directory
+            .path()
+            .join("rayloc-report-2024-02-29T00:00:00-0.txt")
+            .exists()
+    );
     for index in 2..64 {
         std::fs::write(
             directory
                 .path()
-                .join(format!("rayloc-report-10-0-42-{index}.txt")),
+                .join(format!("rayloc-report-1970-01-01T00:00:10-{index}.txt")),
             b"occupied",
         )
         .unwrap();

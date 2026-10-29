@@ -37,6 +37,7 @@ pub(super) struct Summary {
     pub(super) mode: &'static str,
     pub(super) policy: bool,
     pub(super) sources: Vec<(&'static str, Option<Stats>)>,
+    pub(super) child_program: Option<String>,
     pub(super) child_started: bool,
     pub(super) child: Option<std::process::ExitStatus>,
     pub(super) error: Option<&'static str>,

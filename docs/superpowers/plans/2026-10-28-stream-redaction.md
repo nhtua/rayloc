@@ -17,8 +17,8 @@ and core regression tests are implemented in `feat/stream-redaction`. On the
 current revision, formatting, strict Clippy, `cargo test --all`, `cargo bench`,
 and the locked release build pass. The corrected latency probe and a 16 MiB
 release sample are recorded in `docs/research/stream-redaction-results.md`.
-The strict coverage gate remains open: 100% functions, 98.11% lines, and 96.87%
-regions (403 missed; threshold is at most 385). Do not treat qualification as
+The strict coverage gate remains open: 100% functions, 98.08% lines, and 96.86%
+regions (407 missed; threshold is at most 385). Do not treat qualification as
 complete until the strict gate and the remaining repeat performance run pass.
 
 ## Global Constraints
