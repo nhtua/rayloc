@@ -43,6 +43,40 @@ class MeasurementTests(unittest.TestCase):
             size, _, _ = measure.measure(binary, 1024, True, directory)
             self.assertEqual(size, (1024 // len(source)) * len(source))
 
+    def test_stdin_mode_reads_the_fixture_from_stdin(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            binary = directory / "fake-rayloc"
+            source, expected = measure.records(True)
+            binary.write_text('#!/usr/bin/env python3\nimport sys\nsys.stdout.buffer.write(sys.stdin.buffer.read().replace(' + repr(source) + ', ' + repr(expected) + '))\nsys.exit(1)\n')
+            binary.chmod(0o700)
+            size, elapsed, peak = measure.measure(binary, 1024, True, directory, stdin=True)
+            self.assertEqual(size, (1024 // len(source)) * len(source))
+            self.assertGreater(elapsed, 0)
+            self.assertGreater(peak, 0)
+            binary.write_text('#!/bin/sh\ncat > /dev/null\nprintf wrong\nexit 1\n')
+            with self.assertRaisesRegex(RuntimeError, "output mismatch"):
+                measure.measure(binary, 1024, True, directory, stdin=True)
+
+    def test_latency_probe_returns_positive_seconds(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            binary = directory / "fake-rayloc"
+            binary.write_text(
+                '#!/usr/bin/env python3\n'
+                'import sys\n'
+                'if sys.argv[1:] != ["redact"]: sys.exit(23)\n'
+                'line = sys.stdin.buffer.readline()\n'
+                'sys.stdout.buffer.write(line)\n'
+                'sys.stdout.flush()\n'
+                'sys.stdin.buffer.read()\n'
+            )
+            binary.chmod(0o700)
+            startup, record = measure.measure_latency(binary)
+            self.assertGreater(startup, 0)
+            self.assertGreater(record, 0)
+            self.assertLess(record, 5)
+
 
 if __name__ == "__main__":
     unittest.main()

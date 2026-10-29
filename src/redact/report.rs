@@ -10,9 +10,10 @@ use std::{
 use super::Summary;
 
 pub(super) fn report() -> io::Result<fs::File> {
+    // A pre-epoch system clock cannot be represented; treat it as zero time.
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|_| io::Error::other("clock"))?;
+        .unwrap_or_default();
     report_in(Path::new("/tmp"), std::process::id(), now)
 }
 
@@ -56,35 +57,27 @@ pub(super) fn write_summary(
     code: u8,
 ) -> io::Result<()> {
     let status = if code == 2 { "failed" } else { "complete" };
-    let completed = SystemTime::now().duration_since(UNIX_EPOCH).ok();
-    let child = summary
-        .child
-        .map(|status| {
-            use std::os::unix::process::ExitStatusExt;
-            match (status.code(), status.signal()) {
-                (Some(code), _) => format!("exit:{code}"),
-                (_, Some(signal)) => format!("signal:{signal}"),
-                _ => "unavailable".to_owned(),
-            }
-        })
-        .unwrap_or_else(|| {
-            if summary.child_started {
-                "unavailable"
-            } else {
-                "not-started"
-            }
-            .to_owned()
-        });
+    use std::os::unix::process::ExitStatusExt;
+    let child = match summary.child {
+        Some(status) => match (status.code(), status.signal()) {
+            (Some(code), _) => format!("exit:{code}"),
+            (_, Some(signal)) => format!("signal:{signal}"),
+            _ => "unavailable".to_owned(),
+        },
+        None if summary.child_started => "unavailable".to_owned(),
+        None => "not-started".to_owned(),
+    };
+    let time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let finished = format!("{}.{:09}", time.as_secs(), time.subsec_nanos());
     writeln!(
         report,
         "mode={}\npolicy={}\nelapsed_ns={}\nfinished={}\nchild={}\nerror={}",
         summary.mode,
         summary.policy,
         elapsed.as_nanos(),
-        completed.map_or_else(
-            || "unavailable".to_owned(),
-            |time| format!("{}.{:09}", time.as_secs(), time.subsec_nanos())
-        ),
+        finished,
         child,
         summary.error.unwrap_or("none")
     )?;

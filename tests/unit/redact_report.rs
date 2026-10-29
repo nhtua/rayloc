@@ -143,3 +143,66 @@ fn report_creation_refuses_collisions_and_symlinks() {
         .is_err()
     );
 }
+
+#[test]
+fn child_status_without_code_or_signal_is_unavailable() {
+    use std::os::unix::process::ExitStatusExt;
+    let summary = Summary {
+        mode: "command",
+        child_started: true,
+        child: Some(std::process::ExitStatus::from_raw(0x7f)),
+        ..Summary::default()
+    };
+    let mut report = Vec::new();
+    write_summary(&mut report, &summary, Duration::ZERO, 2).unwrap();
+    assert!(
+        String::from_utf8(report)
+            .unwrap()
+            .contains("child=unavailable")
+    );
+}
+
+#[test]
+fn stats_row_write_failure_is_propagated() {
+    struct FailSecondWrite;
+    impl Write for FailSecondWrite {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("sensitive diagnostic"))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    struct FailAfterBytes {
+        budget: usize,
+        buffer: Vec<u8>,
+    }
+    impl Write for FailAfterBytes {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.budget == 0 {
+                return Err(io::Error::other("sensitive diagnostic"));
+            }
+            let accepted = bytes.len().min(self.budget);
+            self.budget -= accepted;
+            self.buffer.extend_from_slice(&bytes[..accepted]);
+            Ok(accepted)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let summary = Summary {
+        mode: "stdio",
+        sources: vec![("stdin", Some(Stats::default()))],
+        ..Summary::default()
+    };
+    // The mode block is at most ~90 bytes; the budget expires mid stats row.
+    let mut writer = FailAfterBytes {
+        budget: 100,
+        buffer: Vec::new(),
+    };
+    assert!(write_summary(&mut writer, &summary, Duration::ZERO, 0).is_err());
+    let written = String::from_utf8(writer.buffer).unwrap();
+    assert!(written.contains("mode=stdio"));
+    assert!(write_summary(&mut FailSecondWrite, &summary, Duration::ZERO, 0).is_err());
+}

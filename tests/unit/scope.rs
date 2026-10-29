@@ -427,6 +427,118 @@ fn public_directory_wrappers_scan_with_and_without_an_emitter() {
     assert_eq!(configured.stats.files_completed, 1);
 }
 #[test]
+fn parallel_flush_without_helpers_scans_each_lane_serially() {
+    let temp = TempDir::new();
+    for name in ["one", "two"] {
+        fs::write(temp.path().join(name), "ghp_abcdefghijklmnop\n").unwrap();
+    }
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    runner.options.workers = 2;
+    runner.options.parallel_threshold = 1;
+    runner.options.parallel_bytes_threshold = 0;
+    runner.pool = Some(
+        crate::scanner::execution::build_pool(2, |threads| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .map_err(|_| ())
+        })
+        .unwrap(),
+    );
+    runner.workers = vec![Worker::new(), Worker::new()];
+    assert!(runner.helpers.is_none());
+    runner.emitter = Some(crate::report::emitter::SharedEmitter::new(Box::new(
+        crate::report::emitter::TerminalEmitter::new(Vec::new()),
+    )));
+    for (source_id, name) in [(1_u32, "one"), (2, "two")] {
+        runner.batch.push(Work {
+            path: temp.path().join(name).into_boxed_path(),
+            source_id,
+            estimated_bytes: 21,
+        });
+    }
+    runner.matched = 2;
+    runner.flush();
+    assert_eq!(runner.outcome.stats.files_attempted, 2);
+    assert_eq!(runner.outcome.stats.files_completed, 2);
+    assert_eq!(runner.outcome.stats.findings_detected, 2);
+    assert_eq!(runner.scanned, 2);
+    // An empty flush must complete without touching any counter.
+    runner.flush();
+    assert_eq!(runner.outcome.stats.files_completed, 2);
+    assert_eq!(runner.scanned, 2);
+}
+
+#[test]
+fn progress_throttle_resumes_after_the_cooldown_window() {
+    let temp = TempDir::new();
+    fs::write(temp.path().join("a"), "clean").unwrap();
+    fs::write(temp.path().join("b"), "clean").unwrap();
+    let root = root(&temp);
+    let mut runner = runner(&root);
+    let stale = std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_millis(150))
+        .expect("cooldown baseline is representable");
+    runner.last_progress = Some(stale);
+    let mut stamped = stale;
+    for (source_id, name) in [(1_u32, "a"), (2, "b")] {
+        runner.batch.push(Work {
+            path: temp.path().join(name).into_boxed_path(),
+            source_id,
+            estimated_bytes: 5,
+        });
+        runner.matched = source_id;
+        runner.flush();
+        if source_id == 1 {
+            stamped = runner.last_progress.expect("flush stamps progress");
+            assert!(stamped > stale);
+            assert_eq!(runner.scanned, 1);
+        } else {
+            // The second flush lands inside the throttle window and must
+            // preserve the previous progress stamp.
+            assert_eq!(runner.last_progress, Some(stamped));
+            assert_eq!(runner.scanned, 2);
+        }
+    }
+}
+
+#[test]
+fn budget_frontier_limit_and_policy_error_mapping_are_direct() {
+    let mut budget = Budget::default();
+    assert_eq!(
+        budget.charge(
+            1,
+            0,
+            Limits {
+                frontier: 0,
+                ..LIMITS
+            }
+        ),
+        Err(ScanError::ScopeLimit)
+    );
+    assert_eq!(
+        budget.charge(0, 1, Limits { paths: 0, ..LIMITS }),
+        Err(ScanError::ScopeLimit)
+    );
+    assert_eq!(
+        policy_error(crate::config::ConfigError::Limit),
+        ScanError::ScopeLimit
+    );
+    for error in [
+        crate::config::ConfigError::Syntax,
+        crate::config::ConfigError::Pattern,
+        crate::config::ConfigError::Ignore,
+    ] {
+        assert_eq!(policy_error(error), ScanError::Policy);
+    }
+    // Escaped separators survive the escape-tracking arm and depth accounting.
+    assert!(compile_glob(r"a\\b").unwrap().is_match(r"a\b"));
+    let nested = format!("{}a{}", "{".repeat(16), "}".repeat(16));
+    assert!(compile_glob(&nested).unwrap().is_match("a"));
+}
+
+#[test]
 fn merge_errors_and_every_new_category_render_without_source_metadata() {
     for error in [
         ScanError::ScopeLimit,

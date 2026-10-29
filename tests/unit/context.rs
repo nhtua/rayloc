@@ -1516,3 +1516,621 @@ fn context_state_fails_closed_on_offset_and_value_counter_overflow() {
         Err(ScanError::CounterOverflow)
     );
 }
+
+#[test]
+fn increment_helper_counts_and_reports_overflow() {
+    let mut counter = 0usize;
+    increment(&mut counter).unwrap();
+    increment(&mut counter).unwrap();
+    assert_eq!(counter, 2);
+    let mut overflow = usize::MAX;
+    assert_eq!(increment(&mut overflow), Err(ScanError::CounterOverflow));
+}
+
+#[test]
+fn lexer_helpers_cover_words_spacing_quotes_and_normalization() {
+    assert!(word(b'a') && word(b'Z') && word(b'7') && word(b'_'));
+    assert!(!word(b'-') && !word(b'=') && !word(b' '));
+
+    assert_eq!(space(b"   x", 0), 3);
+    assert_eq!(space(b"x", 0), 0);
+    assert_eq!(space(b"ab \t", 2), 4);
+
+    assert_eq!(quoted(b"'a\\'b'", 0), Some(5));
+    assert_eq!(quoted(b"'abc", 0), None);
+    assert_eq!(quoted(b"\"ab\"c", 0), Some(3));
+
+    assert_eq!(normalized(b"AWSKey"), b"aws_key");
+    assert_eq!(normalized(b"apiKey"), b"api_key");
+    assert_eq!(normalized(b"APIKEY"), b"apikey");
+    assert_eq!(
+        normalized(b"aws_secret_access_key"),
+        b"aws_secret_access_key"
+    );
+
+    assert_eq!(previous_significant(b"if password", 3), Some(b'f'));
+    assert_eq!(previous_significant(b"password", 0), None);
+    assert_eq!(previous_significant(b"x = password", 4), Some(b'='));
+    assert_eq!(previous_significant(b"x  password", 3), Some(b'x'));
+
+    assert!(checksum_name(b"api_key_sha256"));
+    assert!(checksum_name(b"md5"));
+    assert!(checksum_name(b"digest"));
+    assert!(checksum_name(b"sha512"));
+    assert!(!checksum_name(b"api_key"));
+    assert!(!checksum_name(b"digestx"));
+    assert!(!checksum_name(b"checksums"));
+}
+
+fn pushed_name(raw: &[u8]) -> NameState {
+    let mut name = NameState::new();
+    for &b in raw {
+        name.raw(b);
+    }
+    name.finish();
+    name
+}
+
+#[test]
+fn name_state_tracks_camel_boundaries_components_and_windows() {
+    assert_eq!(pushed_name(b"AWSKey").tail, b"aws_key");
+    assert_eq!(pushed_name(b"apiKey").tail, b"api_key");
+    assert_eq!(pushed_name(b"MD5").tail, b"md5");
+    assert!(pushed_name(b"MD5").checksum);
+    assert!(pushed_name(b"api_key_sha256").checksum);
+    assert!(pushed_name(b"digest").checksum);
+    assert!(pushed_name(b"x_sha1").checksum);
+    assert!(pushed_name(b"api_md5").checksum);
+    assert!(!pushed_name(b"api_key").checksum);
+    assert!(!pushed_name(b"digestx").checksum);
+    assert_eq!(
+        pushed_name(b"abcdefghijklmnop_q").tail,
+        b"abcdefghijklmnop_q"
+    );
+    assert!(!pushed_name(b"abcdefghijklmnop_q").checksum);
+    let windowed = pushed_name(&[b'a'; 100]);
+    assert_eq!(windowed.tail.len(), 64);
+    assert_eq!(windowed.len, 100);
+    let mut reused = pushed_name(b"md5");
+    reused.reset();
+    assert!(reused.tail.is_empty());
+    assert_eq!(reused.len, 0);
+    assert!(!reused.checksum);
+}
+
+#[test]
+fn directive_accepts_adjacent_slashes_and_rejects_uri_slashes() {
+    assert!(directive(b"x //rayloc:ignore"));
+    assert!(directive(b"x #rayloc:ignore"));
+    assert!(directive(b"x: // rayloc:ignore"));
+    assert!(directive(b"a://b # rayloc:ignore"));
+    assert!(!directive(b"x://rayloc:ignore"));
+    assert!(!directive(b"x=42 # rayloc:ignore later"));
+}
+
+#[test]
+fn directive_state_walks_comment_progress_and_quoted_escape_states() {
+    for (line, expected) in [
+        (b"x #   \t rayloc:ignore".as_slice(), true),
+        (b"x // rayloc:ignore", true),
+        (b"x //rayloc:ignore", true),
+        (b"x: // rayloc:ignore", true),
+        (b"x://rayloc:ignore", false),
+        (b"x #zz", false),
+        (b"x # rayloc:ignorez", false),
+        (b"x # rayloc:ignor", false),
+        (b"x # rayloc:ignore", true),
+        (b"x 'esc\\'ape' # rayloc:ignore", true),
+        (b"x \"q\" # rayloc:ignore", true),
+        (b"x 'abc", false),
+        (b"x=\"a\\b\" # rayloc:ignore", true),
+    ] {
+        assert_eq!(directive(line), expected, "baseline {line:?}");
+        let mut bytewise = DirectiveState::new();
+        for byte in line.chunks(1) {
+            bytewise.push(byte);
+        }
+        assert_eq!(bytewise.finish(), expected, "bytewise {line:?}");
+        for split in 0..=line.len() {
+            let mut state = DirectiveState::new();
+            state.push(&line[..split]);
+            state.push(&line[split..]);
+            assert_eq!(state.finish(), expected, "split {split} in {line:?}");
+        }
+    }
+}
+
+#[test]
+fn placeholder_helper_covers_aws_password_and_api_lists() {
+    // AWS documentation example key, a synthetic fixture token. // rayloc:ignore
+    let aws_example = b"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"; // rayloc:ignore
+    assert!(placeholder(aws_example, false, true));
+    assert!(!placeholder(aws_example, false, false));
+
+    for value in [
+        b"ChangeMe".as_slice(),
+        b"YOUR_PASSWORD",
+        b"your-password",
+        b"Password_Here",
+        b"example_password",
+        b"REPLACE_ME",
+    ] {
+        assert!(placeholder(value, true, false), "{value:?}");
+    }
+    assert!(!placeholder(b"insert_token_here", true, false));
+    assert!(!placeholder(b"changeme", false, false));
+
+    for value in [
+        b"your_api_key_here".as_slice(),
+        b"YOUR-API-KEY-HERE",
+        b"replace_with_your_key",
+        b"Example_API_Key",
+        b"INSERT_TOKEN_HERE",
+    ] {
+        assert!(placeholder(value, false, false), "{value:?}");
+    }
+}
+
+#[test]
+fn descriptive_placeholder_helper_accepts_provider_words_only() {
+    for value in [
+        b"your-api-key".as_slice(),
+        b"your-minimax-api-key",
+        b"your_minimax_api_key",
+        b"your-dashscope-alibaba-api-key",
+        b"your-minimax-api-key-here",
+        b"your_meta_model_api_key_here",
+    ] {
+        assert!(descriptive_api_key_placeholder(value), "{value:?}");
+    }
+    assert!(!descriptive_api_key_placeholder(b"your-minimax_api-key"));
+    assert!(!descriptive_api_key_placeholder(b"your1api-key"));
+    assert!(!descriptive_api_key_placeholder(b"your-secret-key"));
+    assert!(!descriptive_api_key_placeholder(b"your"));
+    assert!(!descriptive_api_key_placeholder(b"you"));
+}
+
+#[test]
+fn sequential_helper_flags_repeated_and_alphabet_runs() {
+    for value in [
+        b"aaaaaaaaaaaaaaaa".as_slice(),
+        b"0123456789abcdef",
+        b"abcdefghijklmn",
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        b"abcdefghijklmnopqrstuvwxyz0123456789",
+        b"3456789abcde",
+    ] {
+        assert!(sequential(value), "{value:?}");
+    }
+    assert!(!sequential(b"abc123abc123abc1"));
+    assert!(!sequential(b"Q7v2n9B4x6M1z8K3")); // rayloc:ignore
+}
+
+fn findings_for(line: &[u8], items: &[(RuleId, &[u8])]) -> Vec<(RuleId, std::ops::Range<usize>)> {
+    items
+        .iter()
+        .map(|(rule, needle)| {
+            let start = line
+                .windows(needle.len())
+                .position(|window| window == *needle)
+                .unwrap();
+            (*rule, start..start + needle.len())
+        })
+        .collect()
+}
+
+#[test]
+fn quoted_stream_values_enforce_the_candidate_capture_limit() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    let mut quoted = b"api_key='".to_vec();
+    quoted.extend(std::iter::repeat_n(b'Q', MAX_CANDIDATE_BYTES + 1));
+    quoted.push(b'\'');
+    let mut state = ContextState::new();
+    assert_eq!(
+        state.push(
+            &quoted,
+            &registry,
+            &mut Histogram::new(),
+            &mut Suppressions::default(),
+            |candidate: Candidate<'_>| {
+                let _ = candidate;
+            },
+        ),
+        Err(ScanError::CandidateLimit)
+    );
+
+    let mut unquoted = b"api_key=".to_vec();
+    unquoted.extend(std::iter::repeat_n(b'Q', MAX_CANDIDATE_BYTES + 1));
+    let mut state = ContextState::new();
+    assert_eq!(
+        state.push(
+            &unquoted,
+            &registry,
+            &mut Histogram::new(),
+            &mut Suppressions::default(),
+            |candidate: Candidate<'_>| {
+                let _ = candidate;
+            },
+        ),
+        Err(ScanError::CandidateLimit)
+    );
+}
+
+#[test]
+fn bearer_quoted_values_keep_token_spans_across_splits() {
+    let registry = Registry::compile(crate::config::Config::default()).unwrap();
+    for line in [
+        b"Authorization: \"Bearer Q7v2n9B4x6M1z8K3\"".as_slice(), // rayloc:ignore
+        b"Authorization: \"Bearer    Q7v2n9B4x6M1z8K3\"",         // rayloc:ignore
+        b"Authorization: Bearer Q7v2n9B4x6M1z8K3",                // rayloc:ignore
+        b"Authorization: Bearer   Q7v2n9B4x6M1z8K3",              // rayloc:ignore
+    ] {
+        let mut state = ContextState::new();
+        let mut findings = Vec::new();
+        let mut histogram = Histogram::new();
+        let mut suppressions = Suppressions::default();
+        let mut emit = |candidate: Candidate<'_>| {
+            findings.push((
+                candidate.rule,
+                candidate.span.start as usize..candidate.span.end as usize,
+            ));
+        };
+        state
+            .push(
+                line,
+                &registry,
+                &mut histogram,
+                &mut suppressions,
+                &mut emit,
+            )
+            .unwrap();
+        state
+            .finish(&registry, &mut histogram, &mut suppressions, &mut emit)
+            .unwrap();
+        let token = b"Q7v2n9B4x6M1z8K3"; // rayloc:ignore
+        let start = line
+            .windows(token.len())
+            .position(|window| window == token)
+            .unwrap();
+        assert_eq!(
+            findings,
+            [(RuleId::ContextSecret, start..start + 16)],
+            "{line:?}"
+        );
+    }
+}
+
+#[test]
+#[allow(clippy::type_complexity)]
+fn context_matrix_covers_value_suppression_and_terminal_paths() {
+    let token: &[u8] = b"Q7v2n9B4x6M1z8K3"; // rayloc:ignore
+    let aws_valid: &[u8] = b"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab+/"; // rayloc:ignore
+    let aws_invalid: &[u8] = b"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab+*"; // rayloc:ignore
+    let none = Suppressions::default();
+    let one_placeholder = Suppressions {
+        placeholder: 1,
+        ..Suppressions::default()
+    };
+    let one_reference = Suppressions {
+        reference: 1,
+        ..Suppressions::default()
+    };
+    let one_checksum = Suppressions {
+        checksum: 1,
+        ..Suppressions::default()
+    };
+    let one_filter = Suppressions {
+        generic_filter: 1,
+        ..Suppressions::default()
+    };
+    let text = crate::rules::SourceSyntax::Text;
+    let code = crate::rules::SourceSyntax::Code;
+    let cases: Vec<(
+        Vec<u8>,
+        crate::rules::SourceSyntax,
+        Vec<(RuleId, &[u8])>,
+        Suppressions,
+    )> = vec![
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"api_key= Q7v2n9B4x6M1z8K3".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"api_key='Q7v2n9B4x6M1z8K3'".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (b"api_key='Q7v2n9B4x6M1z8K3\\'".to_vec(), text, vec![], none),
+        (
+            b"password='weakweak'".to_vec(),
+            text,
+            vec![(RuleId::PasswordAssignment, b"weakweak")],
+            none,
+        ),
+        (
+            b"password='weak\\'pass'".to_vec(),
+            text,
+            vec![(RuleId::PasswordAssignment, b"weak\\'pass")],
+            none,
+        ),
+        (b"password='abc'".to_vec(), text, vec![], none),
+        (
+            b"password='changeme'".to_vec(),
+            text,
+            vec![],
+            one_placeholder,
+        ),
+        (
+            b"password=self.DUMMY_API_KEY".to_vec(),
+            text,
+            vec![(RuleId::PasswordAssignment, b"self.DUMMY_API_KEY")],
+            none,
+        ),
+        (
+            b"aws_secret_access_key=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab+/".to_vec(),
+            text,
+            vec![(RuleId::AwsSecretAccessKey, aws_valid)],
+            none,
+        ),
+        (
+            b"aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_vec(),
+            text,
+            vec![],
+            one_placeholder,
+        ),
+        (
+            b"aws_secret_access_key=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab+*".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, aws_invalid)],
+            none,
+        ),
+        (b"api_key=aaaaaaaaaaaaaaaZ".to_vec(), text, vec![], none),
+        (
+            b"api_key_sha256=9f21c7ab6e40d835".to_vec(),
+            text,
+            vec![],
+            one_checksum,
+        ),
+        (
+            b"api_key_checksum=9f21c7ab6e40d835".to_vec(),
+            text,
+            vec![],
+            one_checksum,
+        ),
+        (
+            b"checksum=9f21c7ab6e40d835".to_vec(),
+            text,
+            vec![],
+            one_checksum,
+        ),
+        (b"checksum=short".to_vec(), text, vec![], none),
+        (
+            b"api_key=AAAAAAAAAAAAAAAA".to_vec(),
+            text,
+            vec![],
+            one_filter,
+        ),
+        (b"api_key=Q7v2".to_vec(), text, vec![], none),
+        (
+            b"api_key=${ENV_API_KEY}".to_vec(),
+            text,
+            vec![],
+            one_reference,
+        ),
+        (
+            b"api_key=process.env.API_KEY".to_vec(),
+            text,
+            vec![],
+            one_reference,
+        ),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3(continued)".to_vec(),
+            text,
+            vec![],
+            none,
+        ),
+        (b"api_key=[Q7v2n9B4x6M1z8K3]".to_vec(), text, vec![], none),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3 + suffix".to_vec(),
+            text,
+            vec![],
+            none,
+        ),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3.suffix".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, b"Q7v2n9B4x6M1z8K3.suffix")],
+            none,
+        ),
+        (
+            b"api_key = environment.API_KEY".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, b"environment.API_KEY")],
+            none,
+        ),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3; x=1".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3, x=1".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3 # c".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3 // c".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (b"#only comment".to_vec(), text, vec![], none),
+        (b"api_key=x://y".to_vec(), text, vec![], none),
+        (b"password".to_vec(), text, vec![], none),
+        (
+            b"Authorization: Bearer Q7v2n9B4x6M1z8K3".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"Authorization: Bearer   Q7v2n9B4x6M1z8K3".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"Authorization: \"Bearer Q7v2n9B4x6M1z8K3\"".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"Authorization: \"Bearer    Q7v2n9B4x6M1z8K3\"".to_vec(),
+            text,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"Authorization: Basic Q7v2n9B4x6M1z8K3".to_vec(),
+            text,
+            vec![],
+            none,
+        ),
+        (
+            b"Authorization: \"Basic Q7v2n9B4x6M1z8K3\"".to_vec(),
+            text,
+            vec![],
+            none,
+        ),
+        (b"Authorization: Bzzzz".to_vec(), text, vec![], none),
+        (b"Authorization: \"B\\a\"".to_vec(), text, vec![], none),
+        (b"Authorization: \"\"".to_vec(), text, vec![], none),
+        (b"Authorization: \"Bearer\"".to_vec(), text, vec![], none),
+        (b"Authorization: null".to_vec(), text, vec![], none),
+        (
+            b"api_key === 'Q7v2n9B4x6M1z8K3'".to_vec(),
+            code,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"password == 'weakweak'".to_vec(),
+            code,
+            vec![(RuleId::PasswordAssignment, b"weakweak")],
+            none,
+        ),
+        (
+            b"if (password == 'weakweak') {}".to_vec(),
+            code,
+            vec![(RuleId::PasswordAssignment, b"weakweak")],
+            none,
+        ),
+        (b"api_key= 'weakweak'".to_vec(), code, vec![], none),
+        (
+            b"password= 'weakweak'".to_vec(),
+            code,
+            vec![(RuleId::PasswordAssignment, b"weakweak")],
+            none,
+        ),
+        (
+            b"api_key => 'Q7v2n9B4x6M1z8K3'".to_vec(),
+            code,
+            vec![],
+            none,
+        ),
+        (b"api_key::'Q7v2n9B4x6M1z8K3'".to_vec(), code, vec![], none),
+        (
+            b"flag ? api_key: 'Q7v2n9B4x6M1z8K3'".to_vec(),
+            code,
+            vec![],
+            none,
+        ),
+        (
+            b"api_key=client?.credential".to_vec(),
+            code,
+            vec![],
+            one_reference,
+        ),
+        (b"api_key =".to_vec(), code, vec![], none),
+        (b"api_key ==".to_vec(), code, vec![], none),
+        (b"api_key=".to_vec(), code, vec![], none),
+        (b"api_key(= 'Q7v2n9B4x6M1z8K3'".to_vec(), code, vec![], none),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3)".to_vec(),
+            code,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"password='weakweak' x=1".to_vec(),
+            code,
+            vec![(RuleId::PasswordAssignment, b"weakweak")],
+            none,
+        ),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3 ; x=1".to_vec(),
+            code,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"clientSecret=Q7v2n9B4x6M1z8K3".to_vec(),
+            code,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"api_key==Q7v2n9B4x6M1z8K3".to_vec(),
+            code,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"password==aaaaaaaa".to_vec(),
+            code,
+            vec![(RuleId::PasswordAssignment, b"aaaaaaaa")],
+            none,
+        ),
+        (
+            b"Authorization: \"Bearer Q7v2n9B4x6M1z8K3\"".to_vec(),
+            code,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+        (
+            b"api_key=Q7v2n9B4x6M1z8K3".to_vec(),
+            code,
+            vec![(RuleId::ContextSecret, token)],
+            none,
+        ),
+    ];
+    for (line, syntax, expected_items, expected_suppressions) in &cases {
+        let expected = findings_for(line, expected_items);
+        let (findings, suppressions) = detect_with_syntax(line, *syntax);
+        assert_eq!(findings, expected, "{line:?}");
+        assert_eq!(suppressions, *expected_suppressions, "{line:?}");
+        for split in 0..=line.len() {
+            let (streamed, counters) = stream_with_syntax(line, *syntax, split);
+            assert_eq!(streamed, findings, "split {split} in {line:?}");
+            assert_eq!(counters, suppressions, "split {split} in {line:?}");
+        }
+    }
+}

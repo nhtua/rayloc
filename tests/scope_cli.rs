@@ -588,3 +588,56 @@ fn review_nested_common_directory_failure_is_safe_and_incomplete() {
             .contains("private-nested-stderr")
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn scan_outside_a_repository_uses_the_plain_directory_scope() {
+    let root = TempDir::new();
+    fs::write(root.path().join("clean.txt"), b"nothing secret here\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(root.path())
+        .args(["scan", "."])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[cfg(unix)]
+#[test]
+fn missing_git_executable_in_a_repository_is_a_discovery_error() {
+    let root = TempDir::new();
+    git(&root, &["init", "--quiet"]);
+    secret(&root, "key");
+    let empty = TempDir::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(root.path())
+        .args(["scan", "."])
+        .env("PATH", empty.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(text(&output).is_empty());
+    let stderr = String::from_utf8(output.stderr.clone()).unwrap();
+    assert!(stderr.contains("cannot discover policy root"));
+    assert!(!stderr.contains("abcdefghijklmnop"));
+}
+
+#[cfg(unix)]
+#[test]
+fn missing_git_executable_with_empty_administration_scans_the_directory() {
+    let root = TempDir::new();
+    // An empty .git directory makes discovery try git, fail to find the
+    // executable, and fall back to the plain directory scope.
+    fs::create_dir(root.path().join(".git")).unwrap();
+    secret(&root, "key");
+    let empty = TempDir::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(root.path())
+        .args(["scan", "."])
+        .env("PATH", empty.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output).contains("key"));
+    assert!(!text(&output).contains("abcdefghijklmnop"));
+}

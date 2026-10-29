@@ -260,6 +260,95 @@ fn jwe_direct_and_key_wrapping_segment_contracts_are_distinct() {
         b"{\"alg\":\"HS256\",\"x\":\"\\uD800x",
         b"-",
     ] {
-        assert!(!accepted(&token(header, b".e30.AAAA")));
+        assert!(!accepted(&token(header, b".e30.AAAA"))); // rayloc:ignore
     }
+}
+
+#[test]
+fn encoded_accepts_canonical_tail_bits_for_short_segments() {
+    assert!(encoded(b"")); // empty segment carries no trailing bits
+    assert!(encoded(b"Ag")); // 2 mod 4: last digit ends in four zero bits // rayloc:ignore
+    assert!(encoded(b"Agg")); // 3 mod 4: last digit ends in two zero bits // rayloc:ignore
+    assert!(!encoded(b"Ah")); // dirty four-bit tail // rayloc:ignore
+    assert!(!encoded(b"Aah")); // dirty two-bit tail // rayloc:ignore
+    let mut decoded = Vec::new();
+    assert!(decode(b"Ag", &mut decoded)); // rayloc:ignore
+    assert_eq!(decoded, [2]);
+    decoded.clear();
+    assert!(!decode(b"Ah", &mut decoded)); // rayloc:ignore
+}
+
+#[test]
+fn empty_leading_segment_never_reaches_the_decoder() {
+    assert!(!accepted(b".e30.AAAA")); // rayloc:ignore
+    assert!(!accepted(b".e30.AAAA.AAAA.AAAA")); // rayloc:ignore
+}
+
+#[test]
+fn unsigned_jws_shape_requires_named_alg_and_empty_signature() {
+    assert!(accepted(&token(br#"{"alg":"none"}"#, b".e30."))); // rayloc:ignore
+    assert!(!accepted(&token(br#"{"alg":"HS256"}"#, b".e30."))); // signed shape needs a signature // rayloc:ignore
+    assert!(!accepted(&token(br#"{"alg":"none"}"#, b".e30.AAAA"))); // signature with alg none // rayloc:ignore
+}
+
+#[test]
+fn json_number_and_array_arms_accept_canonical_shapes() {
+    let suffix = b".e30.AAAA"; // rayloc:ignore
+    for value in [
+        "-0",
+        "0",
+        "0.5",
+        "-0.5",
+        "1e2",
+        "1E+2",
+        "-1.5e-3",
+        "100",
+        "[]",
+        "[[]]",
+        "[-0.5,1e-2]",
+    ] {
+        let header = format!("{{\"alg\":\"HS256\",\"x\":{value}}}");
+        assert!(
+            accepted(&token(header.as_bytes(), suffix)),
+            "{value} parses"
+        ); // rayloc:ignore
+    }
+    for header in [
+        b"{}".as_slice(),
+        br#"{"alg":"","typ":"j"}"#,
+        br#"{"alg":"HS256","enc":""}"#,
+        br#"{"typ":"jwt"}"#,
+    ] {
+        assert!(
+            !accepted(&token(header, suffix)),
+            "header {header:?} has no usable alg"
+        ); // rayloc:ignore
+    }
+}
+
+#[test]
+fn jose_stream_frames_equals_and_flushes_oversized_candidates() {
+    let mut state = JoseState::new();
+    let mut found = Vec::new();
+    state
+        .push(b"a=b.c.d ", |c| found.push(c.span.clone())) // rayloc:ignore
+        .unwrap();
+    assert!(
+        found.is_empty(),
+        "equals frames a candidate but never decodes"
+    );
+    state.finish(|c| found.push(c.span.clone())).unwrap();
+    assert!(found.is_empty());
+}
+
+#[test]
+fn jose_stream_oversized_framed_candidate_reports_candidate_limit() {
+    let head = [vec![b'A'; MAX_CANDIDATE_BYTES + 5], b".".to_vec()].concat(); // rayloc:ignore
+    let mut state = JoseState::new();
+    state.push(&head, |_| {}).unwrap(); // oversized with one dot is tolerated // rayloc:ignore
+    state.push(b" ", |_| {}).unwrap(); // flush below two dots resets the flag
+    let mut state = JoseState::new();
+    state.push(&head, |_| {}).unwrap(); // rayloc:ignore
+    assert_eq!(state.push(b".", |_| {}), Err(ScanError::CandidateLimit)); // second dot on oversized // rayloc:ignore
+    assert_eq!(state.push(b" ", |_| {}), Err(ScanError::CandidateLimit)); // flush arm of the same state // rayloc:ignore
 }

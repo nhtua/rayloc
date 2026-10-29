@@ -113,15 +113,27 @@ fn execute(args: Vec<OsString>, summary: &mut Summary) -> Result<bool, ()> {
         Input::File(_) => "file",
         Input::Command(..) => "command",
     };
-    let root = crate::config::discover_root(Path::new(".")).map_err(|_| {
-        summary.error = Some("policy");
-    })?;
-    let policy = crate::config::load(&root, config.as_deref()).map_err(|_| {
-        summary.error = Some("policy");
-    })?;
-    let mut registry = Registry::compile(policy).map_err(|_| {
-        summary.error = Some("policy");
-    })?;
+    let root = match crate::config::discover_root(Path::new(".")) {
+        Ok(root) => root,
+        Err(_) => {
+            summary.error = Some("policy");
+            return Err(());
+        }
+    };
+    let policy = match crate::config::load(&root, config.as_deref()) {
+        Ok(policy) => policy,
+        Err(_) => {
+            summary.error = Some("policy");
+            return Err(());
+        }
+    };
+    let mut registry = match Registry::compile(policy) {
+        Ok(registry) => registry,
+        Err(_) => {
+            summary.error = Some("policy");
+            return Err(());
+        }
+    };
     summary.policy = true;
     registry.inline_ignores = false;
     match input {
@@ -139,27 +151,27 @@ fn execute(args: Vec<OsString>, summary: &mut Summary) -> Result<bool, ()> {
             })
         }
         Input::File(path) => {
-            if !fs::metadata(&path)
-                .map_err(|_| {
+            let file = match open_regular(&path) {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::InvalidInput => {
+                    summary.error = Some("not-regular-file");
+                    return Err(());
+                }
+                Err(_) => {
                     summary.error = Some("open");
-                })?
-                .is_file()
-            {
-                summary.error = Some("not-regular-file");
-                return Err(());
-            }
-            let file = open_regular(&path).map_err(|_| {
-                summary.error = Some("open");
-            })?;
-            if !file
-                .metadata()
-                .map_err(|_| {
+                    return Err(());
+                }
+            };
+            match file.metadata() {
+                Ok(metadata) if metadata.is_file() => {}
+                Ok(_) => {
+                    summary.error = Some("not-regular-file");
+                    return Err(());
+                }
+                Err(_) => {
                     summary.error = Some("open");
-                })?
-                .is_file()
-            {
-                summary.error = Some("not-regular-file");
-                return Err(());
+                    return Err(());
+                }
             }
             let mut stats = Stats::default();
             let result = filter(
@@ -179,18 +191,31 @@ fn execute(args: Vec<OsString>, summary: &mut Summary) -> Result<bool, ()> {
     }
 }
 
-/// Open a validated regular file without a race window on the final path
-/// component: `O_NONBLOCK` prevents a path swapped to a FIFO from blocking.
+/// Validate a regular-file path before opening it, then recheck the opened
+/// handle. `O_NONBLOCK` prevents a path swapped to a FIFO from blocking.
 fn open_regular(path: &Path) -> io::Result<fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
     #[cfg(any(target_os = "linux", target_os = "android"))]
     const NONBLOCK: i32 = 0x800;
     #[cfg(any(target_os = "macos", target_os = "ios"))]
     const NONBLOCK: i32 = 0x4;
-    OpenOptions::new()
+    if !fs::metadata(path)?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "input is not a regular file",
+        ));
+    }
+    let file = OpenOptions::new()
         .read(true)
         .custom_flags(NONBLOCK)
-        .open(path)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "input is not a regular file",
+        ));
+    }
+    Ok(file)
 }
 
 #[cfg(test)]

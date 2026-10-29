@@ -32,7 +32,7 @@ pub(super) fn command(
     registry: &Registry,
     summary: &mut Summary,
 ) -> Result<bool, ()> {
-    let mut child = Command::new(program)
+    let mut child = match Command::new(program)
         .args(args)
         .stdin(Stdio::inherit())
         .stdout(if stdout {
@@ -46,17 +46,24 @@ pub(super) fn command(
             Stdio::inherit()
         })
         .spawn()
-        .map_err(|_| {
+    {
+        Ok(child) => child,
+        Err(_) => {
             summary.error = Some("spawn");
-        })?;
+            return Err(());
+        }
+    };
     summary.child_started = true;
     let child_stdout = child.stdout.take();
     let child_stderr = child.stderr.take();
     // Worker panic payloads may contain source text; suppress the process-wide
     // hook while workers run and convert unwinds to fixed errors.
-    let _hook_lock = PANIC_HOOK_LOCK
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
+    // Match arms, not `unwrap_or_else(|error| ...)`: a closure here only runs on
+    // a poisoned lock, so the arm is exercised directly by the poison test.
+    let _hook_lock = match PANIC_HOOK_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(error) => error.into_inner(),
+    };
     let _hook_guard = PanicHookGuard(Some(std::panic::take_hook()));
     std::panic::set_hook(Box::new(|_| {}));
     std::thread::scope(|scope| {
@@ -180,11 +187,13 @@ fn worker(
     registry: &Registry,
     stats: &mut Stats,
 ) -> Result<bool, ()> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         filter(input, output, registry, stats)
-    }))
-    .map_err(|_| ())
-    .and_then(|result| result.map_err(|_| ()))
+    })) {
+        Ok(Ok(detected)) => Ok(detected),
+        Ok(Err(_)) => Err(()),
+        Err(_) => Err(()),
+    }
 }
 
 #[cfg(test)]

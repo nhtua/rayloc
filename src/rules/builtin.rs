@@ -1631,3 +1631,7 @@ pub(crate) fn detect_line_with_disabled(
 #[cfg(test)]
 #[path = "../../tests/unit/builtin.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/builtin_coverage.rs"]
+mod coverage_tests;

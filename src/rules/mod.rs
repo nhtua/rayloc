@@ -56,6 +56,26 @@ pub struct Registry {
     pub entropy_thresholds: std::collections::BTreeMap<String, f64>,
 }
 
+struct WindowedRules<'a> {
+    rules: std::iter::Enumerate<std::slice::Iter<'a, CompiledRule>>,
+}
+
+impl<'a> Iterator for WindowedRules<'a> {
+    type Item = (usize, &'a Regex, usize, Option<f64>, RuleId, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for (index, rule) in self.rules.by_ref() {
+            if rule.disabled {
+                continue;
+            }
+            if let Some(max) = rule.max_match_bytes {
+                return Some((index, &rule.regex, rule.group, rule.entropy, rule.id, max));
+            }
+        }
+        None
+    }
+}
+
 const LEGACY_LINE_BYTES: usize = 1024 * 1024;
 pub static BUILTINS: LazyLock<Registry> =
     LazyLock::new(|| Registry::compile(Config::default()).expect("empty policy is valid"));
@@ -204,13 +224,9 @@ impl Registry {
     pub(crate) fn windowed_rules(
         &self,
     ) -> impl Iterator<Item = (usize, &Regex, usize, Option<f64>, RuleId, usize)> {
-        self.custom.iter().enumerate().filter_map(|(index, rule)| {
-            if rule.disabled {
-                return None;
-            }
-            rule.max_match_bytes
-                .map(|max| (index, &rule.regex, rule.group, rule.entropy, rule.id, max))
-        })
+        WindowedRules {
+            rules: self.custom.iter().enumerate(),
+        }
     }
     pub(crate) fn legacy_line_rules(
         &self,

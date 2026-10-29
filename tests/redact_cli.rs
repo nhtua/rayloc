@@ -210,7 +210,10 @@ fn file_mode_never_consumes_stdin() {
     {
         let mut stdin = child.stdin.take().unwrap();
         for _ in 0..1000 {
-            writeln!(stdin, "{token}").unwrap();
+            if let Err(error) = writeln!(stdin, "{token}") {
+                assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+                break;
+            }
         }
     }
     let output = child.wait_with_output().unwrap();
@@ -466,6 +469,83 @@ fn file_mode_follows_regular_symlink_and_rejects_fifo() {
     );
     let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
     command.current_dir(dir.path()).args(["redact", "pipe"]);
+    let output = output_with_deadline(command);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn parse_policy_and_filter_failures_are_silent_in_subprocesses() {
+    let dir = support::TempDir::new();
+    std::fs::write(dir.path().join("input"), b"clean\n").unwrap();
+    for args in [
+        vec!["redact", "input", "--", "cmd"],
+        vec!["redact", "--config", "a", "--config", "b", "--", "cmd"],
+        vec!["redact", "--stdout=true", "--stdout=false", "--", "cmd"],
+        vec!["redact", "--stdout=bad", "--", "cmd"],
+        vec!["redact", "--stderr=true", "--stderr=false", "--", "cmd"],
+        vec!["redact", "--stderr=bad", "--", "cmd"],
+    ] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
+        command
+            .current_dir(dir.path())
+            .args(args)
+            .stdin(Stdio::null());
+        let output = output_with_deadline(command);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty() && output.stderr.is_empty());
+    }
+
+    std::fs::write(dir.path().join(".rayloc.yaml"), "rules: [").unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
+    command
+        .current_dir(dir.path())
+        .arg("redact")
+        .stdin(Stdio::null());
+    let output = output_with_deadline(command);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+
+    std::fs::write(
+        dir.path().join(".rayloc.yaml"),
+        "version: \"1\"\nrules:\n  - id: broken\n    regex: \"(\"\n",
+    )
+    .unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
+    command
+        .current_dir(dir.path())
+        .arg("redact")
+        .stdin(Stdio::null());
+    let output = output_with_deadline(command);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty() && output.stderr.is_empty());
+
+    std::fs::remove_file(dir.path().join(".rayloc.yaml")).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
+        .current_dir(dir.path())
+        .args(["redact", "input"])
+        .stdin(Stdio::null())
+        .stdout(std::fs::File::create("/dev/full").unwrap())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stderr.is_empty());
+
+    let fifo_dir = support::TempDir::new();
+    assert!(
+        Command::new("mkfifo")
+            .arg(fifo_dir.path().join("pipe"))
+            .status()
+            .unwrap()
+            .success()
+    );
+    let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
+    command
+        .current_dir(fifo_dir.path())
+        .args(["redact", "pipe"])
+        .stdin(Stdio::null());
     let output = output_with_deadline(command);
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty() && output.stderr.is_empty());

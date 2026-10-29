@@ -22,10 +22,14 @@ pub(super) struct Stats {
 }
 
 pub(super) fn increment(counter: &mut u64, amount: usize) -> io::Result<()> {
-    *counter = counter
-        .checked_add(u64::try_from(amount).map_err(|_| io::Error::other("counter overflow"))?)
-        .ok_or_else(|| io::Error::other("counter overflow"))?;
-    Ok(())
+    // `usize` widens losslessly into `u64` on every supported platform.
+    match counter.checked_add(amount as u64) {
+        Some(value) => {
+            *counter = value;
+            Ok(())
+        }
+        None => Err(io::Error::other("counter overflow")),
+    }
 }
 
 #[derive(Default)]

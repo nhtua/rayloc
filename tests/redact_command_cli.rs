@@ -2,6 +2,19 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 mod support;
 
+/// Every test in this binary spawns shell/process trees that inflate the
+/// live per-user task count while they are alive. The spawn-limit tests
+/// sample that count and pin rlimits against it, so concurrent siblings
+/// make their measurements drift. Serializing all process launches keeps
+/// the sampled counts steady.
+static SPAWN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn serialize_process_spawns() -> std::sync::MutexGuard<'static, ()> {
+    SPAWN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn output_with_deadline(mut command: Command) -> std::process::Output {
     let dir = support::TempDir::new();
     let stdout_path = dir.path().join("stdout");
@@ -32,6 +45,7 @@ fn output_with_deadline(mut command: Command) -> std::process::Output {
 
 #[test]
 fn command_mode_keeps_channels_separate_and_allows_passthrough() {
+    let _spawn_guard = serialize_process_spawns();
     let token = ["ghp_", "SyntheticToken0123456789abcdef"].concat();
     let script = format!("printf '%s\\n' '{token}'; printf '%s\\n' '{token}' >&2");
     let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
@@ -45,6 +59,7 @@ fn command_mode_keeps_channels_separate_and_allows_passthrough() {
 
 #[test]
 fn every_channel_switch_preserves_the_selected_destination() {
+    let _spawn_guard = serialize_process_spawns();
     let token = ["ghp_", "SyntheticToken0123456789abcdef"].concat();
     let script = format!("printf '%s\\n' '{token}'; printf '%s\\n' '{token}' >&2");
     for stdout in [false, true] {
@@ -89,6 +104,7 @@ fn every_channel_switch_preserves_the_selected_destination() {
 
 #[test]
 fn both_large_child_channels_are_drained() {
+    let _spawn_guard = serialize_process_spawns();
     let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
     command.args([
         "redact",
@@ -105,6 +121,7 @@ fn both_large_child_channels_are_drained() {
 
 #[test]
 fn an_idle_channel_does_not_stall_the_active_channel() {
+    let _spawn_guard = serialize_process_spawns();
     for stderr_active in [false, true] {
         let script = if stderr_active {
             "i=0; while [ $i -lt 20000 ]; do printf 'err\\n' >&2; i=$((i+1)); done"
@@ -127,6 +144,7 @@ fn an_idle_channel_does_not_stall_the_active_channel() {
 
 #[test]
 fn one_channel_early_eof_leaves_the_other_channel_complete() {
+    let _spawn_guard = serialize_process_spawns();
     let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
     command.args([
         "redact",
@@ -143,6 +161,7 @@ fn one_channel_early_eof_leaves_the_other_channel_complete() {
 
 #[test]
 fn private_key_state_is_confined_to_its_channel() {
+    let _spawn_guard = serialize_process_spawns();
     let script = [
         "printf -- '-----BEGIN PRIVATE KEY-----\\n'", // rayloc:ignore
         "printf 'body-line\\n' >&2",
@@ -160,6 +179,7 @@ fn private_key_state_is_confined_to_its_channel() {
 
 #[test]
 fn oversized_child_record_stops_and_reaps_producer() {
+    let _spawn_guard = serialize_process_spawns();
     let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
     command.args([
         "redact",
@@ -176,6 +196,7 @@ fn oversized_child_record_stops_and_reaps_producer() {
 
 #[test]
 fn worker_failure_keeps_earlier_safe_output_and_reaps_the_child() {
+    let _spawn_guard = serialize_process_spawns();
     let mut command = Command::new(env!("CARGO_BIN_EXE_rayloc"));
     command.args([
         "redact",
@@ -192,6 +213,7 @@ fn worker_failure_keeps_earlier_safe_output_and_reaps_the_child() {
 
 #[test]
 fn nonzero_child_drains_output_and_exits_two() {
+    let _spawn_guard = serialize_process_spawns();
     let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
         .args([
             "redact",
@@ -209,6 +231,7 @@ fn nonzero_child_drains_output_and_exits_two() {
 
 #[test]
 fn child_inherits_stdin_and_redacts_its_output() {
+    let _spawn_guard = serialize_process_spawns();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rayloc"))
         .args(["redact", "--", "cat"])
         .stdin(Stdio::piped())
@@ -226,6 +249,7 @@ fn child_inherits_stdin_and_redacts_its_output() {
 
 #[test]
 fn child_inherits_environment_and_working_directory() {
+    let _spawn_guard = serialize_process_spawns();
     let dir = support::TempDir::new();
     let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
         .current_dir(dir.path())
@@ -250,6 +274,7 @@ fn child_inherits_environment_and_working_directory() {
 
 #[test]
 fn arguments_after_the_delimiter_reach_the_child_verbatim() {
+    let _spawn_guard = serialize_process_spawns();
     let output = Command::new(env!("CARGO_BIN_EXE_rayloc"))
         .args(["redact", "--", "echo", "--", "--help", "--stdout=false"])
         .output()
@@ -261,6 +286,7 @@ fn arguments_after_the_delimiter_reach_the_child_verbatim() {
 
 #[test]
 fn closed_downstream_pipe_fails_without_hanging_child() {
+    let _spawn_guard = serialize_process_spawns();
     let mut child = Command::new(env!("CARGO_BIN_EXE_rayloc"))
         .args([
             "redact",
@@ -291,6 +317,7 @@ fn closed_downstream_pipe_fails_without_hanging_child() {
 
 #[test]
 fn signal_termination_is_recorded_in_private_report() {
+    let _spawn_guard = serialize_process_spawns();
     let before: std::collections::HashSet<_> = std::fs::read_dir("/tmp")
         .unwrap()
         .map(|e| e.unwrap().path())
@@ -320,4 +347,117 @@ fn signal_termination_is_recorded_in_private_report() {
     assert!(report.contains("child=signal:15"));
     assert!(report.contains("error=child"));
     std::fs::remove_file(path).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn child_process_spawn_failure_is_a_silent_exit_two() {
+    let _spawn_guard = serialize_process_spawns();
+    let program = env!("CARGO_BIN_EXE_rayloc");
+    // RLIMIT_NPROC enforces against the live per-user task count; a margin
+    // below the measured count makes the child fork fail with EAGAIN. The
+    // ladder absorbs ambient churn.
+    let mut outcome = None;
+    for margin in [6, 12, 18, 24] {
+        let shell = format!(
+            "cd /; pids=$(cat /sys/fs/cgroup/user.slice/pids.current); ulimit -u $((pids - {margin})); exec {program} redact -- true"
+        );
+        let before: std::collections::HashSet<_> = std::fs::read_dir("/tmp")
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        let child = Command::new("sh")
+            .arg("-c")
+            .arg(&shell)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let suffix = format!("-{}-0.txt", child.id());
+        let output = child.wait_with_output().unwrap();
+        let path = std::fs::read_dir("/tmp")
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|p| {
+                !before.contains(p)
+                    && p.file_name().is_some_and(|name| {
+                        name.to_string_lossy().starts_with("rayloc-report-")
+                            && name.to_string_lossy().ends_with(&suffix)
+                    })
+            })
+            .unwrap();
+        let report = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(output.stdout.is_empty() && output.stderr.is_empty());
+        if report.contains("error=spawn") {
+            assert!(report.contains("status=failed"));
+            outcome = Some(());
+            break;
+        }
+    }
+    assert!(
+        outcome.is_some(),
+        "child spawn never failed under the pinned limits"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn worker_thread_spawn_failure_is_a_silent_exit_two() {
+    let _spawn_guard = serialize_process_spawns();
+    let program = env!("CARGO_BIN_EXE_rayloc");
+    // RLIMIT_NPROC enforces against the live per-user task count. The
+    // shell tree transient (this shell plus the counter subshell) exits
+    // before rayloc forks, so at the sampled count the child fork lands
+    // one task below the limit, and the two worker threads spawn at the
+    // limit and one above it: deltas 1 and 2 make the first spawn failure
+    // a worker thread. The neighbouring deltas absorb counter lag.
+    let mut outcome = None;
+    for _ in 0..3 {
+        for delta in [2, 1, 3, 0, -1] {
+            let shell = format!(
+                "cd /; pids=$(cat /sys/fs/cgroup/user.slice/pids.current); ulimit -u $((pids + ({delta}))); exec {program} redact -- true"
+            );
+            let before: std::collections::HashSet<_> = std::fs::read_dir("/tmp")
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect();
+            let child = Command::new("sh")
+                .arg("-c")
+                .arg(&shell)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let suffix = format!("-{}-0.txt", child.id());
+            let output = child.wait_with_output().unwrap();
+            let path = std::fs::read_dir("/tmp")
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|p| {
+                    !before.contains(p)
+                        && p.file_name().is_some_and(|name| {
+                            name.to_string_lossy().starts_with("rayloc-report-")
+                                && name.to_string_lossy().ends_with(&suffix)
+                        })
+                })
+                .unwrap();
+            let report = std::fs::read_to_string(&path).unwrap();
+            std::fs::remove_file(&path).unwrap();
+            assert!(output.stdout.is_empty() && output.stderr.is_empty());
+            if report.contains("error=worker") {
+                assert!(report.contains("status=failed"));
+                assert!(output.status.code() == Some(2));
+                outcome = Some(());
+                break;
+            }
+        }
+        if outcome.is_some() {
+            break;
+        }
+    }
+    assert!(
+        outcome.is_some(),
+        "worker thread spawn never failed under the pinned limits"
+    );
 }

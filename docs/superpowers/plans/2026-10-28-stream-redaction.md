@@ -13,11 +13,13 @@
 ## Execution status
 
 The stdin, file and command modes, report summaries, private-key block masking,
-and core regression tests are implemented in `feat/stream-redaction`. The full
-test suite, formatting, Clippy, MSRV tests, benchmark, and the repository's
-95%/95%/98% coverage alias have passed on intermediate revisions. The stricter
-97% lines/regions and 100% functions gate has not yet passed. Fault-injection
-coverage, repeat performance qualification, and final verification remain open.
+and core regression tests are implemented in `feat/stream-redaction`. On the
+current revision, formatting, strict Clippy, `cargo test --all`, `cargo bench`,
+and the locked release build pass. The corrected latency probe and a 16 MiB
+release sample are recorded in `docs/research/stream-redaction-results.md`.
+The strict coverage gate remains open: 100% functions, 98.11% lines, and 96.87%
+regions (403 missed; threshold is at most 385). Do not treat qualification as
+complete until the strict gate and the remaining repeat performance run pass.
 
 ## Global Constraints
 
