@@ -463,15 +463,55 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     ));
     fixtures.push((
         RuleId::GitlabDeployToken,
-        b"gldt-SyntheticGitlabDeployToken12".to_vec(),
+        b"gldt-SyntheticGitlabDep12".to_vec(),
     ));
     fixtures.push((
         RuleId::GitlabFeatureFlagToken,
-        b"glffct-SyntheticGitlabFeatureFlag1".to_vec(),
+        b"glffct-SyntheticGitlabFflg1".to_vec(),
     ));
     fixtures.push((
         RuleId::GitlabPersonalAccessToken,
-        b"glpat-SyntheticGitlabPAT12345678901".to_vec(),
+        b"glpat-SyntheticGitlabP0123".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabRunnerToken,
+        b"glrt-SyntheticGitlabRnr12".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabRunnerRegistrationToken,
+        b"glrtr-SyntheticGitlabRgr12".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabFeedToken,
+        b"glft-SyntheticGitlabFeed1".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabIncomingMailToken,
+        b"glimt-SyntheticGitlabIncomingM1".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabScimToken,
+        b"glsoat-SyntheticGitlabScim1".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GitlabAgentToken,
+        [b"glagent-".as_slice(), b"a".repeat(50).as_slice()].concat(),
+    ));
+    fixtures.push((
+        RuleId::GitlabOauthAppSecret,
+        [b"gloas-".as_slice(), b"b".repeat(64).as_slice()].concat(),
+    ));
+    fixtures.push((
+        RuleId::GitlabTriggerToken,
+        [b"glptt-".as_slice(), b"f".repeat(40).as_slice()].concat(),
+    ));
+    fixtures.push((
+        RuleId::CircleCiPersonalToken,
+        b"CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2cb".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::CircleCiProjectToken,
+        b"CCIPRJ_ULUhR6rJLxYbyzyrP19iMZ_8FB1E3510325F7F09361DE22B9420346C53CA2CB".to_vec(),
     ));
     fixtures.push((
         RuleId::Auth0ManagementToken,
@@ -798,5 +838,137 @@ fn malformed_dotted_installation_tokens_do_not_fall_back_to_opaque_signatures() 
         b"ghs_1234.abc.def",
     ] {
         assert!(matches(token).is_empty());
+    }
+}
+
+#[test]
+fn expanded_cicd_structural_families_respect_complete_spans() {
+    let personal = b"CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2cb";
+    let project = b"CCIPRJ_ULUhR6rJLxYbyzyrP19iMZ_8FB1E3510325F7F09361DE22B9420346C53CA2CB";
+    assert_eq!(
+        matches(personal),
+        vec![(RuleId::CircleCiPersonalToken, 0..personal.len())]
+    );
+    assert_eq!(
+        matches(project),
+        vec![(RuleId::CircleCiProjectToken, 0..project.len())]
+    );
+}
+
+#[test]
+fn expanded_cicd_families_reject_near_misses_and_public_counterparts() {
+    let short = b"CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2c";
+    let long = [
+        b"CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2cb".as_slice(),
+        b"a".as_slice(),
+    ]
+    .concat();
+    let encoded = b"CCIPAT_0OUlUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2cb";
+    assert!(matches(short).is_empty());
+    assert!(matches(&long).is_empty());
+    assert!(matches(encoded).is_empty());
+    assert!(
+        matches(b"CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_public_identifier").is_empty(),
+        "public counterpart",
+    );
+}
+
+#[test]
+fn gitlab_new_structural_families_use_documented_alphabets_and_lengths() {
+    let cases: [(RuleId, &[u8], usize, &[u8]); 9] = [
+        (RuleId::GitlabPersonalAccessToken, b"glpat-", 20, b"A0_-"),
+        (RuleId::GitlabRunnerToken, b"glrt-", 20, b"A0_-"),
+        (
+            RuleId::GitlabRunnerRegistrationToken,
+            b"glrtr-",
+            20,
+            b"A0_-",
+        ),
+        (RuleId::GitlabFeedToken, b"glft-", 20, b"A0_-"),
+        (RuleId::GitlabIncomingMailToken, b"glimt-", 25, b"A0_-"),
+        (RuleId::GitlabScimToken, b"glsoat-", 20, b"A0_-"),
+        (RuleId::GitlabAgentToken, b"glagent-", 50, b"A0_-"),
+        (RuleId::GitlabOauthAppSecret, b"gloas-", 64, b"A0_-"),
+        (RuleId::GitlabTriggerToken, b"glptt-", 40, b"af09"),
+    ];
+    for (rule, prefix, body_len, alphabet) in cases {
+        for fill in alphabet {
+            let body = [*fill].repeat(body_len);
+            let mut token = prefix.to_vec();
+            token.extend(body.clone());
+            assert_eq!(
+                matches(&token),
+                vec![(rule, 0..token.len())],
+                "{rule:?} {fill}",
+            );
+            let mut short = prefix.to_vec();
+            short.extend([*fill].repeat(body_len - 1));
+            assert!(matches(&short).is_empty(), "{rule:?} short");
+            let mut long = prefix.to_vec();
+            long.extend(body.clone());
+            long.push(*fill);
+            assert!(matches(&long).is_empty(), "{rule:?} long");
+            let mut next_identifier = prefix.to_vec();
+            next_identifier.extend(body.clone());
+            next_identifier.push(b'a');
+            assert!(
+                matches(&next_identifier).is_empty(),
+                "{rule:?} trailing identifier",
+            );
+        }
+    }
+}
+
+#[test]
+fn expanded_cicd_families_respect_disabled_rules_and_stream_splits() {
+    let personal = b"CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2cb";
+    let project = b"CCIPRJ_ULUhR6rJLxYbyzyrP19iMZ_8FB1E3510325F7F09361DE22B9420346C53CA2CB";
+    let runner = b"glrt-ABCDEFGHIJ0123456789";
+    let registration = b"glrtr-ABCDEFGHIJ0123456789";
+    let tokens: [(&[u8], RuleId); 4] = [
+        (personal as &[u8], RuleId::CircleCiPersonalToken),
+        (project as &[u8], RuleId::CircleCiProjectToken),
+        (runner as &[u8], RuleId::GitlabRunnerToken),
+        (registration as &[u8], RuleId::GitlabRunnerRegistrationToken),
+    ];
+    for (token, rule) in tokens {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "enabled {rule:?}",
+        );
+        assert_ne!(
+            match_at(token, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "disabled {rule:?}",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    let examples: [&[u8]; 4] = [
+        personal as &[u8],
+        project as &[u8],
+        runner as &[u8],
+        registration as &[u8],
+    ];
+    for token in examples {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
     }
 }

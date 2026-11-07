@@ -57,6 +57,16 @@ const ALL_RULE_IDS: &[RuleId] = &[
     RuleId::GitlabDeployToken,
     RuleId::GitlabFeatureFlagToken,
     RuleId::GitlabPersonalAccessToken,
+    RuleId::GitlabRunnerToken,
+    RuleId::GitlabRunnerRegistrationToken,
+    RuleId::GitlabFeedToken,
+    RuleId::GitlabIncomingMailToken,
+    RuleId::GitlabScimToken,
+    RuleId::GitlabAgentToken,
+    RuleId::GitlabOauthAppSecret,
+    RuleId::GitlabTriggerToken,
+    RuleId::CircleCiPersonalToken,
+    RuleId::CircleCiProjectToken,
     RuleId::Auth0ManagementToken,
     RuleId::OktaAccessToken,
     RuleId::NotionApiKey,
@@ -360,7 +370,7 @@ fn match_at_respects_a_fully_disabled_registry() {
         ),
         (
             RuleId::GitlabPersonalAccessToken,
-            b"glpat-SyntheticGitlabPAT12345678901".to_vec(), // rayloc:ignore
+            b"glpat-SyntheticGitlabPAT12".to_vec(), // rayloc:ignore
         ),
         (
             RuleId::MongodbUri,

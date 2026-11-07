@@ -222,6 +222,16 @@ pub enum RuleId {
     GitlabDeployToken,
     GitlabFeatureFlagToken,
     GitlabPersonalAccessToken,
+    GitlabRunnerToken,
+    GitlabRunnerRegistrationToken,
+    GitlabFeedToken,
+    GitlabIncomingMailToken,
+    GitlabScimToken,
+    GitlabAgentToken,
+    GitlabOauthAppSecret,
+    GitlabTriggerToken,
+    CircleCiPersonalToken,
+    CircleCiProjectToken,
     Auth0ManagementToken,
     OktaAccessToken,
     NotionApiKey,
@@ -643,6 +653,76 @@ impl RuleId {
                 Confidence::High,
                 "https://docs.gitlab.com/ee/user/profile/personal_access_tokens/",
             ),
+            Self::GitlabRunnerToken => (
+                "gitlab-runner-token",
+                "GitLab runner token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabRunnerRegistrationToken => (
+                "gitlab-runner-registration-token",
+                "GitLab runner registration token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabFeedToken => (
+                "gitlab-feed-token",
+                "GitLab feed token",
+                Severity::Medium,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabIncomingMailToken => (
+                "gitlab-incoming-mail-token",
+                "GitLab incoming mail token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabScimToken => (
+                "gitlab-scim-token",
+                "GitLab SCIM token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabAgentToken => (
+                "gitlab-agent-token",
+                "GitLab agent token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabOauthAppSecret => (
+                "gitlab-oauth-app-secret",
+                "GitLab OAuth application secret",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabTriggerToken => (
+                "gitlab-trigger-token",
+                "GitLab trigger token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::CircleCiPersonalToken => (
+                "circleci-personal-token",
+                "CircleCI personal access token",
+                Severity::High,
+                Confidence::High,
+                "https://circleci.com/changelog/new-format-for-api-access-tokens/",
+            ),
+            Self::CircleCiProjectToken => (
+                "circleci-project-token",
+                "CircleCI project context token",
+                Severity::High,
+                Confidence::High,
+                "https://circleci.com/changelog/new-format-for-api-access-tokens/",
+            ),
             Self::Auth0ManagementToken => (
                 "auth0-management-token",
                 "Auth0 management API token",
@@ -919,6 +999,16 @@ const GITLAB_CICD_JOB_TOKEN_PREFIXES: &[&[u8]] = &[b"glcbt-"];
 const GITLAB_DEPLOY_TOKEN_PREFIXES: &[&[u8]] = &[b"gldt-"];
 const GITLAB_FEATURE_FLAG_TOKEN_PREFIXES: &[&[u8]] = &[b"glffct-"];
 const GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"glpat-"];
+const GITLAB_RUNNER_TOKEN_PREFIXES: &[&[u8]] = &[b"glrt-"];
+const GITLAB_RUNNER_REGISTRATION_TOKEN_PREFIXES: &[&[u8]] = &[b"glrtr-"];
+const GITLAB_FEED_TOKEN_PREFIXES: &[&[u8]] = &[b"glft-"];
+const GITLAB_INCOMING_MAIL_TOKEN_PREFIXES: &[&[u8]] = &[b"glimt-"];
+const GITLAB_SCIM_TOKEN_PREFIXES: &[&[u8]] = &[b"glsoat-"];
+const GITLAB_AGENT_TOKEN_PREFIXES: &[&[u8]] = &[b"glagent-"];
+const GITLAB_OAUTH_APP_SECRET_PREFIXES: &[&[u8]] = &[b"gloas-"];
+const GITLAB_TRIGGER_TOKEN_PREFIXES: &[&[u8]] = &[b"glptt-"];
+const CIRCLECI_PERSONAL_TOKEN_PREFIXES: &[&[u8]] = &[b"CCIPAT_"];
+const CIRCLECI_PROJECT_TOKEN_PREFIXES: &[&[u8]] = &[b"CCIPRJ_"];
 const AUTH0_MANAGEMENT_TOKEN_PREFIXES: &[&[u8]] = &[b"ua2_"];
 const OKTA_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"00a"];
 const NOTION_API_KEY_PREFIXES: &[&[u8]] = &[b"nt_"];
@@ -1290,6 +1380,99 @@ fn flutterwave_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
     None
 }
 
+/// GitLab documents per-type token families with an exact body length over
+/// `[A-Za-z0-9_-]`; a longer run is a different identifier, not this family.
+fn gitlab_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// GitLab trigger tokens (`glptt-`) are exactly 40 lowercase hex bytes.
+fn gitlab_trigger_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body
+        .iter()
+        .all(|&b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// CircleCI announced format: prefix, 22-byte base58 encoded UUID, `_`, 40 hex.
+/// Legacy 40-hex-only values require context and stay out of this rule.
+fn circleci_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
+    for (prefixes, rule) in [
+        (
+            CIRCLECI_PERSONAL_TOKEN_PREFIXES,
+            RuleId::CircleCiPersonalToken,
+        ),
+        (
+            CIRCLECI_PROJECT_TOKEN_PREFIXES,
+            RuleId::CircleCiProjectToken,
+        ),
+    ] {
+        let Some(prefix) = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix)) else {
+            continue;
+        };
+        let id_start = prefix.len();
+        let id_end = id_start + 22;
+        let hex_start = id_end + 1;
+        let hex_end = hex_start + 40;
+        let Some(id_part) = bytes.get(id_start..id_end) else {
+            continue;
+        };
+        // Base58 excludes the confusable 0, O, I, and l characters.
+        if !id_part
+            .iter()
+            .all(|&b| b.is_ascii_alphanumeric() && !matches!(b, b'0' | b'O' | b'I' | b'l'))
+        {
+            continue;
+        }
+        if bytes.get(id_end) != Some(&b'_') {
+            continue;
+        }
+        let Some(hex_part) = bytes.get(hex_start..hex_end) else {
+            continue;
+        };
+        if !hex_part.iter().all(|&b| b.is_ascii_hexdigit()) {
+            continue;
+        }
+        if bytes
+            .get(hex_end)
+            .is_some_and(|&next| is_word(next) || next == b'-')
+        {
+            continue;
+        }
+        return Some((rule, hex_end));
+    }
+    None
+}
+
 fn uri_match(bytes: &[u8], prefixes: &[&[u8]], rule: RuleId) -> Option<(RuleId, usize)> {
     let prefix = prefixes.iter().find(|&&p| bytes.starts_with(p))?;
     let after_scheme = &bytes[prefix.len()..];
@@ -1454,17 +1637,6 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
             GITLAB_CICD_JOB_TOKEN_PREFIXES,
             25,
         ),
-        (RuleId::GitlabDeployToken, GITLAB_DEPLOY_TOKEN_PREFIXES, 25),
-        (
-            RuleId::GitlabFeatureFlagToken,
-            GITLAB_FEATURE_FLAG_TOKEN_PREFIXES,
-            25,
-        ),
-        (
-            RuleId::GitlabPersonalAccessToken,
-            GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES,
-            25,
-        ),
         (
             RuleId::Auth0ManagementToken,
             AUTH0_MANAGEMENT_TOKEN_PREFIXES,
@@ -1514,6 +1686,56 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
             continue;
         }
         if let Some(end) = api_key_match_with_min(bytes, prefixes, body_min)? {
+            return Ok(Some((rule, end)));
+        }
+    }
+    // GitLab token families with documented exact body lengths.
+    for (rule, prefixes, body_len) in [
+        (
+            RuleId::GitlabPersonalAccessToken,
+            GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES,
+            20,
+        ),
+        (RuleId::GitlabDeployToken, GITLAB_DEPLOY_TOKEN_PREFIXES, 20),
+        (
+            RuleId::GitlabFeatureFlagToken,
+            GITLAB_FEATURE_FLAG_TOKEN_PREFIXES,
+            20,
+        ),
+        (RuleId::GitlabRunnerToken, GITLAB_RUNNER_TOKEN_PREFIXES, 20),
+        (
+            RuleId::GitlabRunnerRegistrationToken,
+            GITLAB_RUNNER_REGISTRATION_TOKEN_PREFIXES,
+            20,
+        ),
+        (RuleId::GitlabFeedToken, GITLAB_FEED_TOKEN_PREFIXES, 20),
+        (RuleId::GitlabScimToken, GITLAB_SCIM_TOKEN_PREFIXES, 20),
+        (
+            RuleId::GitlabIncomingMailToken,
+            GITLAB_INCOMING_MAIL_TOKEN_PREFIXES,
+            25,
+        ),
+        (RuleId::GitlabAgentToken, GITLAB_AGENT_TOKEN_PREFIXES, 50),
+        (
+            RuleId::GitlabOauthAppSecret,
+            GITLAB_OAUTH_APP_SECRET_PREFIXES,
+            64,
+        ),
+    ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
+        if let Some(end) = gitlab_token_match(bytes, prefixes, body_len) {
+            return Ok(Some((rule, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::GitlabTriggerToken) {
+        if let Some(end) = gitlab_trigger_match(bytes, GITLAB_TRIGGER_TOKEN_PREFIXES, 40) {
+            return Ok(Some((RuleId::GitlabTriggerToken, end)));
+        }
+    }
+    if let Some((rule, end)) = circleci_match(bytes) {
+        if !disabled.contains(&rule) {
             return Ok(Some((rule, end)));
         }
     }
