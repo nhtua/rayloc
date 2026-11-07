@@ -470,6 +470,12 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         b"xaat-12345678-abcd-ef01-2345-6789abcdef01".to_vec(),
     ));
     fixtures.push((
+        RuleId::SonarQubeToken,
+        b"squ_0123456789abcdef0123456789abcdef01234567".to_vec(),
+    ));
+    fixtures.push((RuleId::SonarQubeCloudToken, prefixed(b"sqco_", b'a', 59)));
+    fixtures.push((RuleId::KongKonnectToken, prefixed(b"kpat_", b'9', 49)));
+    fixtures.push((
         RuleId::GitlabCicdJobToken,
         b"glcbt-A_SyntheticGitlabCicd123456".to_vec(),
     ));
@@ -1032,6 +1038,110 @@ fn sentry_grafana_axiom_families_respect_disabled_rules_and_stream_splits() {
         (&personal, RuleId::SentryPersonalToken),
         (&service, RuleId::GrafanaServiceAccountToken),
         (&axiom, RuleId::AxiomToken),
+    ];
+    for (token, rule) in tokens {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "enabled {rule:?}",
+        );
+        assert_ne!(
+            match_at(token, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "disabled {rule:?}",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    for (token, _) in tokens {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
+    }
+}
+
+#[test]
+fn sonar_and_kong_families_accept_documented_shapes_only() {
+    for prefix in [b"squ_".as_slice(), b"sqp_".as_slice(), b"sqa_".as_slice()] {
+        let token = [prefix, b"0123456789abcdef0123456789abcdef01234567"].concat();
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::SonarQubeToken, 0..token.len())],
+            "{prefix:?}",
+        );
+    }
+    let cloud = [b"sqco_".as_slice(), b"a".repeat(59).as_slice()].concat();
+    assert_eq!(
+        matches(&cloud),
+        vec![(RuleId::SonarQubeCloudToken, 0..cloud.len())]
+    );
+    for prefix in [b"kpat_".as_slice(), b"spat_".as_slice()] {
+        let token = [prefix, b"9".repeat(49).as_slice()].concat();
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::KongKonnectToken, 0..token.len())],
+            "{prefix:?}",
+        );
+    }
+}
+
+#[test]
+fn sonar_and_kong_families_reject_near_misses_and_public_values() {
+    let short = [b"squ_".as_slice(), b"f".repeat(39).as_slice()].concat();
+    let long = [b"squ_".as_slice(), b"f".repeat(41).as_slice()].concat();
+    let upper = [b"squ_".as_slice(), b"F".repeat(40).as_slice()].concat();
+    assert!(matches(&short).is_empty(), "sonar short");
+    assert!(matches(&long).is_empty(), "sonar long");
+    assert!(matches(&upper).is_empty(), "sonar uppercase");
+    for group in [58, 60] {
+        let cloud = [b"sqco_".as_slice(), b"a".repeat(group).as_slice()].concat();
+        assert!(matches(&cloud).is_empty(), "sonar cloud {group}");
+    }
+    let cloud_underscore = [
+        b"sqco_".as_slice(),
+        b"a".as_slice(),
+        b"_".as_slice(),
+        b"a".repeat(57).as_slice(),
+    ]
+    .concat();
+    assert!(
+        matches(&cloud_underscore).is_empty(),
+        "sonar cloud underscore body"
+    );
+    for group in [48, 50] {
+        let kong = [b"kpat_".as_slice(), b"z".repeat(group).as_slice()].concat();
+        assert!(matches(&kong).is_empty(), "kong {group}");
+    }
+    assert!(
+        matches(b"0123456789abcdef0123456789abcdef01234567").is_empty(),
+        "bare sonar token deferred",
+    );
+}
+
+#[test]
+fn sonar_and_kong_families_respect_disabled_rules_and_stream_splits() {
+    let sonar = prefixed(b"sqa_", b'0', 40);
+    let cloud = prefixed(b"sqco_", b'a', 59);
+    let kong = prefixed(b"spat_", b'9', 49);
+    let tokens: [(&[u8], RuleId); 3] = [
+        (&sonar, RuleId::SonarQubeToken),
+        (&cloud, RuleId::SonarQubeCloudToken),
+        (&kong, RuleId::KongKonnectToken),
     ];
     for (token, rule) in tokens {
         assert_eq!(

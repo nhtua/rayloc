@@ -221,6 +221,9 @@ pub enum RuleId {
     SentryPersonalToken,
     GrafanaServiceAccountToken,
     AxiomToken,
+    SonarQubeToken,
+    SonarQubeCloudToken,
+    KongKonnectToken,
     GitlabCicdJobToken,
     GitlabDeployToken,
     GitlabFeatureFlagToken,
@@ -658,6 +661,27 @@ impl RuleId {
                 Confidence::High,
                 "https://axiom.co/docs/reference/tokens",
             ),
+            Self::SonarQubeToken => (
+                "sonarqube-token",
+                "SonarQube access token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.sonarsource.com/sonarqube-server/user-guide/managing-tokens",
+            ),
+            Self::SonarQubeCloudToken => (
+                "sonarqube-cloud-token",
+                "SonarQube Cloud access token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.sonarsource.com/sonarqube-server/user-guide/managing-tokens",
+            ),
+            Self::KongKonnectToken => (
+                "kong-konnect-token",
+                "Kong Konnect personal access token",
+                Severity::High,
+                Confidence::High,
+                "https://developer.konghq.com/konnect-api/",
+            ),
             Self::GitlabCicdJobToken => (
                 "gitlab-cicd-job-token",
                 "GitLab CI/CD job token",
@@ -1094,6 +1118,9 @@ const SENTRY_ORG_TOKEN_PREFIXES: &[&[u8]] = &[b"sntrys_"];
 const SENTRY_PERSONAL_TOKEN_PREFIXES: &[&[u8]] = &[b"sntryu_"];
 const GRAFANA_SERVICE_ACCOUNT_TOKEN_PREFIXES: &[&[u8]] = &[b"glsa_"];
 const AXIOM_TOKEN_PREFIXES: &[&[u8]] = &[b"xaat-", b"xapt-"];
+const SONARQUBE_TOKEN_PREFIXES: &[&[u8]] = &[b"squ_", b"sqp_", b"sqa_"];
+const SONARQUBE_CLOUD_TOKEN_PREFIXES: &[&[u8]] = &[b"sqco_"];
+const KONG_KONNECT_TOKEN_PREFIXES: &[&[u8]] = &[b"kpat_", b"spat_"];
 const GITLAB_CICD_JOB_TOKEN_PREFIXES: &[&[u8]] = &[b"glcbt-"];
 const GITLAB_DEPLOY_TOKEN_PREFIXES: &[&[u8]] = &[b"gldt-"];
 const GITLAB_FEATURE_FLAG_TOKEN_PREFIXES: &[&[u8]] = &[b"glffct-"];
@@ -1829,6 +1856,25 @@ fn lower_hex_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> O
     Some(end)
 }
 
+/// SonarQube Cloud (`sqco_`) and Kong Konnect (`kpat_`/`spat_`) publish exact-length
+/// alphanumeric bodies; a longer run is a different identifier.
+fn alnum_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body.iter().all(|&b| b.is_ascii_alphanumeric()) {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
 /// CircleCI announced format: prefix, 22-byte base58 encoded UUID, `_`, 40 hex.
 /// Legacy 40-hex-only values require context and stay out of this rule.
 fn circleci_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
@@ -2178,6 +2224,21 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
     if !disabled.contains(&RuleId::AxiomToken) {
         if let Some(end) = axiom_token_match(bytes, AXIOM_TOKEN_PREFIXES) {
             return Ok(Some((RuleId::AxiomToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::SonarQubeToken) {
+        if let Some(end) = lower_hex_token_match(bytes, SONARQUBE_TOKEN_PREFIXES, 40) {
+            return Ok(Some((RuleId::SonarQubeToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::SonarQubeCloudToken) {
+        if let Some(end) = alnum_token_match(bytes, SONARQUBE_CLOUD_TOKEN_PREFIXES, 59) {
+            return Ok(Some((RuleId::SonarQubeCloudToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::KongKonnectToken) {
+        if let Some(end) = alnum_token_match(bytes, KONG_KONNECT_TOKEN_PREFIXES, 49) {
+            return Ok(Some((RuleId::KongKonnectToken, end)));
         }
     }
     for (rule, prefixes) in [
