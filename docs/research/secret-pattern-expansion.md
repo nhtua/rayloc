@@ -457,15 +457,16 @@ change: a compile-time 64 KiB two-byte head bitmap (`PROVIDER_HEAD_BITS`, built 
 two bytes head none of the registered provider literals returns `Ok(None)` without
 walking the rule chain. Every prefix table lives in the `PROVIDER_HEAD_LITERALS`
 registry; matchers with private literals list their heads in
-`PROVIDER_HEAD_EXTRA_PAIRS` (12 entries: AWS, Twilio, SendGrid, Docker Swarm,
+`PROVIDER_HEAD_EXTRA_LITERALS` (13 literal heads: AWS, Twilio, SendGrid, Docker Swarm,
 Flutterwave, Sendinblue, Stripe `pi_`, Doppler, Pinecone, Anthropic-admin); single-byte
 prefixes and telegram digits open whole head rows. Candidates shorter than two bytes
 skip the guard. The bitmap is conservative (a superset of real heads), so it cannot
 drop a match, only short-circuit non-matching positions.
 
 Maintenance invariant: any new structural rule must register its head (add its prefix
-table to `PROVIDER_HEAD_LITERALS` or add literal heads to `PROVIDER_HEAD_EXTRA_PAIRS`);
-the prefilter test plus per-family fixtures catch omissions at test time.
+table to `PROVIDER_HEAD_LITERALS` or add the literal to `PROVIDER_HEAD_EXTRA_LITERALS`);
+the prefilter test (table probe + positive `match_at` probes per private-literal head)
+plus per-family fixtures catch omissions at test time.
 
 Verification (same host, idle, five paired `cargo bench` samples, logs
 `/tmp/opencode/rayloc-expand-optimized-bench-run{1..5}.txt`): detection identical
@@ -486,3 +487,9 @@ Gate result: the expanded catalog with the head-byte prefilter scans faster than
 immutable baseline on every workload (1–2 worker paths consistently −20%, engine path
 −37%); run-to-run spread stayed inside ~2% on the stable paths. Cost recorded: +90 KiB
 binary size and a 64 KiB static bitmap.
+
+Precision watch item (from the whole-branch review, not changed): GrowthBook `secret_`
+is the one shipped structural head that collides with ordinary English identifiers
+(`secret_` + 16–64 `[A-Za-z0-9_-]` can fire on prose-like runs). It stays as shipped per
+the approved plan; if zero-noise filtering needs tightening, gate this family behind
+assignment context before any removal.

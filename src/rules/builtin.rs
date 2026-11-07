@@ -1942,7 +1942,7 @@ fn flyio_management_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usiz
         return None;
     }
     let mut padding = 0;
-    while padding < 3 && bytes.get(end).is_some_and(|&b| b == b'=') {
+    while padding < 2 && bytes.get(end).is_some_and(|&b| b == b'=') {
         end += 1;
         padding += 1;
     }
@@ -2262,19 +2262,20 @@ const PROVIDER_HEAD_LITERALS: &[&[&[u8]]] = &[
     COCKROACHDB_URI_PREFIXES,
     PRIVATE_KEY_MARKERS,
 ];
-const PROVIDER_HEAD_EXTRA_PAIRS: [(u8, u8); 12] = [
-    (b'A', b'K'), // aws_match: AKIA
-    (b'A', b'S'), // aws_match: ASIA
-    (b'A', b'C'), // twilio_match: AC
-    (b'S', b'K'), // twilio_match: SK
-    (b'S', b'G'), // sendgrid_match: SG.
-    (b'S', b'W'), // docker_swarm_match: SWMKEY-1- / SWMTKN-1-
-    (b'F', b'L'), // flutterwave_match: FLWSECK- / FLWTESTCK-
-    (b'x', b'k'), // sendinblue_match: xkeysib-
-    (b'p', b'i'), // stripe_payment_intent_match: pi_
-    (b'd', b'p'), // doppler_token_match: dp.* literals
-    (b'p', b'c'), // pinecone_key_match: pcsk_
-    (b's', b'k'), // anthropic_admin_key_match: sk-ant-admin01-
+const PROVIDER_HEAD_EXTRA_LITERALS: [&[u8]; 13] = [
+    b"AKIA",            // aws_match
+    b"ASIA",            // aws_match
+    b"AC",              // twilio_match
+    b"SK",              // twilio_match
+    b"SG.",             // sendgrid_match
+    b"SWMKEY-1-",       // docker_swarm_match
+    b"SWMTKN-1-",       // docker_swarm_match
+    b"FLWSECK-",        // flutterwave_match (FLWTESTCK- shares this head)
+    b"xkeysib-",        // sendinblue_match
+    b"pi_",             // stripe_payment_intent_match
+    b"dp.",             // doppler_token_match (all dp.<type> literals share this head)
+    b"pcsk_",           // pinecone_key_match
+    b"sk-ant-admin01-", // anthropic_admin_key_match
 ];
 
 /// Build the 256x256 head-byte bitmap at compile time. A one-byte prefix (none
@@ -2298,9 +2299,9 @@ const fn provider_head_bits() -> [bool; 65536] {
         group_index += 1;
     }
     let mut extra_index = 0;
-    while extra_index < PROVIDER_HEAD_EXTRA_PAIRS.len() {
-        let (first, second) = PROVIDER_HEAD_EXTRA_PAIRS[extra_index];
-        bits[((first as u16) << 8 | second as u16) as usize] = true;
+    while extra_index < PROVIDER_HEAD_EXTRA_LITERALS.len() {
+        let literal = PROVIDER_HEAD_EXTRA_LITERALS[extra_index];
+        bits[((literal[0] as u16) << 8 | literal[1] as u16) as usize] = true;
         extra_index += 1;
     }
     let mut digit = b'0';

@@ -1161,6 +1161,14 @@ fn resend_launchdarkly_flagsmith_growthbook_posthog_families_reject_near_misses_
     assert!(matches(short_first).is_empty(), "resend short first part");
     assert!(matches(long_first).is_empty(), "resend long first part");
     assert!(matches(bad_alphabet).is_empty(), "resend zero digit");
+    for excluded in [b'O', b'I', b'l'] {
+        let mut bad = bad_alphabet.to_vec();
+        bad[b"re_1234567".len()] = excluded;
+        assert!(
+            matches(&bad).is_empty(),
+            "resend excluded letter {excluded:?}"
+        );
+    }
     assert!(matches(merged).is_empty(), "resend no separator");
     for uuid in [
         b"12345678-ABCD-ef01-2345-6789abcdef01".as_slice(),
@@ -1893,7 +1901,7 @@ fn flyio_token_family_accepts_documented_shapes_only() {
     assert_eq!(matches(&fo1), vec![(RuleId::FlyioToken, 0..fo1.len())]);
     for fill in [b'a', b'0', b'+', b'/'] {
         for count in [100, 512] {
-            for padding in [0, 1, 2, 3] {
+            for padding in [0, 1, 2] {
                 let mut token = prefixed(b"fm2_", fill, count);
                 token.extend(std::iter::repeat_n(b'=', padding));
                 assert_eq!(
@@ -1934,7 +1942,11 @@ fn flyio_token_family_rejects_near_misses_and_public_values() {
         "fm2 long"
     );
     assert!(
-        matches(&[prefixed(b"fm2_", b'a', 512).as_slice(), b"====",].concat()).is_empty(),
+        matches(&[prefixed(b"fm2_", b'a', 512).as_slice(), b"==="].concat()).is_empty(),
+        "three padding bytes",
+    );
+    assert!(
+        matches(&[prefixed(b"fm2_", b'a', 512).as_slice(), b"===="].concat()).is_empty(),
         "four padding bytes",
     );
     assert!(
@@ -2030,7 +2042,7 @@ fn expanded_cicd_families_reject_near_misses_and_public_counterparts() {
 
 #[test]
 fn gitlab_new_structural_families_use_documented_alphabets_and_lengths() {
-    let cases: [(RuleId, &[u8], usize, &[u8]); 9] = [
+    let cases: [(RuleId, &[u8], usize, &[u8]); 11] = [
         (RuleId::GitlabPersonalAccessToken, b"glpat-", 20, b"A0_-"),
         (RuleId::GitlabRunnerToken, b"glrt-", 20, b"A0_-"),
         (
@@ -2039,6 +2051,8 @@ fn gitlab_new_structural_families_use_documented_alphabets_and_lengths() {
             20,
             b"A0_-",
         ),
+        (RuleId::GitlabDeployToken, b"gldt-", 20, b"A0_-"),
+        (RuleId::GitlabFeatureFlagToken, b"glffct-", 20, b"A0_-"),
         (RuleId::GitlabFeedToken, b"glft-", 20, b"A0_-"),
         (RuleId::GitlabIncomingMailToken, b"glimt-", 25, b"A0_-"),
         (RuleId::GitlabScimToken, b"glsoat-", 20, b"A0_-"),
@@ -2208,13 +2222,46 @@ fn provider_head_prefilter_agrees_with_the_registered_tables() {
             }
         }
     }
-    for (first, second) in PROVIDER_HEAD_EXTRA_PAIRS {
-        assert!(bits[((first as u16) << 8 | second as u16) as usize]);
+    for literal in PROVIDER_HEAD_EXTRA_LITERALS {
+        assert!(bits[((literal[0] as u16) << 8 | literal[1] as u16) as usize]);
     }
     for digit_head in b'0'..=b'9' {
         for second in [b'a', b'Z', b'9', b'_'] {
             assert!(bits[((digit_head as u16) << 8 | second as u16) as usize]);
         }
+    }
+    let doppler = [b"dp.ct_".as_slice(), b"9".repeat(40).as_slice()].concat();
+    let sendgrid = [
+        b"SG.".as_slice(),
+        b"a".repeat(22).as_slice(),
+        b".".as_slice(),
+        b"b".repeat(40).as_slice(),
+    ]
+    .concat();
+    let swarm = [b"SWMKEY-1-".as_slice(), b"a".repeat(40).as_slice()].concat();
+    let sendinblue = [b"xkeysib-".as_slice(), b"a".repeat(81).as_slice()].concat();
+    let flutterwave = [b"FLWSECK-".as_slice(), b"a".repeat(32).as_slice()].concat();
+    let anthropic = [
+        b"sk-ant-admin01-".as_slice(),
+        b"A".repeat(91).as_slice(),
+        b"AA".as_slice(),
+    ]
+    .concat();
+    for probe in [
+        b"AKIA1234567890ABCDEF".as_slice(),
+        b"pi_a_secret_b".as_slice(),
+        doppler.as_slice(),
+        sendgrid.as_slice(),
+        swarm.as_slice(),
+        sendinblue.as_slice(),
+        flutterwave.as_slice(),
+        anthropic.as_slice(),
+        b"pcsk_2bAaB_ThisIsASyntheticPineconeKeyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".as_slice(),
+    ] {
+        assert!(
+            match_at(probe, &[]).unwrap().is_some(),
+            "registered head survives the prefilter"
+        );
     }
     for (first, second) in [
         (b'q', b'q'),
