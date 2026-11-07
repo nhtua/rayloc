@@ -69,6 +69,7 @@ const ALL_RULE_IDS: &[RuleId] = &[
     RuleId::CircleCiProjectToken,
     RuleId::AtlassianApiToken,
     RuleId::NetlifyAccessToken,
+    RuleId::FlyioToken,
     RuleId::Auth0ManagementToken,
     RuleId::OktaAccessToken,
     RuleId::NotionApiKey,

@@ -234,6 +234,7 @@ pub enum RuleId {
     CircleCiProjectToken,
     AtlassianApiToken,
     NetlifyAccessToken,
+    FlyioToken,
     Auth0ManagementToken,
     OktaAccessToken,
     NotionApiKey,
@@ -739,6 +740,13 @@ impl RuleId {
                 Confidence::High,
                 "https://docs.netlify.com/configure-sites/manage-deploy/manage-site-access-tokens/",
             ),
+            Self::FlyioToken => (
+                "flyio-token",
+                "Fly.io API or management token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.fly.io/en/latest/fly101/apps/security",
+            ),
             Self::Auth0ManagementToken => (
                 "auth0-management-token",
                 "Auth0 management API token",
@@ -1027,6 +1035,8 @@ const CIRCLECI_PERSONAL_TOKEN_PREFIXES: &[&[u8]] = &[b"CCIPAT_"];
 const CIRCLECI_PROJECT_TOKEN_PREFIXES: &[&[u8]] = &[b"CCIPRJ_"];
 const ATLASSIAN_API_TOKEN_PREFIXES: &[&[u8]] = &[b"ATATT3"];
 const NETLIFY_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"nfp_"];
+const FLYIO_API_TOKEN_PREFIXES: &[&[u8]] = &[b"fo1_"];
+const FLYIO_MANAGEMENT_TOKEN_PREFIXES: &[&[u8]] = &[b"fm1a_", b"fm1r_", b"fm2_"];
 const AUTH0_MANAGEMENT_TOKEN_PREFIXES: &[&[u8]] = &[b"ua2_"];
 const OKTA_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"00a"];
 const NOTION_API_KEY_PREFIXES: &[&[u8]] = &[b"nt_"];
@@ -1460,6 +1470,57 @@ fn netlify_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Opt
     Some(end)
 }
 
+/// Fly.io API tokens are `fo1_` plus exactly 43 `[A-Za-z0-9_-]` bytes.
+fn flyio_api_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Fly.io management tokens are `fm1a_`, `fm1r_`, or `fm2_` plus 100-512 base64
+/// characters and up to three `=` padding bytes.
+fn flyio_management_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let mut end = start;
+    while end - start < 512
+        && bytes
+            .get(end)
+            .is_some_and(|&b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+    {
+        end += 1;
+    }
+    let body_len = end - start;
+    if body_len < 100 {
+        return None;
+    }
+    let mut padding = 0;
+    while padding < 3 && bytes.get(end).is_some_and(|&b| b == b'=') {
+        end += 1;
+        padding += 1;
+    }
+    if bytes.get(end).is_some_and(|&next| {
+        is_word(next) || next == b'/' || next == b'+' || next == b'-' || next == b'='
+    }) {
+        return None;
+    }
+    Some(end)
+}
+
 /// GitLab trigger tokens (`glptt-`) are exactly 40 lowercase hex bytes.
 fn gitlab_trigger_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
     let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
@@ -1805,6 +1866,14 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
     if !disabled.contains(&RuleId::NetlifyAccessToken) {
         if let Some(end) = netlify_token_match(bytes, NETLIFY_ACCESS_TOKEN_PREFIXES, 36) {
             return Ok(Some((RuleId::NetlifyAccessToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::FlyioToken) {
+        if let Some(end) = flyio_api_token_match(bytes, FLYIO_API_TOKEN_PREFIXES, 43) {
+            return Ok(Some((RuleId::FlyioToken, end)));
+        }
+        if let Some(end) = flyio_management_token_match(bytes, FLYIO_MANAGEMENT_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::FlyioToken, end)));
         }
     }
     // Phase 3: URI-based rules

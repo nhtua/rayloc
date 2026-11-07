@@ -528,6 +528,26 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         b"nfp_SyntheticNetlifyAccessToken123456789".to_vec(),
     ));
     fixtures.push((
+        RuleId::FlyioToken,
+        [
+            b"fo1_".as_slice(),
+            std::iter::repeat_n(b'Z', 43)
+                .collect::<Vec<u8>>()
+                .as_slice(),
+        ]
+        .concat(),
+    ));
+    fixtures.push((
+        RuleId::FlyioToken,
+        [
+            b"fm2_".as_slice(),
+            std::iter::repeat_n(b'q', 100)
+                .collect::<Vec<u8>>()
+                .as_slice(),
+        ]
+        .concat(),
+    ));
+    fixtures.push((
         RuleId::Auth0ManagementToken,
         b"ua2_SyntheticAuth0ManagementToken123456789ABCDEF".to_vec(),
     ));
@@ -873,6 +893,107 @@ fn prefixed(prefix: &[u8], fill: u8, count: usize) -> Vec<u8> {
     let mut value = prefix.to_vec();
     value.extend(std::iter::repeat_n(fill, count));
     value
+}
+
+#[test]
+fn flyio_token_family_accepts_documented_shapes_only() {
+    let fo1 = prefixed(b"fo1_", b'Z', 43);
+    assert_eq!(matches(&fo1), vec![(RuleId::FlyioToken, 0..fo1.len())]);
+    for fill in [b'a', b'0', b'+', b'/'] {
+        for count in [100, 512] {
+            for padding in [0, 1, 2, 3] {
+                let mut token = prefixed(b"fm2_", fill, count);
+                token.extend(std::iter::repeat_n(b'=', padding));
+                assert_eq!(
+                    matches(&token),
+                    vec![(RuleId::FlyioToken, 0..token.len())],
+                    "{fill} {count} {padding}",
+                );
+            }
+        }
+    }
+    for prefix in [b"fm1a_", b"fm1r_"] {
+        let token = prefixed(prefix, b'x', 100);
+        assert_eq!(matches(&token), vec![(RuleId::FlyioToken, 0..token.len())]);
+    }
+}
+
+#[test]
+fn flyio_token_family_rejects_near_misses_and_public_values() {
+    assert!(
+        matches(&prefixed(b"fo1_", b'Z', 42)).is_empty(),
+        "fo1 short"
+    );
+    assert!(matches(&prefixed(b"fo1_", b'Z', 44)).is_empty(), "fo1 long");
+    assert!(
+        matches(&[prefixed(b"fo1_", b'Z', 43).as_slice(), b"a"].concat()).is_empty(),
+        "fo1 trailing identifier",
+    );
+    assert!(
+        matches(&prefixed(b"fo1_", b'.', 43)).is_empty(),
+        "fo1 wrong alphabet",
+    );
+    assert!(
+        matches(&prefixed(b"fm2_", b'a', 99)).is_empty(),
+        "fm2 short"
+    );
+    assert!(
+        matches(&prefixed(b"fm2_", b'a', 513)).is_empty(),
+        "fm2 long"
+    );
+    assert!(
+        matches(&[prefixed(b"fm2_", b'a', 512).as_slice(), b"====",].concat()).is_empty(),
+        "four padding bytes",
+    );
+    assert!(
+        matches(&prefixed(b"fm1_", b'a', 100)).is_empty(),
+        "fm1 prefix unknown"
+    );
+    assert!(matches(b"fo1_short").is_empty(), "public counterpart");
+}
+
+#[test]
+fn flyio_token_family_respects_disabled_rules_and_stream_splits() {
+    let first = prefixed(b"fo1_", b'Z', 43);
+    let second = prefixed(b"fm2_", b'q', 100);
+    let third = prefixed(b"fm1a_", b'x', 512);
+    let examples: [&[u8]; 3] = [&first, &second, &third];
+    for token in examples {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(RuleId::FlyioToken),
+            "enabled",
+        );
+        assert_ne!(
+            match_at(token, &[RuleId::FlyioToken])
+                .unwrap()
+                .map(|(id, _)| id),
+            Some(RuleId::FlyioToken),
+            "disabled",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    for token in examples {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
+    }
 }
 
 #[test]
