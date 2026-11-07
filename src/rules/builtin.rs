@@ -2156,7 +2156,179 @@ fn uri_match(bytes: &[u8], prefixes: &[&[u8]], rule: RuleId) -> Option<(RuleId, 
     Some((rule, end))
 }
 
+/// Two-byte head prefilter for the provider chain. Every structural match (and
+/// its candidate-limit error) is reachable only after one of the registered
+/// literals starts at the position, so a position whose first two bytes head no
+/// literal returns `Ok(None)` without walking the chain. Kept as data next to
+/// the prefix tables so adding a rule cannot silently disable the prefilter.
+const PROVIDER_HEAD_LITERALS: &[&[&[u8]]] = &[
+    GITHUB_PREFIXES,
+    STRIPE_SECRET_PREFIXES,
+    STRIPE_RESTRICTED_PREFIXES,
+    SLACK_PREFIXES,
+    OPENAI_PREFIXES,
+    OPENROUTER_PREFIXES,
+    ANTHROPIC_PREFIXES,
+    GROQ_PREFIXES,
+    PERPLEXITY_PREFIXES,
+    HUGGINGFACE_PREFIXES,
+    XAI_PREFIXES,
+    GOOGLE_API_PREFIXES,
+    ALIBABA_PREFIXES,
+    BAIDU_PREFIXES,
+    WANDB_PREFIXES,
+    FIRECRAWL_PREFIXES,
+    LANGSMITH_PREFIXES,
+    VOYAGE_PREFIXES,
+    CARTESIA_PREFIXES,
+    REPLICATE_PREFIXES,
+    VERCEL_PREFIXES,
+    SUPABASE_PREFIXES,
+    CLOUDFLARE_PREFIXES,
+    DIGITALOCEAN_PAT_PREFIXES,
+    DIGITALOCEAN_OAUTH_PREFIXES,
+    DIGITALOCEAN_REFRESH_PREFIXES,
+    HEROKU_API_KEY_PREFIXES,
+    CLOUDINARY_URL_PREFIXES,
+    CLOJARS_TOKEN_PREFIXES,
+    CRATESIO_TOKEN_PREFIXES,
+    PYPY_TOKEN_PREFIXES,
+    RUBYGENS_API_KEY_PREFIXES,
+    SLACK_BOT_TOKEN_PREFIXES,
+    SLACK_USER_TOKEN_PREFIXES,
+    SLACK_WORKSPACE_TOKEN_PREFIXES,
+    SLACK_REFRESH_TOKEN_PREFIXES,
+    SENTRY_ORG_TOKEN_PREFIXES,
+    SENTRY_PERSONAL_TOKEN_PREFIXES,
+    GRAFANA_SERVICE_ACCOUNT_TOKEN_PREFIXES,
+    AXIOM_TOKEN_PREFIXES,
+    SONARQUBE_TOKEN_PREFIXES,
+    SONARQUBE_CLOUD_TOKEN_PREFIXES,
+    KONG_KONNECT_TOKEN_PREFIXES,
+    TRUFFLEHOG_ENTERPRISE_SECRET_PREFIXES,
+    TAILSCALE_API_TOKEN_PREFIXES,
+    TAILSCALE_AUTH_TOKEN_PREFIXES,
+    RESEND_API_KEY_PREFIXES,
+    LAUNCH_DARKLY_SERVER_SDK_TOKEN_PREFIXES,
+    FLAGSMITH_SERVER_TOKEN_PREFIXES,
+    GROWTHBOOK_SECRET_KEY_PREFIXES,
+    POSTHOG_PERSONAL_TOKEN_PREFIXES,
+    GITLAB_CICD_JOB_TOKEN_PREFIXES,
+    GITLAB_DEPLOY_TOKEN_PREFIXES,
+    GITLAB_FEATURE_FLAG_TOKEN_PREFIXES,
+    GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES,
+    GITLAB_RUNNER_TOKEN_PREFIXES,
+    GITLAB_RUNNER_REGISTRATION_TOKEN_PREFIXES,
+    GITLAB_FEED_TOKEN_PREFIXES,
+    GITLAB_INCOMING_MAIL_TOKEN_PREFIXES,
+    GITLAB_SCIM_TOKEN_PREFIXES,
+    GITLAB_AGENT_TOKEN_PREFIXES,
+    GITLAB_OAUTH_APP_SECRET_PREFIXES,
+    GITLAB_TRIGGER_TOKEN_PREFIXES,
+    CIRCLECI_PERSONAL_TOKEN_PREFIXES,
+    CIRCLECI_PROJECT_TOKEN_PREFIXES,
+    ATLASSIAN_API_TOKEN_PREFIXES,
+    NETLIFY_ACCESS_TOKEN_PREFIXES,
+    FLYIO_API_TOKEN_PREFIXES,
+    FLYIO_MANAGEMENT_TOKEN_PREFIXES,
+    AUTH0_MANAGEMENT_TOKEN_PREFIXES,
+    OKTA_ACCESS_TOKEN_PREFIXES,
+    NOTION_API_KEY_PREFIXES,
+    LINEAR_API_KEY_PREFIXES,
+    FIGMA_TOKEN_PREFIXES,
+    SQUARE_ACCESS_TOKEN_PREFIXES,
+    SHOPIFY_ACCESS_TOKEN_PREFIXES,
+    SHOPIFY_CUSTOM_TOKEN_PREFIXES,
+    SHOPIFY_SHARED_SECRET_PREFIXES,
+    SHOPIFY_APP_PASSWORD_PREFIXES,
+    STRIPE_ACCESS_TOKEN_PREFIXES,
+    PLANETSCALE_PASSWORD_PREFIXES,
+    PLANETSCALE_TOKEN_PREFIXES,
+    PLANETSCALE_OAUTH_TOKEN_PREFIXES,
+    PADDLE_API_KEY_PREFIXES,
+    PLAID_ACCESS_TOKEN_PREFIXES,
+    MISTRAL_KEY_PREFIXES,
+    CEREBRAS_KEY_PREFIXES,
+    TOGETHERAI_KEY_PREFIXES,
+    FIREWORKS_AI_KEY_PREFIXES,
+    STABILITY_AI_KEY_PREFIXES,
+    DEEPGRAM_KEY_PREFIXES,
+    RAZORPAY_KEY_PREFIXES,
+    MONGODB_URI_PREFIXES,
+    POSTGRES_URI_PREFIXES,
+    REDIS_URI_PREFIXES,
+    SQLSERVER_URI_PREFIXES,
+    MYSQL_URI_PREFIXES,
+    COCKROACHDB_URI_PREFIXES,
+    PRIVATE_KEY_MARKERS,
+];
+const PROVIDER_HEAD_EXTRA_PAIRS: [(u8, u8); 12] = [
+    (b'A', b'K'), // aws_match: AKIA
+    (b'A', b'S'), // aws_match: ASIA
+    (b'A', b'C'), // twilio_match: AC
+    (b'S', b'K'), // twilio_match: SK
+    (b'S', b'G'), // sendgrid_match: SG.
+    (b'S', b'W'), // docker_swarm_match: SWMKEY-1- / SWMTKN-1-
+    (b'F', b'L'), // flutterwave_match: FLWSECK- / FLWTESTCK-
+    (b'x', b'k'), // sendinblue_match: xkeysib-
+    (b'p', b'i'), // stripe_payment_intent_match: pi_
+    (b'd', b'p'), // doppler_token_match: dp.* literals
+    (b'p', b'c'), // pinecone_key_match: pcsk_
+    (b's', b'k'), // anthropic_admin_key_match: sk-ant-admin01-
+];
+
+/// Build the 256x256 head-byte bitmap at compile time. A one-byte prefix (none
+/// today) opens every second byte for its head; telegram digits do the same.
+const fn provider_head_bits() -> [bool; 65536] {
+    let mut bits = [false; 65536];
+    let mut any_second = [false; 256];
+    let mut group_index = 0;
+    while group_index < PROVIDER_HEAD_LITERALS.len() {
+        let group = PROVIDER_HEAD_LITERALS[group_index];
+        let mut prefix_index = 0;
+        while prefix_index < group.len() {
+            let prefix = group[prefix_index];
+            if prefix.len() == 1 {
+                any_second[prefix[0] as usize] = true;
+            } else if prefix.len() >= 2 {
+                bits[((prefix[0] as u16) << 8 | prefix[1] as u16) as usize] = true;
+            }
+            prefix_index += 1;
+        }
+        group_index += 1;
+    }
+    let mut extra_index = 0;
+    while extra_index < PROVIDER_HEAD_EXTRA_PAIRS.len() {
+        let (first, second) = PROVIDER_HEAD_EXTRA_PAIRS[extra_index];
+        bits[((first as u16) << 8 | second as u16) as usize] = true;
+        extra_index += 1;
+    }
+    let mut digit = b'0';
+    while digit <= b'9' {
+        any_second[digit as usize] = true;
+        digit += 1;
+    }
+    let mut head = 0;
+    while head < 256 {
+        if any_second[head] {
+            let mut slot = head * 256;
+            while slot < head * 256 + 256 {
+                bits[slot] = true;
+                slot += 1;
+            }
+        }
+        head += 1;
+    }
+    bits
+}
+const PROVIDER_HEAD_BITS: &[bool; 65536] = &provider_head_bits();
+
 fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>, ScanError> {
+    if bytes.len() >= 2
+        && !PROVIDER_HEAD_BITS[(((bytes[0] as u16) << 8) | bytes[1] as u16) as usize]
+    {
+        return Ok(None);
+    }
     if let Some(end) = (!disabled.contains(&RuleId::AwsAccessKeyId))
         .then(|| aws_match(bytes))
         .flatten()

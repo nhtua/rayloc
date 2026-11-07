@@ -1,6 +1,6 @@
 # Secret-pattern expansion audit
 
-Date: 2026-11-06. Status: audit complete; Tasks 1–11 shipped on `task/expand-secret-patterns`; performance gate awaiting user decision.
+Date: 2026-11-06. Status: audit complete; Tasks 1–13 shipped on `task/expand-secret-patterns`; performance gate resolved by an approved prefilter optimization (Task 13) that beats baseline on every measured workload.
 
 ## Objective and assumptions
 
@@ -448,3 +448,41 @@ cause is the linear `match_at` prefix dispatch, now ~40 branches longer per
 candidate position; no Aho-Corasick/prefix-tree indexing or other engine change
 was made. Per the user gate, work stopped here: ratios and cause reported, and
 no performance work proceeds without explicit approval.
+
+## Task 13: approved dispatch prefilter — gate resolved
+
+User decision (2026-11-06): approve restructuring the `match_at` dispatch. Shipped
+change: a compile-time 64 KiB two-byte head bitmap (`PROVIDER_HEAD_BITS`, built by
+`const fn provider_head_bits`) guards `match_at` — a candidate position whose first
+two bytes head none of the registered provider literals returns `Ok(None)` without
+walking the rule chain. Every prefix table lives in the `PROVIDER_HEAD_LITERALS`
+registry; matchers with private literals list their heads in
+`PROVIDER_HEAD_EXTRA_PAIRS` (12 entries: AWS, Twilio, SendGrid, Docker Swarm,
+Flutterwave, Sendinblue, Stripe `pi_`, Doppler, Pinecone, Anthropic-admin); single-byte
+prefixes and telegram digits open whole head rows. Candidates shorter than two bytes
+skip the guard. The bitmap is conservative (a superset of real heads), so it cannot
+drop a match, only short-circuit non-matching positions.
+
+Maintenance invariant: any new structural rule must register its head (add its prefix
+table to `PROVIDER_HEAD_LITERALS` or add literal heads to `PROVIDER_HEAD_EXTRA_PAIRS`);
+the prefilter test plus per-family fixtures catch omissions at test time.
+
+Verification (same host, idle, five paired `cargo bench` samples, logs
+`/tmp/opencode/rayloc-expand-optimized-bench-run{1..5}.txt`): detection identical
+(engine `findings=204800` in both candidate and optimized runs), 472 unit tests plus
+all integration suites pass, fmt/clippy `-D warnings` clean, coverage gate 100.00%
+functions / 98.13% lines / 97.03% regions (production only). Release binary: 3,216,192
+bytes (+90,112 vs baseline), SHA-256 `725ea15d36e8f4323014e658a695521b24011ba665985e2615534686db640f52`.
+
+| Workload | Baseline | Candidate (unoptimized) | Optimized (median of 5; range) | Ratio vs baseline |
+| --- | --- | --- | --- | --- |
+| Engine median ms | 7.915 | 10.023 | 5.005 (4.943–5.044) | **−36.8%** (−37.5…−36.3%) |
+| Engine decimal MB/s | 34.41 | 27.18 | 54.42 (54.00–55.10) | +58.2% |
+| Scope w=1 median ms | 2966.994 | 3559.767 | 2366.553 (2356.3–2373.4) | **−20.2%** |
+| Scope w=2 median ms | 1542.410 | 1867.411 | 1228.990 (1218.3–1230.0) | **−20.3%** |
+| Scope w=8 median ms | 506.273 | 485.118 | 326.855 (319.5–366.8) | **−35.4%** (band −36.9…−27.2%) |
+
+Gate result: the expanded catalog with the head-byte prefilter scans faster than the
+immutable baseline on every workload (1–2 worker paths consistently −20%, engine path
+−37%); run-to-run spread stayed inside ~2% on the stable paths. Cost recorded: +90 KiB
+binary size and a 64 KiB static bitmap.

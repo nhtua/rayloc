@@ -2196,3 +2196,35 @@ fn expanded_cicd_families_respect_disabled_rules_and_stream_splits() {
         assert_eq!(streamed(token, 1, registry).unwrap(), expected);
     }
 }
+
+#[test]
+fn provider_head_prefilter_agrees_with_the_registered_tables() {
+    let bits = provider_head_bits();
+    assert_eq!(bits, *PROVIDER_HEAD_BITS);
+    for group in PROVIDER_HEAD_LITERALS {
+        for prefix in *group {
+            if prefix.len() >= 2 {
+                assert!(bits[((prefix[0] as u16) << 8 | prefix[1] as u16) as usize]);
+            }
+        }
+    }
+    for (first, second) in PROVIDER_HEAD_EXTRA_PAIRS {
+        assert!(bits[((first as u16) << 8 | second as u16) as usize]);
+    }
+    for digit_head in b'0'..=b'9' {
+        for second in [b'a', b'Z', b'9', b'_'] {
+            assert!(bits[((digit_head as u16) << 8 | second as u16) as usize]);
+        }
+    }
+    for (first, second) in [
+        (b'q', b'q'),
+        (b'\xff', b'\x00'),
+        (b' ', b' '),
+        (b'\n', b'x'),
+    ] {
+        let head = (first as u16) << 8 | second as u16;
+        assert!(!bits[head as usize]);
+        let candidate = &[first, second, b'i', b'n', b'n', b'o'];
+        assert_eq!(match_at(candidate, &[]).unwrap(), None);
+    }
+}
