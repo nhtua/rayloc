@@ -96,6 +96,8 @@ const ALL_RULE_IDS: &[RuleId] = &[
     RuleId::PlanetscalePassword,
     RuleId::PlanetscaleToken,
     RuleId::PlanetscaleOauthToken,
+    RuleId::PaddleApiKey,
+    RuleId::PlaidAccessToken,
     RuleId::CloudinaryUrl,
     RuleId::MongodbUri,
     RuleId::PostgresUri,

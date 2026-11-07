@@ -261,6 +261,8 @@ pub enum RuleId {
     PlanetscalePassword,
     PlanetscaleToken,
     PlanetscaleOauthToken,
+    PaddleApiKey,
+    PlaidAccessToken,
     CloudinaryUrl,
     // Phase 3: URI-based rules
     MongodbUri,
@@ -934,6 +936,20 @@ impl RuleId {
                 Confidence::High,
                 "https://planetscale.com/docs/reference/api-overview",
             ),
+            Self::PaddleApiKey => (
+                "paddle-api-key",
+                "Paddle backend API key",
+                Severity::High,
+                Confidence::High,
+                "https://developer.paddle.com/api-reference/about/authentication",
+            ),
+            Self::PlaidAccessToken => (
+                "plaid-access-token",
+                "Plaid access token",
+                Severity::High,
+                Confidence::High,
+                "https://plaid.com/docs/api/",
+            ),
             Self::CloudinaryUrl => (
                 "cloudinary-url",
                 "Cloudinary cloud URL with credentials",
@@ -1083,6 +1099,12 @@ const STRIPE_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"sk_prod_", b"rk_prod_"];
 const PLANETSCALE_PASSWORD_PREFIXES: &[&[u8]] = &[b"pscale_pw_"];
 const PLANETSCALE_TOKEN_PREFIXES: &[&[u8]] = &[b"pscale_tkn_"];
 const PLANETSCALE_OAUTH_TOKEN_PREFIXES: &[&[u8]] = &[b"pscale_oauth_"];
+const PADDLE_API_KEY_PREFIXES: &[&[u8]] = &[b"pdl_live_apikey_", b"pdl_sdbx_apikey_"];
+const PLAID_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[
+    b"access-sandbox-",
+    b"access-development-",
+    b"access-production-",
+];
 // Phase 1: AI / ML Providers
 const MISTRAL_KEY_PREFIXES: &[&[u8]] = &[b"mv4-"];
 const CEREBRAS_KEY_PREFIXES: &[&[u8]] = &[b"csk_"];
@@ -1585,6 +1607,72 @@ fn planetscale_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
     Some(end)
 }
 
+/// Paddle publishes an exact backend API key grammar: a live or sandbox prefix,
+/// 26 lowercase alphanumeric bytes, `_`, 22 alphanumeric bytes, `_`, and three
+/// alphanumeric bytes.
+fn paddle_api_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    if bytes.len() < start + 53 {
+        return None;
+    }
+    if bytes.get(start + 26) != Some(&b'_') || bytes.get(start + 49) != Some(&b'_') {
+        return None;
+    }
+    let groups_ok = bytes[start..start + 26]
+        .iter()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && bytes[start + 27..start + 49]
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric())
+        && bytes[start + 50..start + 53]
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric());
+    if !groups_ok {
+        return None;
+    }
+    let end = start + 53;
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Plaid access tokens carry an environment prefix and a lowercase-hex UUID in
+/// the 8-4-4-4-12 grouping.
+fn plaid_access_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    if bytes.len() < start + 36 {
+        return None;
+    }
+    let body = &bytes[start..start + 36];
+    let is_hex_lower = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
+    let groups_ok = body[..8].iter().all(|&b| is_hex_lower(b))
+        && body[8] == b'-'
+        && body[9..13].iter().all(|&b| is_hex_lower(b))
+        && body[13] == b'-'
+        && body[14..18].iter().all(|&b| is_hex_lower(b))
+        && body[18] == b'-'
+        && body[19..23].iter().all(|&b| is_hex_lower(b))
+        && body[23] == b'-'
+        && body[24..].iter().all(|&b| is_hex_lower(b));
+    if !groups_ok {
+        return None;
+    }
+    let end = start + 36;
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
 /// Fly.io API tokens are `fo1_` plus exactly 43 `[A-Za-z0-9_-]` bytes.
 fn flyio_api_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
     let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
@@ -2004,6 +2092,16 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
         if let Some(end) = planetscale_token_match(bytes, prefixes) {
             return Ok(Some((rule, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::PaddleApiKey) {
+        if let Some(end) = paddle_api_key_match(bytes, PADDLE_API_KEY_PREFIXES) {
+            return Ok(Some((RuleId::PaddleApiKey, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::PlaidAccessToken) {
+        if let Some(end) = plaid_access_token_match(bytes, PLAID_ACCESS_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::PlaidAccessToken, end)));
         }
     }
     if !disabled.contains(&RuleId::PineconeApiKey) {

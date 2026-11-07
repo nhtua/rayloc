@@ -556,6 +556,14 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         b"pscale_oauth_SyntheticPlanetscaleOauthToken123".to_vec(),
     ));
     fixtures.push((
+        RuleId::PaddleApiKey,
+        b"pdl_live_apikey_abcdefghijklmnopqrstuvwx01_ABCDEFGHIJKLMNOPQRSTUV_7x9".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::PlaidAccessToken,
+        b"access-production-12345678-abcd-ef01-2345-6789abcdef01".to_vec(),
+    ));
+    fixtures.push((
         RuleId::PineconeApiKey,
         b"pcsk_2bAaB_ThisIsASyntheticPineconeKeyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_vec(),
     ));
@@ -914,6 +922,153 @@ fn prefixed(prefix: &[u8], fill: u8, count: usize) -> Vec<u8> {
     let mut value = prefix.to_vec();
     value.extend(std::iter::repeat_n(fill, count));
     value
+}
+
+#[test]
+fn paddle_and_plaid_families_accept_documented_shapes_only() {
+    for prefix in [b"pdl_live_apikey_", b"pdl_sdbx_apikey_"] {
+        let token = [
+            prefix.as_slice(),
+            b"a".repeat(26).as_slice(),
+            b"_",
+            b"B".repeat(22).as_slice(),
+            b"_",
+            b"9x7".as_slice(),
+        ]
+        .concat();
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::PaddleApiKey, 0..token.len())],
+            "{prefix:?}",
+        );
+    }
+    for prefix in [
+        b"access-sandbox-".as_slice(),
+        b"access-development-".as_slice(),
+        b"access-production-".as_slice(),
+    ] {
+        let token = [prefix, b"12345678-abcd-ef01-2345-6789abcdef01".as_slice()].concat();
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::PlaidAccessToken, 0..token.len())],
+            "{prefix:?}",
+        );
+    }
+}
+
+#[test]
+fn paddle_and_plaid_families_reject_near_misses_and_public_values() {
+    let short_paddle = [
+        b"pdl_live_apikey_".as_slice(),
+        b"a".repeat(25).as_slice(),
+        b"_",
+        b"B".repeat(22).as_slice(),
+        b"_",
+        b"9x7",
+    ]
+    .concat();
+    assert!(matches(&short_paddle).is_empty(), "paddle group short");
+    let bad_case = [
+        b"pdl_live_apikey_".as_slice(),
+        b"A".repeat(26).as_slice(),
+        b"_",
+        b"B".repeat(22).as_slice(),
+        b"_",
+        b"9x7",
+    ]
+    .concat();
+    assert!(matches(&bad_case).is_empty(), "paddle uppercase group");
+    let bad_tail = [
+        b"pdl_live_apikey_".as_slice(),
+        b"a".repeat(26).as_slice(),
+        b"_",
+        b"B".repeat(22).as_slice(),
+        b"_",
+        b"9x77",
+    ]
+    .concat();
+    assert!(matches(&bad_tail).is_empty(), "paddle long tail");
+    for uuid in [
+        b"12345678-abcd-ef01-2345-6789abcdef0".as_slice(),
+        b"12345678-abcd-ef01-2345-6789abcdef010".as_slice(),
+        b"12345678-ABCD-ef01-2345-6789ABCDef01".as_slice(),
+    ] {
+        assert!(
+            matches(&[b"access-sandbox-".as_slice(), uuid].concat()).is_empty(),
+            "plaid uuid {uuid:?}",
+        );
+    }
+    assert!(
+        matches(
+            &[
+                b"access-sandbox-".as_slice(),
+                b"12345678-abcd-ef01-2345-6789abcdef01".as_slice(),
+                b"a".as_slice(),
+            ]
+            .concat()
+        )
+        .is_empty(),
+        "plaid trailing identifier",
+    );
+    assert!(
+        matches(b"access-public-SyntheticPublicIdentifier".as_slice()).is_empty(),
+        "public counterpart",
+    );
+}
+
+#[test]
+fn paddle_and_plaid_families_respect_disabled_rules_and_stream_splits() {
+    let paddle = [
+        b"pdl_live_apikey_".as_slice(),
+        b"a".repeat(26).as_slice(),
+        b"_",
+        b"B".repeat(22).as_slice(),
+        b"_",
+        b"9x7".as_slice(),
+    ]
+    .concat();
+    let plaid = [
+        b"access-development-".as_slice(),
+        b"12345678-abcd-ef01-2345-6789abcdef01".as_slice(),
+    ]
+    .concat();
+    for (token, rule) in [
+        (&paddle, RuleId::PaddleApiKey),
+        (&plaid, RuleId::PlaidAccessToken),
+    ] {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "enabled {rule:?}",
+        );
+        assert_ne!(
+            match_at(token, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "disabled {rule:?}",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    for token in [&paddle, &plaid] {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
+    }
 }
 
 #[test]
