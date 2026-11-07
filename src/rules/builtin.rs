@@ -235,6 +235,8 @@ pub enum RuleId {
     AtlassianApiToken,
     NetlifyAccessToken,
     FlyioToken,
+    PineconeApiKey,
+    AnthropicAdminKey,
     Auth0ManagementToken,
     OktaAccessToken,
     NotionApiKey,
@@ -748,6 +750,20 @@ impl RuleId {
                 Severity::High,
                 Confidence::High,
                 "https://docs.fly.io/en/latest/fly101/apps/security",
+            ),
+            Self::PineconeApiKey => (
+                "pinecone-api-key",
+                "Pinecone API key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.pinecone.io/troubleshooting/retrieval-and-interaction-options",
+            ),
+            Self::AnthropicAdminKey => (
+                "anthropic-admin-key",
+                "Anthropic admin API key",
+                Severity::Critical,
+                Confidence::High,
+                "https://docs.anthropic.com/en/docs/keys",
             ),
             Self::Auth0ManagementToken => (
                 "auth0-management-token",
@@ -1488,6 +1504,68 @@ fn netlify_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Opt
     Some(end)
 }
 
+/// Pinecone keys are `pcsk_`, a five- or six-byte alphanumeric group, `_`, then 63
+/// alphanumeric body bytes.
+fn pinecone_key_match(bytes: &[u8]) -> Option<usize> {
+    if !bytes.starts_with(b"pcsk_") {
+        return None;
+    }
+    for group_len in [5, 6] {
+        let group_end = 5 + group_len;
+        let body_start = group_end + 1;
+        let body_end = body_start + 63;
+        if bytes.get(group_end) != Some(&b'_') || bytes.len() < body_end {
+            continue;
+        }
+        let group = &bytes[5..group_end];
+        let body = &bytes[body_start..body_end];
+        if !group.iter().all(|b| b.is_ascii_alphanumeric()) {
+            continue;
+        }
+        if !body.iter().all(|b| b.is_ascii_alphanumeric()) {
+            continue;
+        }
+        if bytes
+            .get(body_end)
+            .is_some_and(|&next| is_word(next) || next == b'-')
+        {
+            continue;
+        }
+        return Some(body_end);
+    }
+    None
+}
+
+/// Anthropic admin keys are `sk-ant-admin01-` plus 93 `[A-Za-z0-9_-]` bytes ending in
+/// `AA`. Ordinary `sk-ant-` keys stay with the existing opaque rule.
+fn anthropic_admin_key_match(bytes: &[u8]) -> Option<usize> {
+    let prefix_len = b"sk-ant-admin01-".len();
+    if !bytes.starts_with(b"sk-ant-admin01-") {
+        return None;
+    }
+    let end = prefix_len + 93;
+    if bytes.len() < end {
+        return None;
+    }
+    let body = &bytes[prefix_len..end];
+    if !body
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(*b, b'_' | b'-'))
+    {
+        return None;
+    }
+    if bytes.get(end - 2) != Some(&b'A') || bytes.get(end - 1) != Some(&b'A') {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
 /// PlanetScale publishes three credential prefixes with 32-64 byte bodies over
 /// `[A-Za-z0-9_.=-]`; the older `pscale_password_` spelling is not current.
 fn planetscale_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
@@ -1681,6 +1759,11 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
     if !disabled.contains(&RuleId::SlackWebhook) {
         if let Some(end) = slack_match(bytes)? {
             return Ok(Some((RuleId::SlackWebhook, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::AnthropicAdminKey) {
+        if let Some(end) = anthropic_admin_key_match(bytes) {
+            return Ok(Some((RuleId::AnthropicAdminKey, end)));
         }
     }
     // LLM provider and AI infrastructure API keys (more specific prefixes first)
@@ -1921,6 +2004,11 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
         if let Some(end) = planetscale_token_match(bytes, prefixes) {
             return Ok(Some((rule, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::PineconeApiKey) {
+        if let Some(end) = pinecone_key_match(bytes) {
+            return Ok(Some((RuleId::PineconeApiKey, end)));
         }
     }
     // Phase 3: URI-based rules

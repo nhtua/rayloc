@@ -556,6 +556,19 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         b"pscale_oauth_SyntheticPlanetscaleOauthToken123".to_vec(),
     ));
     fixtures.push((
+        RuleId::PineconeApiKey,
+        b"pcsk_2bAaB_ThisIsASyntheticPineconeKeyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::AnthropicAdminKey,
+        [
+            b"sk-ant-admin01-".as_slice(),
+            b"A".repeat(91).as_slice(),
+            b"AA".as_slice(),
+        ]
+        .concat(),
+    ));
+    fixtures.push((
         RuleId::Auth0ManagementToken,
         b"ua2_SyntheticAuth0ManagementToken123456789ABCDEF".to_vec(),
     ));
@@ -901,6 +914,174 @@ fn prefixed(prefix: &[u8], fill: u8, count: usize) -> Vec<u8> {
     let mut value = prefix.to_vec();
     value.extend(std::iter::repeat_n(fill, count));
     value
+}
+
+#[test]
+fn pinecone_and_anthropic_admin_families_use_documented_shapes() {
+    for group in [5, 6] {
+        let token = [
+            b"pcsk_".as_slice(),
+            b"a".repeat(group).as_slice(),
+            b"_",
+            b"Z".repeat(63).as_slice(),
+        ]
+        .concat();
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::PineconeApiKey, 0..token.len())],
+            "{group}",
+        );
+    }
+    let admin = [
+        b"sk-ant-admin01-".as_slice(),
+        b"A".repeat(91).as_slice(),
+        b"AA".as_slice(),
+    ]
+    .concat();
+    assert_eq!(
+        matches(&admin),
+        vec![(RuleId::AnthropicAdminKey, 0..admin.len())]
+    );
+    let admin_bodies = [
+        [b"A".repeat(91).as_slice(), b"AA"].concat(),
+        [b"-".repeat(91).as_slice(), b"AA"].concat(),
+        [b"9".repeat(91).as_slice(), b"AA"].concat(),
+    ];
+    for body in admin_bodies {
+        let token = [b"sk-ant-admin01-".as_slice(), body.as_slice()].concat();
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::AnthropicAdminKey, 0..token.len())],
+            "body length {token:?}",
+        );
+    }
+}
+
+#[test]
+fn pinecone_and_anthropic_admin_families_reject_near_misses() {
+    assert!(
+        matches(
+            &[
+                b"pcsk_".as_slice(),
+                b"a".as_slice(),
+                b"_",
+                b"Z".repeat(63).as_slice()
+            ]
+            .concat()
+        )
+        .is_empty(),
+        "one group byte",
+    );
+    assert!(
+        matches(
+            &[
+                b"pcsk_".as_slice(),
+                b"a".repeat(4).as_slice(),
+                b"_",
+                b"Z".repeat(63).as_slice(),
+            ]
+            .concat()
+        )
+        .is_empty(),
+        "four group bytes",
+    );
+    assert!(
+        matches(
+            &[
+                b"pcsk_".as_slice(),
+                b"a".repeat(7).as_slice(),
+                b"_",
+                b"Z".repeat(63).as_slice(),
+            ]
+            .concat()
+        )
+        .is_empty(),
+        "seven group bytes",
+    );
+    for count in [62, 64] {
+        assert!(
+            matches(
+                &[
+                    b"pcsk_".as_slice(),
+                    b"abcde".as_slice(),
+                    b"_",
+                    b"Z".repeat(count).as_slice(),
+                ]
+                .concat()
+            )
+            .is_empty(),
+            "body {count}",
+        );
+    }
+    // Near-miss admin bodies fall back to the opaque `sk-` rule, never the admin id.
+    for body in [
+        b"A".repeat(92),
+        [b"A".repeat(92).as_slice(), b"AA"].concat(),
+        [b"A".repeat(92).as_slice(), b"B"].concat(),
+        [b"A".repeat(91).as_slice(), b"AA", b"a"].concat(),
+    ] {
+        let token = [b"sk-ant-admin01-".as_slice(), body.as_slice()].concat();
+        assert_ne!(
+            match_at(&token, &[]).unwrap().map(|(id, _)| id),
+            Some(RuleId::AnthropicAdminKey),
+            "admin near miss {token:?}",
+        );
+    }
+    assert_ne!(
+        match_at(b"sk-ant-orchest01-SyntheticAdmin0000000", &[])
+            .unwrap()
+            .map(|(id, _)| id),
+        Some(RuleId::AnthropicAdminKey),
+        "admin01-only variant",
+    );
+}
+
+#[test]
+fn pinecone_and_anthropic_admin_families_respect_disabled_rules_and_stream_splits() {
+    let pinecone = [b"pcsk_ab123".as_slice(), b"_", b"Z".repeat(63).as_slice()].concat();
+    let admin = [
+        b"sk-ant-admin01-".as_slice(),
+        b"A".repeat(91).as_slice(),
+        b"AA",
+    ]
+    .concat();
+    for (token, rule) in [
+        (&pinecone, RuleId::PineconeApiKey),
+        (&admin, RuleId::AnthropicAdminKey),
+    ] {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "enabled {rule:?}",
+        );
+        assert_ne!(
+            match_at(token, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "disabled {rule:?}",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    for token in [&pinecone, &admin] {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
+    }
 }
 
 #[test]

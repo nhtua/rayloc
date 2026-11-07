@@ -70,6 +70,8 @@ const ALL_RULE_IDS: &[RuleId] = &[
     RuleId::AtlassianApiToken,
     RuleId::NetlifyAccessToken,
     RuleId::FlyioToken,
+    RuleId::PineconeApiKey,
+    RuleId::AnthropicAdminKey,
     RuleId::Auth0ManagementToken,
     RuleId::OktaAccessToken,
     RuleId::NotionApiKey,
