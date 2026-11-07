@@ -228,6 +228,11 @@ pub enum RuleId {
     DopplerToken,
     TailscaleApiToken,
     TailscaleAuthToken,
+    ResendApiKey,
+    LaunchDarklyServerSdkToken,
+    FlagsmithServerToken,
+    GrowthBookSecretKey,
+    PostHogPersonalToken,
     GitlabCicdJobToken,
     GitlabDeployToken,
     GitlabFeatureFlagToken,
@@ -714,6 +719,41 @@ impl RuleId {
                 Confidence::High,
                 "https://tailscale.com/docs/reference/key-prefixes",
             ),
+            Self::ResendApiKey => (
+                "resend-api-key",
+                "Resend API key",
+                Severity::High,
+                Confidence::High,
+                "https://resend.com/docs/api-reference/api-keys/create-api-key",
+            ),
+            Self::LaunchDarklyServerSdkToken => (
+                "launch-darkly-server-sdk-token",
+                "LaunchDarkly server-side SDK secret",
+                Severity::High,
+                Confidence::High,
+                "https://launchdarkly.com/docs/sdk/concepts/client-side-server-side",
+            ),
+            Self::FlagsmithServerToken => (
+                "flagsmith-server-token",
+                "Flagsmith server-side environment key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.flagsmith.com/integrating-with-flagsmith/sdks/server-side",
+            ),
+            Self::GrowthBookSecretKey => (
+                "growth-book-secret-key",
+                "GrowthBook REST secret key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.growthbook.io/api/introduction",
+            ),
+            Self::PostHogPersonalToken => (
+                "post-hog-personal-token",
+                "PostHog personal API token",
+                Severity::High,
+                Confidence::High,
+                "https://posthog.com/docs/api",
+            ),
             Self::GitlabCicdJobToken => (
                 "gitlab-cicd-job-token",
                 "GitLab CI/CD job token",
@@ -1156,6 +1196,11 @@ const KONG_KONNECT_TOKEN_PREFIXES: &[&[u8]] = &[b"kpat_", b"spat_"];
 const TRUFFLEHOG_ENTERPRISE_SECRET_PREFIXES: &[&[u8]] = &[b"thog-secret-"];
 const TAILSCALE_API_TOKEN_PREFIXES: &[&[u8]] = &[b"tskey-api-"];
 const TAILSCALE_AUTH_TOKEN_PREFIXES: &[&[u8]] = &[b"tskey-auth-"];
+const RESEND_API_KEY_PREFIXES: &[&[u8]] = &[b"re_"];
+const LAUNCH_DARKLY_SERVER_SDK_TOKEN_PREFIXES: &[&[u8]] = &[b"sdk-"];
+const FLAGSMITH_SERVER_TOKEN_PREFIXES: &[&[u8]] = &[b"ser."];
+const GROWTHBOOK_SECRET_KEY_PREFIXES: &[&[u8]] = &[b"secret_"];
+const POSTHOG_PERSONAL_TOKEN_PREFIXES: &[&[u8]] = &[b"phx_"];
 const GITLAB_CICD_JOB_TOKEN_PREFIXES: &[&[u8]] = &[b"glcbt-"];
 const GITLAB_DEPLOY_TOKEN_PREFIXES: &[&[u8]] = &[b"gldt-"];
 const GITLAB_FEATURE_FLAG_TOKEN_PREFIXES: &[&[u8]] = &[b"glffct-"];
@@ -1730,40 +1775,9 @@ fn paddle_api_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
     Some(end)
 }
 
-/// Plaid access tokens carry an environment prefix and a lowercase-hex UUID in
-/// the 8-4-4-4-12 grouping.
-fn plaid_access_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
-    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
-    let start = prefix.len();
-    if bytes.len() < start + 36 {
-        return None;
-    }
-    let body = &bytes[start..start + 36];
-    let is_hex_lower = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
-    let groups_ok = body[..8].iter().all(|&b| is_hex_lower(b))
-        && body[8] == b'-'
-        && body[9..13].iter().all(|&b| is_hex_lower(b))
-        && body[13] == b'-'
-        && body[14..18].iter().all(|&b| is_hex_lower(b))
-        && body[18] == b'-'
-        && body[19..23].iter().all(|&b| is_hex_lower(b))
-        && body[23] == b'-'
-        && body[24..].iter().all(|&b| is_hex_lower(b));
-    if !groups_ok {
-        return None;
-    }
-    let end = start + 36;
-    if bytes
-        .get(end)
-        .is_some_and(|&next| is_word(next) || next == b'-')
-    {
-        return None;
-    }
-    Some(end)
-}
-
-/// Fly.io API tokens are `fo1_` plus exactly 43 `[A-Za-z0-9_-]` bytes.
-fn flyio_api_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+/// Fly.io API tokens (`fo1_` + 43) and Flagsmith server tokens (`ser.` + 43) use
+/// exact-length bodies over `[A-Za-z0-9_-]`; a longer run is a different identifier.
+fn alnum_dash_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
     let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
     let start = prefix.len();
     let end = start + body_len;
@@ -1778,6 +1792,77 @@ fn flyio_api_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> O
         .get(end)
         .is_some_and(|&next| is_word(next) || next == b'-')
     {
+        return None;
+    }
+    Some(end)
+}
+
+/// Resend keys are `re_`, an 8-byte base58 component, `_`, and a 24-byte base58
+/// component; the base58 alphabet excludes `0`, `O`, `I`, and `l`.
+fn resend_api_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let is_base58 = |b: u8| {
+        (b'1'..=b'9').contains(&b)
+            || (b'A'..=b'H').contains(&b)
+            || (b'J'..=b'N').contains(&b)
+            || (b'P'..=b'Z').contains(&b)
+            || (b'a'..=b'k').contains(&b)
+            || (b'm'..=b'z').contains(&b)
+    };
+    let start = prefix.len();
+    if bytes.len() < start + 33 {
+        return None;
+    }
+    let first = &bytes[start..start + 8];
+    let second = &bytes[start + 9..start + 33];
+    if !first.iter().all(|&b| is_base58(b)) || bytes.get(start + 8) != Some(&b'_') {
+        return None;
+    }
+    if !second.iter().all(|&b| is_base58(b)) {
+        return None;
+    }
+    let end = start + 33;
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// GrowthBook REST secret keys are `secret_` plus 16-64 `[A-Za-z0-9_-]` bytes.
+fn growthbook_secret_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let is_body = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-');
+    let mut end = start;
+    while end - start < 64 && bytes.get(end).is_some_and(|&b| is_body(b)) {
+        end += 1;
+    }
+    if end - start < 16 {
+        return None;
+    }
+    if bytes.get(end).is_some_and(|&b| is_body(b)) {
+        return None;
+    }
+    Some(end)
+}
+
+/// PostHog personal tokens are `phx_` plus 43-48 `[A-Za-z0-9_]` bytes; public
+/// `phc_` project tokens stay out of this rule.
+fn posthog_personal_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let is_body = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut end = start;
+    while end - start < 48 && bytes.get(end).is_some_and(|&b| is_body(b)) {
+        end += 1;
+    }
+    if end - start < 43 {
+        return None;
+    }
+    if bytes.get(end).is_some_and(|&b| is_body(b)) {
         return None;
     }
     Some(end)
@@ -1811,9 +1896,9 @@ fn grafana_service_account_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usi
     Some(end)
 }
 
-/// Axiom API and personal tokens carry `xaat-` or `xapt-` and a lowercase-hex UUID
-/// in the 8-4-4-4-12 grouping.
-fn axiom_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+/// Axiom (`xaat-`/`xapt-`), Plaid access tokens, and LaunchDarkly server SDK tokens
+/// (`sdk-`) carry a lowercase-hex UUID in the 8-4-4-4-12 grouping.
+fn hyphen_hex_uuid_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
     let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
     let start = prefix.len();
     if bytes.len() < start + 36 {
@@ -2318,7 +2403,7 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
     }
     if !disabled.contains(&RuleId::FlyioToken) {
-        if let Some(end) = flyio_api_token_match(bytes, FLYIO_API_TOKEN_PREFIXES, 43) {
+        if let Some(end) = alnum_dash_token_match(bytes, FLYIO_API_TOKEN_PREFIXES, 43) {
             return Ok(Some((RuleId::FlyioToken, end)));
         }
         if let Some(end) = flyio_management_token_match(bytes, FLYIO_MANAGEMENT_TOKEN_PREFIXES) {
@@ -2338,7 +2423,7 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
     }
     if !disabled.contains(&RuleId::AxiomToken) {
-        if let Some(end) = axiom_token_match(bytes, AXIOM_TOKEN_PREFIXES) {
+        if let Some(end) = hyphen_hex_uuid_match(bytes, AXIOM_TOKEN_PREFIXES) {
             return Ok(Some((RuleId::AxiomToken, end)));
         }
     }
@@ -2377,6 +2462,31 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
             return Ok(Some((RuleId::TailscaleAuthToken, end)));
         }
     }
+    if !disabled.contains(&RuleId::ResendApiKey) {
+        if let Some(end) = resend_api_key_match(bytes, RESEND_API_KEY_PREFIXES) {
+            return Ok(Some((RuleId::ResendApiKey, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::LaunchDarklyServerSdkToken) {
+        if let Some(end) = hyphen_hex_uuid_match(bytes, LAUNCH_DARKLY_SERVER_SDK_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::LaunchDarklyServerSdkToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::FlagsmithServerToken) {
+        if let Some(end) = alnum_dash_token_match(bytes, FLAGSMITH_SERVER_TOKEN_PREFIXES, 43) {
+            return Ok(Some((RuleId::FlagsmithServerToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::GrowthBookSecretKey) {
+        if let Some(end) = growthbook_secret_match(bytes, GROWTHBOOK_SECRET_KEY_PREFIXES) {
+            return Ok(Some((RuleId::GrowthBookSecretKey, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::PostHogPersonalToken) {
+        if let Some(end) = posthog_personal_token_match(bytes, POSTHOG_PERSONAL_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::PostHogPersonalToken, end)));
+        }
+    }
     for (rule, prefixes) in [
         (RuleId::PlanetscalePassword, PLANETSCALE_PASSWORD_PREFIXES),
         (RuleId::PlanetscaleToken, PLANETSCALE_TOKEN_PREFIXES),
@@ -2398,7 +2508,7 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
     }
     if !disabled.contains(&RuleId::PlaidAccessToken) {
-        if let Some(end) = plaid_access_token_match(bytes, PLAID_ACCESS_TOKEN_PREFIXES) {
+        if let Some(end) = hyphen_hex_uuid_match(bytes, PLAID_ACCESS_TOKEN_PREFIXES) {
             return Ok(Some((RuleId::PlaidAccessToken, end)));
         }
     }

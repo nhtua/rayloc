@@ -492,6 +492,17 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         b"tskey-auth-xyzGHI2CNTRL-1234567890abcdef".to_vec(),
     ));
     fixtures.push((
+        RuleId::ResendApiKey,
+        b"re_12345678_abcdefghijkmnpqrstuvwxyz".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::LaunchDarklyServerSdkToken,
+        b"sdk-12345678-abcd-ef01-2345-6789abcdef01".to_vec(),
+    ));
+    fixtures.push((RuleId::FlagsmithServerToken, prefixed(b"ser.", b'a', 43)));
+    fixtures.push((RuleId::GrowthBookSecretKey, prefixed(b"secret_", b'a', 16)));
+    fixtures.push((RuleId::PostHogPersonalToken, prefixed(b"phx_", b'a', 43)));
+    fixtures.push((
         RuleId::GitlabCicdJobToken,
         b"glcbt-A_SyntheticGitlabCicd123456".to_vec(),
     ));
@@ -1054,6 +1065,129 @@ fn sentry_grafana_axiom_families_respect_disabled_rules_and_stream_splits() {
         (&personal, RuleId::SentryPersonalToken),
         (&service, RuleId::GrafanaServiceAccountToken),
         (&axiom, RuleId::AxiomToken),
+    ];
+    for (token, rule) in tokens {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "enabled {rule:?}",
+        );
+        assert_ne!(
+            match_at(token, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "disabled {rule:?}",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    for (token, _) in tokens {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
+    }
+}
+
+#[test]
+fn resend_launchdarkly_flagsmith_growthbook_posthog_families_accept_documented_shapes_only() {
+    let resend = b"re_12345678_abcdefghijkmnpqrstuvwxyz";
+    assert_eq!(
+        matches(resend),
+        vec![(RuleId::ResendApiKey, 0..resend.len())]
+    );
+    let sdk = [b"sdk-".as_slice(), b"12345678-abcd-ef01-2345-6789abcdef01"].concat();
+    assert_eq!(
+        matches(&sdk),
+        vec![(RuleId::LaunchDarklyServerSdkToken, 0..sdk.len())]
+    );
+    let server = prefixed(b"ser.", b'a', 43);
+    assert_eq!(
+        matches(&server),
+        vec![(RuleId::FlagsmithServerToken, 0..server.len())]
+    );
+    for body in [16, 40, 64] {
+        let token = prefixed(b"secret_", b'a', body);
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::GrowthBookSecretKey, 0..token.len())],
+            "{body}"
+        );
+    }
+    for body in [43, 48] {
+        let token = prefixed(b"phx_", b'a', body);
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::PostHogPersonalToken, 0..token.len())],
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn resend_launchdarkly_flagsmith_growthbook_posthog_families_reject_near_misses_and_public_values()
+{
+    let short_first = b"re_1234567_abcdefghijkmnpqrstuvwxyz2";
+    let long_first = b"re_123456789_abcdefghijkmnpqrstuvwxyz2";
+    let bad_alphabet = b"re_12345670_abcdefghijkmnpqrstuvwxyz2";
+    let merged = b"re_12345678abcdefghijkmnpqrstuvwxyz23";
+    assert!(matches(short_first).is_empty(), "resend short first part");
+    assert!(matches(long_first).is_empty(), "resend long first part");
+    assert!(matches(bad_alphabet).is_empty(), "resend zero digit");
+    assert!(matches(merged).is_empty(), "resend no separator");
+    for uuid in [
+        b"12345678-ABCD-ef01-2345-6789abcdef01".as_slice(),
+        b"12345678-abcd-ef01-2345-6789abcdef".as_slice(),
+        b"12345678-abcd-ef01-2345-6789abcdef012".as_slice(),
+    ] {
+        let token = [b"sdk-".as_slice(), uuid].concat();
+        assert!(matches(&token).is_empty(), "sdk {uuid:?}");
+    }
+    for body in [42, 44] {
+        let token = prefixed(b"ser.", b'a', body);
+        assert!(matches(&token).is_empty(), "flagsmith {body}");
+    }
+    for body in [15, 65] {
+        let token = prefixed(b"secret_", b'a', body);
+        assert!(matches(&token).is_empty(), "growthbook {body}");
+    }
+    for body in [42, 49] {
+        let token = prefixed(b"phx_", b'a', body);
+        assert!(matches(&token).is_empty(), "posthog {body}");
+    }
+    assert!(
+        matches(b"phc_K8SyntheticPublicProjectTokenAAAAAAAAAA").is_empty(),
+        "public posthog project token",
+    );
+}
+
+#[test]
+fn resend_launchdarkly_flagsmith_growthbook_posthog_families_respect_disabled_rules_and_stream_splits()
+ {
+    let resend = b"re_aBcDeFgH_Jkmnpqrstuvwxyz234567891".to_vec();
+    let sdk = [b"sdk-".as_slice(), b"0f1e2d3c-ba98-7654-3210-fedcba987654"].concat();
+    let server = prefixed(b"ser.", b'b', 43);
+    let growthbook = prefixed(b"secret_", b'c', 64);
+    let posthog = prefixed(b"phx_", b'd', 48);
+    let tokens: [(&[u8], RuleId); 5] = [
+        (&resend, RuleId::ResendApiKey),
+        (&sdk, RuleId::LaunchDarklyServerSdkToken),
+        (&server, RuleId::FlagsmithServerToken),
+        (&growthbook, RuleId::GrowthBookSecretKey),
+        (&posthog, RuleId::PostHogPersonalToken),
     ];
     for (token, rule) in tokens {
         assert_eq!(
