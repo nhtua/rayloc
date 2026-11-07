@@ -218,6 +218,9 @@ pub enum RuleId {
     TwilioAccountSid,
     TwilioApiKey,
     SentryOrgToken,
+    SentryPersonalToken,
+    GrafanaServiceAccountToken,
+    AxiomToken,
     GitlabCicdJobToken,
     GitlabDeployToken,
     GitlabFeatureFlagToken,
@@ -633,6 +636,27 @@ impl RuleId {
                 Severity::High,
                 Confidence::High,
                 "https://docs.sentry.io/meta/sso-and-orgs.html",
+            ),
+            Self::SentryPersonalToken => (
+                "sentry-personal-token",
+                "Sentry personal API token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.sentry.io/security-legal-pii/security/token-formats/",
+            ),
+            Self::GrafanaServiceAccountToken => (
+                "grafana-service-account-token",
+                "Grafana service account token",
+                Severity::High,
+                Confidence::High,
+                "https://grafana.com/docs/grafana/latest/administration/service-accounts/",
+            ),
+            Self::AxiomToken => (
+                "axiom-token",
+                "Axiom API or personal token",
+                Severity::High,
+                Confidence::High,
+                "https://axiom.co/docs/reference/tokens",
             ),
             Self::GitlabCicdJobToken => (
                 "gitlab-cicd-job-token",
@@ -1067,6 +1091,9 @@ const SLACK_WORKSPACE_TOKEN_PREFIXES: &[&[u8]] = &[b"xoxa-"];
 const SLACK_REFRESH_TOKEN_PREFIXES: &[&[u8]] = &[b"xoxr-"];
 // Phase 1: SaaS & Dev Tools
 const SENTRY_ORG_TOKEN_PREFIXES: &[&[u8]] = &[b"sntrys_"];
+const SENTRY_PERSONAL_TOKEN_PREFIXES: &[&[u8]] = &[b"sntryu_"];
+const GRAFANA_SERVICE_ACCOUNT_TOKEN_PREFIXES: &[&[u8]] = &[b"glsa_"];
+const AXIOM_TOKEN_PREFIXES: &[&[u8]] = &[b"xaat-", b"xapt-"];
 const GITLAB_CICD_JOB_TOKEN_PREFIXES: &[&[u8]] = &[b"glcbt-"];
 const GITLAB_DEPLOY_TOKEN_PREFIXES: &[&[u8]] = &[b"gldt-"];
 const GITLAB_FEATURE_FLAG_TOKEN_PREFIXES: &[&[u8]] = &[b"glffct-"];
@@ -1694,6 +1721,62 @@ fn flyio_api_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> O
     Some(end)
 }
 
+/// Grafana service-account tokens are `glsa_` plus 32 alphanumeric bytes, `_`, and
+/// eight lowercase hex bytes.
+fn grafana_service_account_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    if bytes.len() < start + 41 {
+        return None;
+    }
+    let body = &bytes[start..start + 41];
+    if !body[..32].iter().all(|b| b.is_ascii_alphanumeric()) || body[32] != b'_' {
+        return None;
+    }
+    if !body[33..41]
+        .iter()
+        .all(|&b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return None;
+    }
+    let end = start + 41;
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Axiom API and personal tokens carry `xaat-` or `xapt-` and a lowercase-hex UUID
+/// in the 8-4-4-4-12 grouping.
+fn axiom_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    if bytes.len() < start + 36 {
+        return None;
+    }
+    let body = &bytes[start..start + 36];
+    if body[8] != b'-' || body[13] != b'-' || body[18] != b'-' || body[23] != b'-' {
+        return None;
+    }
+    let is_hex_lower = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
+    for (from, to) in [(0, 8), (9, 13), (14, 18), (19, 23), (24, 36)] {
+        if !body[from..to].iter().all(|&b| is_hex_lower(b)) {
+            return None;
+        }
+    }
+    let end = start + 36;
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
 /// Fly.io management tokens are `fm1a_`, `fm1r_`, or `fm2_` plus 100-512 base64
 /// characters and up to three `=` padding bytes.
 fn flyio_management_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
@@ -1724,8 +1807,9 @@ fn flyio_management_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usiz
     Some(end)
 }
 
-/// GitLab trigger tokens (`glptt-`) are exactly 40 lowercase hex bytes.
-fn gitlab_trigger_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+/// GitLab trigger tokens (`glptt-`) and Sentry personal tokens (`sntryu_`) use exact
+/// lowercase-hex bodies of 40 and 64 bytes respectively.
+fn lower_hex_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
     let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
     let start = prefix.len();
     let end = start + body_len;
@@ -2052,7 +2136,7 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
     }
     if !disabled.contains(&RuleId::GitlabTriggerToken) {
-        if let Some(end) = gitlab_trigger_match(bytes, GITLAB_TRIGGER_TOKEN_PREFIXES, 40) {
+        if let Some(end) = lower_hex_token_match(bytes, GITLAB_TRIGGER_TOKEN_PREFIXES, 40) {
             return Ok(Some((RuleId::GitlabTriggerToken, end)));
         }
     }
@@ -2077,6 +2161,23 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
         if let Some(end) = flyio_management_token_match(bytes, FLYIO_MANAGEMENT_TOKEN_PREFIXES) {
             return Ok(Some((RuleId::FlyioToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::SentryPersonalToken) {
+        if let Some(end) = lower_hex_token_match(bytes, SENTRY_PERSONAL_TOKEN_PREFIXES, 64) {
+            return Ok(Some((RuleId::SentryPersonalToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::GrafanaServiceAccountToken) {
+        if let Some(end) =
+            grafana_service_account_match(bytes, GRAFANA_SERVICE_ACCOUNT_TOKEN_PREFIXES)
+        {
+            return Ok(Some((RuleId::GrafanaServiceAccountToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::AxiomToken) {
+        if let Some(end) = axiom_token_match(bytes, AXIOM_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::AxiomToken, end)));
         }
     }
     for (rule, prefixes) in [

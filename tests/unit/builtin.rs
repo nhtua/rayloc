@@ -458,6 +458,18 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         b"sntrys_SyntheticSentryOrgToken1234567890ABCDEF".to_vec(),
     ));
     fixtures.push((
+        RuleId::SentryPersonalToken,
+        b"sntryu_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::GrafanaServiceAccountToken,
+        b"glsa_SyntheticGrafanaServiceAcct01234_0123abcd".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::AxiomToken,
+        b"xaat-12345678-abcd-ef01-2345-6789abcdef01".to_vec(),
+    ));
+    fixtures.push((
         RuleId::GitlabCicdJobToken,
         b"glcbt-A_SyntheticGitlabCicd123456".to_vec(),
     ));
@@ -922,6 +934,139 @@ fn prefixed(prefix: &[u8], fill: u8, count: usize) -> Vec<u8> {
     let mut value = prefix.to_vec();
     value.extend(std::iter::repeat_n(fill, count));
     value
+}
+
+#[test]
+fn sentry_grafana_axiom_families_accept_documented_shapes_only() {
+    let personal = [b"sntryu_".as_slice(), b"f".repeat(64).as_slice()].concat();
+    assert_eq!(
+        matches(&personal),
+        vec![(RuleId::SentryPersonalToken, 0..personal.len())]
+    );
+    for hex_fill in [b'0', b'9', b'a', b'f'] {
+        let service = [
+            b"glsa_".as_slice(),
+            b"a".repeat(32).as_slice(),
+            b"_",
+            std::iter::repeat_n(hex_fill, 8)
+                .collect::<Vec<u8>>()
+                .as_slice(),
+        ]
+        .concat();
+        assert_eq!(
+            matches(&service),
+            vec![(RuleId::GrafanaServiceAccountToken, 0..service.len())],
+            "{hex_fill}",
+        );
+    }
+    for prefix in [b"xaat-".as_slice(), b"xapt-".as_slice()] {
+        let token = [prefix, b"12345678-abcd-ef01-2345-6789abcdef01"].concat();
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::AxiomToken, 0..token.len())],
+            "{prefix:?}",
+        );
+    }
+}
+
+#[test]
+fn sentry_grafana_axiom_families_reject_near_misses_and_public_values() {
+    let short_sentry = [b"sntryu_".as_slice(), b"f".repeat(63).as_slice()].concat();
+    let long_sentry = [b"sntryu_".as_slice(), b"f".repeat(65).as_slice()].concat();
+    let upper_sentry = [b"sntryu_".as_slice(), b"F".repeat(64).as_slice()].concat();
+    assert!(matches(&short_sentry).is_empty(), "sentry personal short");
+    assert!(matches(&long_sentry).is_empty(), "sentry personal long");
+    assert!(
+        matches(&upper_sentry).is_empty(),
+        "sentry personal uppercase"
+    );
+    for group in [31, 33] {
+        let service = [
+            b"glsa_".as_slice(),
+            b"a".repeat(group).as_slice(),
+            b"_",
+            b"01234567".as_slice(),
+        ]
+        .concat();
+        assert!(matches(&service).is_empty(), "grafana group {group}");
+    }
+    let grafana_bad_hex = [
+        b"glsa_".as_slice(),
+        b"a".repeat(32).as_slice(),
+        b"_",
+        b"0123456G".as_slice(),
+    ]
+    .concat();
+    assert!(
+        matches(&grafana_bad_hex).is_empty(),
+        "grafana non-hex suffix"
+    );
+    for uuid in [
+        b"12345678-abcd-ef01-2345-6789abcdef".as_slice(),
+        b"12345678-abcd-ef01-2345-6789abcdef012".as_slice(),
+        b"12345678-ABCD-ef01-2345-6789abcdef01".as_slice(),
+    ] {
+        assert!(
+            matches(&[b"xaat-".as_slice(), uuid].concat()).is_empty(),
+            "axiom {uuid:?}",
+        );
+    }
+    assert!(
+        matches(b"xaat-reserved-public-identifier").is_empty(),
+        "public counterpart",
+    );
+}
+
+#[test]
+fn sentry_grafana_axiom_families_respect_disabled_rules_and_stream_splits() {
+    let personal = [b"sntryu_".as_slice(), b"c".repeat(64).as_slice()].concat();
+    let service = [
+        b"glsa_".as_slice(),
+        b"b".repeat(32).as_slice(),
+        b"_",
+        b"abcdef01".as_slice(),
+    ]
+    .concat();
+    let axiom = [b"xapt-".as_slice(), b"0f1e2d3c-ba98-7654-3210-fedcba987654"].concat();
+    let tokens: [(&[u8], RuleId); 3] = [
+        (&personal, RuleId::SentryPersonalToken),
+        (&service, RuleId::GrafanaServiceAccountToken),
+        (&axiom, RuleId::AxiomToken),
+    ];
+    for (token, rule) in tokens {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "enabled {rule:?}",
+        );
+        assert_ne!(
+            match_at(token, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "disabled {rule:?}",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    for (token, _) in tokens {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
+    }
 }
 
 #[test]
