@@ -333,3 +333,45 @@ fn normalized_camel_fields_and_long_name_checksum_are_preserved() {
     assert!(evidence.checksum);
     assert!(!classify_fields(b"client_secret", 80, false).aws);
 }
+
+#[test]
+fn vendor_management_field_aliases_expand_generic_context_evidence() {
+    for suffix in [
+        b"bitbucket_api_token".as_slice(),
+        b"cohere_api_key",
+        b"doppler_token",
+        b"uploadthing_token",
+        b"planetscale_token",
+        b"together_api_key",
+        b"unleash_token",
+        b"growthbook_secret_key",
+        b"posthog_personal_api_key",
+        b"sleuth_api_key",
+        b"jellyfish_api_token",
+        b"novu_secret_key",
+        b"courier_backend_auth_token",
+        b"gitguardian_api_key",
+        b"fastly_api_token",
+        b"zuplo_api_key",
+        b"apitemplate_api_key",
+        b"craftmypdf_api_key",
+    ] {
+        let name = [b"prefix_".to_vec(), suffix.to_vec()].concat();
+        assert!(
+            classify_fields(&name, name.len(), false).generic,
+            "{suffix:?}"
+        );
+    }
+    for bare in [
+        b"bitbucket".as_slice(),
+        b"doppler",
+        b"supabase",
+        b"uploadthing",
+        b"zuplo",
+    ] {
+        assert!(
+            !classify_fields(bare, bare.len(), false).generic,
+            "{bare:?}"
+        );
+    }
+}

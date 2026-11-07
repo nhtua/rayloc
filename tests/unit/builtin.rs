@@ -1103,6 +1103,20 @@ fn sentry_grafana_axiom_families_respect_disabled_rules_and_stream_splits() {
 }
 
 #[test]
+fn supabase_secret_prefix_stands_alone_and_public_prefix_stays_quiet() {
+    let secret = b"sb_secret_SyntheticSupabaseServerSecretKeyValue12";
+    assert_eq!(
+        matches(secret),
+        vec![(RuleId::SupabaseKey, 0..secret.len())]
+    );
+    let public = b"sb_publishable_SyntheticPublicPublishableValue123";
+    assert!(
+        matches(public).is_empty(),
+        "public prefix stays provider-silent"
+    );
+}
+
+#[test]
 fn resend_launchdarkly_flagsmith_growthbook_posthog_families_accept_documented_shapes_only() {
     let resend = b"re_12345678_abcdefghijkmnpqrstuvwxyz";
     assert_eq!(

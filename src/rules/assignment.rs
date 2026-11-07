@@ -91,7 +91,7 @@ pub(crate) struct FieldEvidence {
     pub generic: bool,
 }
 
-const GENERIC_FIELDS: [&[u8]; 30] = [
+const GENERIC_FIELDS: [&[u8]; 37] = [
     b"api_key",
     b"access_token",
     b"client_secret",
@@ -122,6 +122,13 @@ const GENERIC_FIELDS: [&[u8]; 30] = [
     b"honeycomb_api_key",
     b"logdna_api_key",
     b"zoom_oauth_client_secret",
+    b"bitbucket_api_token",
+    b"doppler_token",
+    b"uploadthing_token",
+    b"planetscale_token",
+    b"unleash_token",
+    b"jellyfish_api_token",
+    b"fastly_api_token",
 ];
 
 fn field(tail: &[u8], full_len: usize, suffix: &[u8]) -> bool {

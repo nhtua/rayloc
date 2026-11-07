@@ -4,6 +4,8 @@ version: "1"
 default_entropy_threshold: 4.5
 rules: []
 accepted:
+  - "zx74a"
+  - "x6mbn"
   - "tkfr9"
   - "a0bhe"
   - "hjtkr"

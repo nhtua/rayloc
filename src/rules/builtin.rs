@@ -1166,7 +1166,7 @@ const VOYAGE_PREFIXES: &[&[u8]] = &[b"al-", b"pa-"];
 const CARTESIA_PREFIXES: &[&[u8]] = &[b"sk_car_"];
 const REPLICATE_PREFIXES: &[&[u8]] = &[b"r8_"];
 const VERCEL_PREFIXES: &[&[u8]] = &[b"vcp_", b"vci_", b"vca_", b"vcr_", b"vck_"];
-const SUPABASE_PREFIXES: &[&[u8]] = &[b"sb_publishable_", b"sb_secret_"];
+const SUPABASE_PREFIXES: &[&[u8]] = &[b"sb_secret_"];
 const CLOUDFLARE_PREFIXES: &[&[u8]] = &[b"cfk_", b"cfut_", b"cfat_"];
 
 // Phase 1: Cloud & Infrastructure
