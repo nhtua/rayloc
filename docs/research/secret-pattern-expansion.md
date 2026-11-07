@@ -1,6 +1,6 @@
 # Secret-pattern expansion audit
 
-Date: 2026-11-06. Status: initial audit complete; implementation design awaiting approval.
+Date: 2026-11-06. Status: audit complete; Tasks 1–11 shipped on `task/expand-secret-patterns`; performance gate awaiting user decision.
 
 ## Objective and assumptions
 
@@ -29,7 +29,7 @@ variation, not isolated timing samples; no slowdown tolerance has been approved.
 - [x] Prepare a focused implementation design and baseline evidence for review.
 - [x] Verify all 74 platform entries/source links and the immutable baseline hash;
   scan this document with the baseline release binary: zero findings.
-- [ ] Obtain explicit design approval before changing detectors.
+- [x] Obtain explicit design approval; execute the approved 12-task plan task-by-task (TDD RED→GREEN).
 
 ## Evidence policy
 
@@ -38,7 +38,8 @@ prefixes. Use pinned established scanner rules only as secondary evidence for
 observed lengths and alphabets; scanner heuristics are not vendor guarantees.
 Do not copy working credentials or call credential-validation endpoints.
 
-Implementation status: no production or test code has been changed.
+Implementation status: Tasks 1–11 shipped (latest commit `9333e80`); per-platform results recorded in the
+"Final shipped status" section below. Task 12's performance gate is recorded but not yet approved.
 
 ## How to read the audit
 
@@ -312,4 +313,138 @@ the old binary cannot detect newly supported credential families.
 indicate degradation beyond run-to-run noise, present the affected workloads,
 ratios, uncertainty and suspected cause, and wait for confirmation before adding
 performance improvements to the plan. Existing harness tolerance thresholds do
-not override this user gate. No expanded-catalog performance result exists yet.
+not override this user gate. An expanded-catalog comparison is recorded below.
+
+## Final shipped status per platform (implementation complete, commit `9333e80`)
+
+Legend: **Covered** = structural detector shipped on this branch; **Corrected** =
+existing detector fixed; **Context-only** = detection relies on existing generic
+assignment/JOSE/URI policy (plus a named alias where noted); **Deferred** =
+no structural detector (insufficient evidence or outside the approved plan);
+**Public** = deliberately excluded from standalone secret rules.
+
+| Platform | Status | Shipped or reason |
+| --- | --- | --- |
+| GitHub | Existing unchanged | six prefix families retained; audit tightening out of plan scope |
+| GitLab | Covered + corrected | added `glft-`, `glagent-`, `glrt-`/`glrtr-`, `glptt-`, `gloas-`, `glimt-`, `glsoat-`; exact-length contract replaces 25-byte minima on `glpat-`/`gldt-`/`glffct-`; `glcbt-` keeps broad heuristic; `glwt-` workspace deferred (body evidence) |
+| CircleCI | Covered | `CCIPAT_`/`CCIPRJ_` + 22-byte base58 UUID + `_` + 40 hex; legacy bare 40-hex stays context-only |
+| Bitbucket | Context-only | `bitbucket_api_token` generic alias added; public OAuth client IDs stay non-secret |
+| Linear | Existing unchanged | `lin_api_` retained |
+| Jira / Atlassian | Covered | `AtlassianApiToken` (`ATATT3` family) |
+| AWS | Existing unchanged | `AKIA`/`ASIA` IDs plus context-bound secrets |
+| GCP | Existing unchanged | `AIza` family; service-account JSON needs key material |
+| Azure | Context-only | generic client-secret fields; no universal prefix |
+| DigitalOcean | Existing unchanged | `dop_v1_`/`doo_v1_`/`dor_v1_` already correct in Rayloc |
+| Vercel | Existing unchanged | five prefix families retained |
+| Netlify | Covered | `NetlifyAccessToken` (`nfp_` + 36 `[A-Za-z0-9_]`) |
+| Fly.io | Covered | `FlyioToken`: `fo1_` + 43 `[A-Za-z0-9_-]`, `fm1a_`/`fm1r_`/`fm2_` + 100–512 base64 |
+| Render | Deferred | prefix known, body contract never verified (outside plan) |
+| PlanetScale | Covered + corrected | `pscale_pw_` (replaces the wrong `pscale_password_`), `pscale_tkn_`, `pscale_oauth_`; `planetscale_token` alias |
+| Neon | Context-only | vendor prose gives no usable grammar |
+| Upstash | Context-only | REST endpoint URL is not a secret; no universal prefix |
+| Supabase | Corrected | `SUPABASE_PREFIXES` restricted to `sb_secret_`; public `sb_publishable_` removed from the standalone rule |
+| Pinecone | Covered | `PineconeApiKey` (`pcsk_` + 5–6 alnum + `_` + 63 alnum) |
+| Qdrant | Context-only | JOSE reused; no universal prefix |
+| MongoDB Atlas | Context-only | existing credential-URI rule; private-key lengths unverified |
+| OpenAI | Existing unchanged | broad `sk-` matcher retained; versioned body contracts out of plan |
+| Anthropic | Covered | `AnthropicAdminKey` (`sk-ant-admin01-`) dispatched before generic `sk-` |
+| Hugging Face | Existing unchanged | `hf_` retained; historical `api_org_` not promoted |
+| Cohere | Context-only | existing generic `api_key` suffix covers `COHERE_API_KEY`/`CO_API_KEY` |
+| Replicate | Existing unchanged | `r8_` retained |
+| Together AI | Context-only | supplied `together_` prefix never evidenced |
+| Algolia | Context-only | role/field context required; app IDs not secrets |
+| Meilisearch | Context-only | master keys user-chosen, no universal grammar |
+| Stripe | Existing unchanged | `sk_test_`/`sk_live_`/`rk_*` retained; shared-family wording preserved |
+| PayPal | Context-only | no reliable client-secret prefix |
+| Braintree | Context-only | OAuth access-token grammar not fully verified |
+| Lemon Squeezy | Context-only | JOSE branch covers structurally valid JWTs |
+| Paddle | Covered | `PaddleApiKey` exact 69-byte vendor grammar |
+| Plaid | Covered | `PlaidAccessToken` env prefixes + dashed-lowercase-hex UUID |
+| Auth0 | Context-only | client IDs public; no universal 64-char contract |
+| Okta | Context-only | existing narrow `00a` rule retained unchanged |
+| Clerk | Context-only | shares Stripe `sk_live_`/`sk_test_`; no duplicate attribution |
+| WorkOS | Context-only | `sk_` values not globally matched |
+| Firebase | Existing unchanged | GCP family; Firebase service keys public by design |
+| LaunchDarkly | Covered | `LaunchDarklyServerSdkToken` (`sdk-` + dashed UUID, plan-authoritative); mobile/client IDs not secret |
+| Flagsmith | Covered | `FlagsmithServerToken` (`ser.` + exactly 43 `[A-Za-z0-9_-]`) |
+| Unleash | Context-only | `unleash_token` alias; frontend tokens stay public |
+| GrowthBook | Covered | `GrowthBookSecretKey` (`secret_` + 16–64 `[A-Za-z0-9_-]`) |
+| PostHog | Covered | `PostHogPersonalToken` (`phx_` + 43–48 `[A-Za-z0-9_]`); `phc_` project tokens public |
+| Sentry | Covered | `SentryPersonalToken` (`sntryu_` + 64 lowercase hex); org base64 payload still context-only; reserved `sntrya_`/`sntryi_` stay unmatched |
+| Datadog | Context-only | existing generic Datadog fields; no free-standing 32/40-hex rule |
+| New Relic | Context-only | existing license fields; `NRAK-` shape deferred |
+| Grafana Cloud | Covered | `GrafanaServiceAccountToken` (`glsa_` + 32 alnum + `_` + 8 hex) |
+| Axiom | Covered | `AxiomToken` (`xaat-`/`xapt-` + dashed UUID; body plan-authoritative per ledger ruling) |
+| Sleuth | Context-only | `SLEUTH_API_KEY` via existing generic suffix |
+| Jellyfish | Context-only | `jellyfish_api_token` alias |
+| Twilio | Context-only | `AC`/`SK` SIDs remain identifiers; secret halves need context |
+| SendGrid | Existing unchanged | segment-alphabet gap noted in audit, not in approved plan |
+| Resend | Covered | `ResendApiKey` (`re_` + 8 base58 + `_` + 24 base58, alphabet excludes `0OI l`) |
+| OneSignal | Deferred | `os_v2_app_` body never established |
+| Pusher | Context-only | no unique secret prefix |
+| Novu | Context-only | generic `secret_key` suffix covers `NOVU_SECRET_KEY` |
+| Courier | Context-only | proposed `pk_`/`dk_` families unevidenced |
+| GitGuardian | Context-only | proposed `gg_api_` prefix invented, never vendor-confirmed |
+| TruffleHog | Covered | `TruffleHogEnterpriseSecret` (`thog-secret-` + 32 lowercase hex); `thog-key-` stays identifier |
+| Snyk | Context-only | existing `snyk_token` field; UUIDs not unique to Snyk |
+| SonarQube | Covered | `SonarQubeToken` (`squ_`/`sqp_`/`sqa_` + 40 hex), `SonarQubeCloudToken` (`sqco_` + 59 alnum); bare 40-hex historical stays context-only |
+| HashiCorp Vault | Deferred | audit-recommended `hvs.`/`hvb.`/`hvr.` not in approved plan; generic context only |
+| Doppler | Covered + context | `DopplerToken` dotted grammar (`dp.ct_`/`dp.pt_`/`dp.sa_`, `dp.scim_`, `dp.audit_`, `dp.st.<scope>.`); `doppler_token` alias |
+| Tailscale | Covered | `TailscaleApiToken`/`TailscaleAuthToken` two-component grammar; `tskey-client` public |
+| Cloudflare | Existing unchanged | `cfk_`/`cfut_`/`cfat_` retained; checksum claim not claimed |
+| Fastly | Context-only | `fastly_api_token` alias; bare 32-char scans would collide |
+| Zuplo | Deferred | `zp_` prefix never established |
+| Kong | Covered | `KongKonnectToken` (`kpat_`/`spat_` + 49 alnum); gateway key-auth stays context |
+| Cloudinary | Existing unchanged | credential-URI rule retained |
+| Uploadthing | Context-only | `uploadthing_token` alias |
+| APITemplate.io | Context-only | generic suffix covers field |
+| CraftMyPDF | Context-only | generic suffix covers field |
+
+Context aliases added to `GENERIC_FIELDS` (30→37): `bitbucket_api_token`,
+`doppler_token`, `uploadthing_token`, `planetscale_token`, `unleash_token`,
+`jellyfish_api_token`, `fastly_api_token` — only genuinely new names; the rest of
+the audit's field names already normalized through existing `api_key`/`access_token`/
+`secret_key`/`auth_token` suffix rules.
+
+Verification at `9333e80`: `cargo fmt` clean, clippy `-D warnings` clean, 471 unit
+tests plus integration suites pass; coverage gate (llvm-cov, production only):
+functions 100.00%, lines 97.03%, regions 98.13%.
+
+## Performance gate record (five paired samples, idle host)
+
+- Host: AMD Ryzen 9 9950X, Linux x86_64 (`uname -a`: Megalodon kernel
+  7.2.9-1-MANJARO), rustc 1.88.0.
+- Baseline: source `e4b72e481de0a7b3c7eebcc153bb2dbf3de3cbef`; immutable release
+  binary `/tmp/opencode/rayloc-expand-baseline-e4b72e4`, 3,126,080 bytes, SHA-256
+  `7cd7e528b0725d74d5b64daae02332f70d8a3c946ad82af14fe97bd9b31decbe`; bench log
+  `/tmp/opencode/rayloc-expand-baseline-bench.txt`.
+- Candidate: source `9333e806ff2f48c706000d74fd06ced6d3608901`; release binary
+  `target/release/rayloc`, 3,150,656 bytes (+24,576), SHA-256
+  `739ac17dbb5fa9524928e26b495567af12fb7627b83571c746914404443a8fd5`; bench logs
+  `/tmp/opencode/rayloc-expand-candidate-bench-run{1..5}.txt`. Measurements come
+  from the bench harness rebuilt at each commit (the release binary is recorded
+  as the shipped artifact); engine/scope figures are the same workloads as the
+  baseline run.
+
+Engine microbench (272,384 bytes, 40 samples, 1 worker, warm cache):
+
+| Metric | Baseline | Candidate (median of 5; run range) | Ratio |
+| --- | --- | --- | --- |
+| median ms | 7.915 | 10.023 (9.954–10.258) | +26.6% (+25.8%…+29.6%) |
+| p95 ms | 8.158 | 10.124–10.576 | — |
+| decimal MB/s | 34.41 | 27.18 (26.55–27.36) | −21.0% |
+
+Scope, 4,096 files × 16,418 bytes, 5 samples:
+
+| Workers | Baseline median/p95 (ms), MB/s | Candidate median (run range), MB/s | Ratio |
+| ---: | --- | --- | --- |
+| 1 | 2966.994 / 3383.312, 22.67 | 3559.767 (3556.9–3653.7), ~18.9 | +20.0% (+19.9%…+23.1%) |
+| 2 | 1542.410 / 1746.095, 43.60 | 1867.411 (1838.9–1875.8), ~36.5 | +21.1% (+19.2%…+21.6%) |
+| 8 | 506.273 / 554.140, 132.83 | 485.118 (481.6–558.6), ~139.6 | −4.2% (band −4.9%…+10.3%) |
+
+Verdict: degradation beyond run-to-run noise on the single-worker engine path and
+the 1–2 worker scope workloads; the 8-worker path stays within noise. The likely
+cause is the linear `match_at` prefix dispatch, now ~40 branches longer per
+candidate position; no Aho-Corasick/prefix-tree indexing or other engine change
+was made. Per the user gate, work stopped here: ratios and cause reported, and
+no performance work proceeds without explicit approval.
