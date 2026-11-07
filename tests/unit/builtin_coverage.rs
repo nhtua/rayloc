@@ -67,6 +67,8 @@ const ALL_RULE_IDS: &[RuleId] = &[
     RuleId::GitlabTriggerToken,
     RuleId::CircleCiPersonalToken,
     RuleId::CircleCiProjectToken,
+    RuleId::AtlassianApiToken,
+    RuleId::NetlifyAccessToken,
     RuleId::Auth0ManagementToken,
     RuleId::OktaAccessToken,
     RuleId::NotionApiKey,

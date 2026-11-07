@@ -514,6 +514,20 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         b"CCIPRJ_ULUhR6rJLxYbyzyrP19iMZ_8FB1E3510325F7F09361DE22B9420346C53CA2CB".to_vec(),
     ));
     fixtures.push((
+        RuleId::AtlassianApiToken,
+        [
+            b"ATATT3".as_slice(),
+            std::iter::repeat_n(b'A', 186)
+                .collect::<Vec<u8>>()
+                .as_slice(),
+        ]
+        .concat(),
+    ));
+    fixtures.push((
+        RuleId::NetlifyAccessToken,
+        b"nfp_SyntheticNetlifyAccessToken123456789".to_vec(),
+    ));
+    fixtures.push((
         RuleId::Auth0ManagementToken,
         b"ua2_SyntheticAuth0ManagementToken123456789ABCDEF".to_vec(),
     ));
@@ -855,6 +869,34 @@ fn expanded_cicd_structural_families_respect_complete_spans() {
     );
 }
 
+fn prefixed(prefix: &[u8], fill: u8, count: usize) -> Vec<u8> {
+    let mut value = prefix.to_vec();
+    value.extend(std::iter::repeat_n(fill, count));
+    value
+}
+
+#[test]
+fn atlassian_netlify_structural_families_respect_complete_spans() {
+    let atlassian = prefixed(b"ATATT3", b'A', 186);
+    let netlify = prefixed(b"nfp_", b'a', 36);
+    assert_eq!(
+        matches(&atlassian),
+        vec![(RuleId::AtlassianApiToken, 0..atlassian.len())]
+    );
+    assert_eq!(
+        matches(&netlify),
+        vec![(RuleId::NetlifyAccessToken, 0..netlify.len())]
+    );
+    for fill in [b'=', b'-', b'9', b'Z'] {
+        let token = prefixed(b"ATATT3", fill, 186);
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::AtlassianApiToken, 0..token.len())],
+            "{fill}",
+        );
+    }
+}
+
 #[test]
 fn expanded_cicd_families_reject_near_misses_and_public_counterparts() {
     let short = b"CCIPAT_ULUhR6rJLxYbyzyrP19iMZ_8fb1e3510325f7f09361de22b9420346c53ca2c";
@@ -916,6 +958,75 @@ fn gitlab_new_structural_families_use_documented_alphabets_and_lengths() {
                 "{rule:?} trailing identifier",
             );
         }
+    }
+}
+
+#[test]
+fn atlassian_netlify_families_reject_near_misses_and_public_counterparts() {
+    let short = prefixed(b"ATATT3", b'A', 185);
+    let long = prefixed(b"ATATT3", b'A', 187);
+    let short_netlify = prefixed(b"nfp_", b'a', 35);
+    let long_netlify = prefixed(b"nfp_", b'a', 37);
+    let dotted_netlify = [prefixed(b"nfp_", b'a', 35).as_slice(), b"."].concat();
+    assert!(matches(&short).is_empty(), "atlassian short");
+    assert!(matches(&long).is_empty(), "atlassian long");
+    assert!(matches(&short_netlify).is_empty(), "netlify short");
+    assert!(matches(&long_netlify).is_empty(), "netlify long");
+    assert!(
+        matches(&dotted_netlify).is_empty(),
+        "netlify trailing identifier"
+    );
+    assert!(
+        matches(b"ATATT3".as_slice()).is_empty(),
+        "prefix alone is not a token",
+    );
+    assert!(
+        matches(b"nfp_public_identifier").is_empty(),
+        "public counterpart"
+    );
+}
+
+#[test]
+fn atlassian_netlify_families_respect_disabled_rules_and_stream_splits() {
+    let atlassian = prefixed(b"ATATT3", b'A', 186);
+    let netlify = prefixed(b"nfp_", b'0', 36);
+    let tokens: [(&[u8], RuleId); 2] = [
+        (&atlassian, RuleId::AtlassianApiToken),
+        (&netlify, RuleId::NetlifyAccessToken),
+    ];
+    for (token, rule) in tokens {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "enabled {rule:?}",
+        );
+        assert_ne!(
+            match_at(token, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "disabled {rule:?}",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    for (token, _) in tokens {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
     }
 }
 

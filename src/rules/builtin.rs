@@ -232,6 +232,8 @@ pub enum RuleId {
     GitlabTriggerToken,
     CircleCiPersonalToken,
     CircleCiProjectToken,
+    AtlassianApiToken,
+    NetlifyAccessToken,
     Auth0ManagementToken,
     OktaAccessToken,
     NotionApiKey,
@@ -723,6 +725,20 @@ impl RuleId {
                 Confidence::High,
                 "https://circleci.com/changelog/new-format-for-api-access-tokens/",
             ),
+            Self::AtlassianApiToken => (
+                "atlassian-api-token",
+                "Atlassian modern API token",
+                Severity::High,
+                Confidence::High,
+                "https://developer.atlassian.com/cloud/jira/platform/basic-auth-for-rest-apis/",
+            ),
+            Self::NetlifyAccessToken => (
+                "netlify-access-token",
+                "Netlify access token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.netlify.com/configure-sites/manage-deploy/manage-site-access-tokens/",
+            ),
             Self::Auth0ManagementToken => (
                 "auth0-management-token",
                 "Auth0 management API token",
@@ -1009,6 +1025,8 @@ const GITLAB_OAUTH_APP_SECRET_PREFIXES: &[&[u8]] = &[b"gloas-"];
 const GITLAB_TRIGGER_TOKEN_PREFIXES: &[&[u8]] = &[b"glptt-"];
 const CIRCLECI_PERSONAL_TOKEN_PREFIXES: &[&[u8]] = &[b"CCIPAT_"];
 const CIRCLECI_PROJECT_TOKEN_PREFIXES: &[&[u8]] = &[b"CCIPRJ_"];
+const ATLASSIAN_API_TOKEN_PREFIXES: &[&[u8]] = &[b"ATATT3"];
+const NETLIFY_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"nfp_"];
 const AUTH0_MANAGEMENT_TOKEN_PREFIXES: &[&[u8]] = &[b"ua2_"];
 const OKTA_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"00a"];
 const NOTION_API_KEY_PREFIXES: &[&[u8]] = &[b"nt_"];
@@ -1402,6 +1420,46 @@ fn gitlab_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Opti
     Some(end)
 }
 
+/// Atlassian's modern API token format: `ATATT3` plus 186 `[A-Za-z0-9_=-]` bytes.
+/// A longer run is another identifier; a shorter run is a near miss.
+fn atlassian_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'=' | b'-'))
+    {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-' || next == b'=')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Netlify access token: `nfp_` plus exactly 36 `[A-Za-z0-9_]` bytes.
+fn netlify_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_') {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
 /// GitLab trigger tokens (`glptt-`) are exactly 40 lowercase hex bytes.
 fn gitlab_trigger_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
     let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
@@ -1737,6 +1795,16 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
     if let Some((rule, end)) = circleci_match(bytes) {
         if !disabled.contains(&rule) {
             return Ok(Some((rule, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::AtlassianApiToken) {
+        if let Some(end) = atlassian_token_match(bytes, ATLASSIAN_API_TOKEN_PREFIXES, 186) {
+            return Ok(Some((RuleId::AtlassianApiToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::NetlifyAccessToken) {
+        if let Some(end) = netlify_token_match(bytes, NETLIFY_ACCESS_TOKEN_PREFIXES, 36) {
+            return Ok(Some((RuleId::NetlifyAccessToken, end)));
         }
     }
     // Phase 3: URI-based rules
