@@ -476,6 +476,22 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     fixtures.push((RuleId::SonarQubeCloudToken, prefixed(b"sqco_", b'a', 59)));
     fixtures.push((RuleId::KongKonnectToken, prefixed(b"kpat_", b'9', 49)));
     fixtures.push((
+        RuleId::TruffleHogEnterpriseSecret,
+        b"thog-secret-0123456789abcdef0123456789abcdef".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::DopplerToken,
+        b"dp.st.desktop.0123456789abcdefghijABCDEFGHIJ0123456789".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::TailscaleApiToken,
+        b"tskey-api-abcDEF1CNTRL-091234567890ABCDEF".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::TailscaleAuthToken,
+        b"tskey-auth-xyzGHI2CNTRL-1234567890abcdef".to_vec(),
+    ));
+    fixtures.push((
         RuleId::GitlabCicdJobToken,
         b"glcbt-A_SyntheticGitlabCicd123456".to_vec(),
     ));
@@ -1038,6 +1054,137 @@ fn sentry_grafana_axiom_families_respect_disabled_rules_and_stream_splits() {
         (&personal, RuleId::SentryPersonalToken),
         (&service, RuleId::GrafanaServiceAccountToken),
         (&axiom, RuleId::AxiomToken),
+    ];
+    for (token, rule) in tokens {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "enabled {rule:?}",
+        );
+        assert_ne!(
+            match_at(token, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "disabled {rule:?}",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    for (token, _) in tokens {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
+    }
+}
+
+#[test]
+fn trufflehog_doppler_tailscale_families_accept_documented_shapes_only() {
+    let thog = b"thog-secret-0123456789abcdef0123456789abcdef".to_vec();
+    assert_eq!(
+        matches(&thog),
+        vec![(RuleId::TruffleHogEnterpriseSecret, 0..thog.len())]
+    );
+    let secret40 = b"0123456789abcdefghijABCDEFGHIJ0123456789";
+    let secret41 = b"0123456789abcdefghijABCDEFGHIJ0123456789a";
+    let secret44 = b"0123456789abcdefghijABCDEFGHIJ0123456789abcd";
+    for suffix in [b"ct_".as_slice(), b"pt_".as_slice(), b"sa_".as_slice()] {
+        let token = [b"dp.".as_slice(), suffix, secret40].concat();
+        assert_eq!(
+            matches(&token),
+            vec![(RuleId::DopplerToken, 0..token.len())],
+            "{suffix:?}"
+        );
+    }
+    let scim = [b"dp.scim_".as_slice(), secret41].concat();
+    assert_eq!(matches(&scim), vec![(RuleId::DopplerToken, 0..scim.len())]);
+    let audit = [b"dp.audit_".as_slice(), secret44].concat();
+    assert_eq!(
+        matches(&audit),
+        vec![(RuleId::DopplerToken, 0..audit.len())]
+    );
+    let direct = [b"dp.st.".as_slice(), secret40].concat();
+    assert_eq!(
+        matches(&direct),
+        vec![(RuleId::DopplerToken, 0..direct.len())]
+    );
+    let scoped = [b"dp.st.desktop.".as_slice(), secret44].concat();
+    assert_eq!(
+        matches(&scoped),
+        vec![(RuleId::DopplerToken, 0..scoped.len())]
+    );
+    for (prefix, rule) in [
+        (b"tskey-api-".as_slice(), RuleId::TailscaleApiToken),
+        (b"tskey-auth-".as_slice(), RuleId::TailscaleAuthToken),
+    ] {
+        let token = [prefix, b"abcDEF1CNTRL-091234567890ABCDEF"].concat();
+        assert_eq!(matches(&token), vec![(rule, 0..token.len())], "{prefix:?}");
+    }
+}
+
+#[test]
+fn trufflehog_doppler_tailscale_families_reject_near_misses_and_public_values() {
+    let short = [b"thog-secret-".as_slice(), b"f".repeat(31).as_slice()].concat();
+    let long = [b"thog-secret-".as_slice(), b"f".repeat(33).as_slice()].concat();
+    let upper = [b"thog-secret-".as_slice(), b"F".repeat(32).as_slice()].concat();
+    assert!(matches(&short).is_empty(), "thog short");
+    assert!(matches(&long).is_empty(), "thog long");
+    assert!(matches(&upper).is_empty(), "thog uppercase");
+    let short_token = [b"dp.ct_".as_slice(), b"9".repeat(39).as_slice()].concat();
+    assert!(matches(&short_token).is_empty(), "doppler short secret");
+    let long_token = [b"dp.ct_".as_slice(), b"9".repeat(45).as_slice()].concat();
+    assert!(matches(&long_token).is_empty(), "doppler long secret");
+    let unknown_type = [b"dp.dt_".as_slice(), b"a".repeat(40).as_slice()].concat();
+    assert!(matches(&unknown_type).is_empty(), "doppler unknown type");
+    let tiny_scope = [b"dp.st.a.".as_slice(), b"a".repeat(40).as_slice()].concat();
+    assert!(matches(&tiny_scope).is_empty(), "doppler one-byte scope");
+    let fat_scope = [
+        b"dp.st.".as_slice(),
+        b"a".repeat(36).as_slice(),
+        b".".as_slice(),
+        b"a".repeat(40).as_slice(),
+    ]
+    .concat();
+    assert!(matches(&fat_scope).is_empty(), "doppler over-long scope");
+    let bad_scope = [b"dp.st.Desktop.".as_slice(), b"a".repeat(40).as_slice()].concat();
+    assert!(matches(&bad_scope).is_empty(), "doppler uppercase scope");
+    for bad in [
+        b"tskey-api--abcDEF".as_slice(),
+        b"tskey-api-abcDEF-".as_slice(),
+        b"tskey-api-abc-DEF-GHI".as_slice(),
+    ] {
+        assert!(matches(bad).is_empty(), "tailscale {bad:?}");
+    }
+    assert!(
+        matches(b"tskey-client-abcDEF1CNTRL-091234567890ABCDEF").is_empty(),
+        "public client identifier",
+    );
+}
+
+#[test]
+fn trufflehog_doppler_tailscale_families_respect_disabled_rules_and_stream_splits() {
+    let thog = b"thog-secret-abcdef0123456789abcdef0123456789".to_vec();
+    let doppler = [b"dp.st.desktop.".as_slice(), b"9".repeat(44).as_slice()].concat();
+    let api = b"tskey-api-kSyntheticApiToken-CNTRL_01".to_vec();
+    let auth = b"tskey-auth-kSyntheticAuthToken-CNTRL01".to_vec();
+    let tokens: [(&[u8], RuleId); 4] = [
+        (&thog, RuleId::TruffleHogEnterpriseSecret),
+        (&doppler, RuleId::DopplerToken),
+        (&api, RuleId::TailscaleApiToken),
+        (&auth, RuleId::TailscaleAuthToken),
     ];
     for (token, rule) in tokens {
         assert_eq!(

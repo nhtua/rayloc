@@ -224,6 +224,10 @@ pub enum RuleId {
     SonarQubeToken,
     SonarQubeCloudToken,
     KongKonnectToken,
+    TruffleHogEnterpriseSecret,
+    DopplerToken,
+    TailscaleApiToken,
+    TailscaleAuthToken,
     GitlabCicdJobToken,
     GitlabDeployToken,
     GitlabFeatureFlagToken,
@@ -682,6 +686,34 @@ impl RuleId {
                 Confidence::High,
                 "https://developer.konghq.com/konnect-api/",
             ),
+            Self::TruffleHogEnterpriseSecret => (
+                "trufflehog-enterprise-secret",
+                "TruffleHog Enterprise integration secret",
+                Severity::High,
+                Confidence::High,
+                "https://trufflesecurity.com/docs",
+            ),
+            Self::DopplerToken => (
+                "doppler-token",
+                "Doppler service, personal, CLI, or scope token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.doppler.com/docs/service-tokens",
+            ),
+            Self::TailscaleApiToken => (
+                "tailscale-api-token",
+                "Tailscale API access token",
+                Severity::High,
+                Confidence::High,
+                "https://tailscale.com/docs/reference/key-prefixes",
+            ),
+            Self::TailscaleAuthToken => (
+                "tailscale-auth-token",
+                "Tailscale pre-authentication key",
+                Severity::High,
+                Confidence::High,
+                "https://tailscale.com/docs/reference/key-prefixes",
+            ),
             Self::GitlabCicdJobToken => (
                 "gitlab-cicd-job-token",
                 "GitLab CI/CD job token",
@@ -1121,6 +1153,9 @@ const AXIOM_TOKEN_PREFIXES: &[&[u8]] = &[b"xaat-", b"xapt-"];
 const SONARQUBE_TOKEN_PREFIXES: &[&[u8]] = &[b"squ_", b"sqp_", b"sqa_"];
 const SONARQUBE_CLOUD_TOKEN_PREFIXES: &[&[u8]] = &[b"sqco_"];
 const KONG_KONNECT_TOKEN_PREFIXES: &[&[u8]] = &[b"kpat_", b"spat_"];
+const TRUFFLEHOG_ENTERPRISE_SECRET_PREFIXES: &[&[u8]] = &[b"thog-secret-"];
+const TAILSCALE_API_TOKEN_PREFIXES: &[&[u8]] = &[b"tskey-api-"];
+const TAILSCALE_AUTH_TOKEN_PREFIXES: &[&[u8]] = &[b"tskey-auth-"];
 const GITLAB_CICD_JOB_TOKEN_PREFIXES: &[&[u8]] = &[b"glcbt-"];
 const GITLAB_DEPLOY_TOKEN_PREFIXES: &[&[u8]] = &[b"gldt-"];
 const GITLAB_FEATURE_FLAG_TOKEN_PREFIXES: &[&[u8]] = &[b"glffct-"];
@@ -1875,6 +1910,87 @@ fn alnum_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Optio
     Some(end)
 }
 
+/// Doppler tokens are `dp.` plus a type segment and a 40-44 byte alphanumeric
+/// secret. `st` may carry an optional dotted lowercase config segment; the other
+/// segments take `_`.
+fn doppler_token_match(bytes: &[u8]) -> Option<usize> {
+    if !bytes.starts_with(b"dp.") {
+        return None;
+    }
+    let secret_end = |start: usize| -> Option<usize> {
+        let mut end = start;
+        while end - start < 44 && bytes.get(end).is_some_and(|&b| b.is_ascii_alphanumeric()) {
+            end += 1;
+        }
+        if end - start < 40 {
+            return None;
+        }
+        if bytes
+            .get(end)
+            .is_some_and(|&next| is_word(next) || next == b'-')
+        {
+            return None;
+        }
+        Some(end)
+    };
+    if bytes.starts_with(b"dp.ct_") || bytes.starts_with(b"dp.pt_") || bytes.starts_with(b"dp.sa_")
+    {
+        return secret_end(6);
+    }
+    if bytes.starts_with(b"dp.scim_") {
+        return secret_end(8);
+    }
+    if bytes.starts_with(b"dp.audit_") {
+        return secret_end(9);
+    }
+    if !bytes.starts_with(b"dp.st.") {
+        return None;
+    }
+    let is_scope = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'-');
+    let mut scope_end = 6;
+    while scope_end - 6 < 35 && bytes.get(scope_end).is_some_and(|&b| is_scope(b)) {
+        scope_end += 1;
+    }
+    if scope_end - 6 >= 2 && bytes.get(scope_end) == Some(&b'.') {
+        return secret_end(scope_end + 1);
+    }
+    secret_end(6)
+}
+
+/// Tailscale credential families carry a type prefix, a nonempty alphanumeric
+/// or `_` component, `-`, and a second nonempty component. Public `tskey-client`
+/// identifiers stay out of these rules.
+fn tailscale_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let is_part = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let start = prefix.len();
+    if !bytes.get(start).is_some_and(|&b| is_part(b)) {
+        return None;
+    }
+    let mut end = start;
+    while bytes.get(end).is_some_and(|&b| is_part(b)) {
+        end += 1;
+    }
+    if bytes.get(end) != Some(&b'-') {
+        return None;
+    }
+    let second = end + 1;
+    if !bytes.get(second).is_some_and(|&b| is_part(b)) {
+        return None;
+    }
+    end = second;
+    while bytes.get(end).is_some_and(|&b| is_part(b)) {
+        end += 1;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
 /// CircleCI announced format: prefix, 22-byte base58 encoded UUID, `_`, 40 hex.
 /// Legacy 40-hex-only values require context and stay out of this rule.
 fn circleci_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
@@ -2239,6 +2355,26 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
     if !disabled.contains(&RuleId::KongKonnectToken) {
         if let Some(end) = alnum_token_match(bytes, KONG_KONNECT_TOKEN_PREFIXES, 49) {
             return Ok(Some((RuleId::KongKonnectToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::TruffleHogEnterpriseSecret) {
+        if let Some(end) = lower_hex_token_match(bytes, TRUFFLEHOG_ENTERPRISE_SECRET_PREFIXES, 32) {
+            return Ok(Some((RuleId::TruffleHogEnterpriseSecret, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::DopplerToken) {
+        if let Some(end) = doppler_token_match(bytes) {
+            return Ok(Some((RuleId::DopplerToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::TailscaleApiToken) {
+        if let Some(end) = tailscale_token_match(bytes, TAILSCALE_API_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::TailscaleApiToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::TailscaleAuthToken) {
+        if let Some(end) = tailscale_token_match(bytes, TAILSCALE_AUTH_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::TailscaleAuthToken, end)));
         }
     }
     for (rule, prefixes) in [
