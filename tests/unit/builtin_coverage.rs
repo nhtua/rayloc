@@ -92,6 +92,8 @@ const ALL_RULE_IDS: &[RuleId] = &[
     RuleId::RazorpayKey,
     RuleId::FlutterwaveKey,
     RuleId::PlanetscalePassword,
+    RuleId::PlanetscaleToken,
+    RuleId::PlanetscaleOauthToken,
     RuleId::CloudinaryUrl,
     RuleId::MongodbUri,
     RuleId::PostgresUri,

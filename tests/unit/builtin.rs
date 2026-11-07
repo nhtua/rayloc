@@ -548,6 +548,14 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
         .concat(),
     ));
     fixtures.push((
+        RuleId::PlanetscaleToken,
+        b"pscale_tkn_SyntheticPlanetscaleServiceToken12".to_vec(),
+    ));
+    fixtures.push((
+        RuleId::PlanetscaleOauthToken,
+        b"pscale_oauth_SyntheticPlanetscaleOauthToken123".to_vec(),
+    ));
+    fixtures.push((
         RuleId::Auth0ManagementToken,
         b"ua2_SyntheticAuth0ManagementToken123456789ABCDEF".to_vec(),
     ));
@@ -634,7 +642,7 @@ fn all_builtin_families_have_complete_spans_and_reviewed_metadata() {
     ));
     fixtures.push((
         RuleId::PlanetscalePassword,
-        b"pscale_password_SyntheticPlanetscalePassword1234567890abcdef".to_vec(),
+        b"pscale_pw_SyntheticPlanetscalePassword12345678".to_vec(),
     ));
     fixtures.push((
         RuleId::CloudinaryUrl,
@@ -893,6 +901,104 @@ fn prefixed(prefix: &[u8], fill: u8, count: usize) -> Vec<u8> {
     let mut value = prefix.to_vec();
     value.extend(std::iter::repeat_n(fill, count));
     value
+}
+
+#[test]
+fn planetscale_families_use_current_prefixes_and_bounded_bodies() {
+    let cases: [(&[u8], RuleId); 3] = [
+        (b"pscale_pw_", RuleId::PlanetscalePassword),
+        (b"pscale_tkn_", RuleId::PlanetscaleToken),
+        (b"pscale_oauth_", RuleId::PlanetscaleOauthToken),
+    ];
+    for (prefix, rule) in cases {
+        for fill in [b'a', b'Z', b'0', b'_', b'.', b'=', b'-'] {
+            for count in [32, 64] {
+                let token = prefixed(prefix, fill, count);
+                assert_eq!(
+                    matches(&token),
+                    vec![(rule, 0..token.len())],
+                    "{rule:?} {fill} {count}",
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn planetscale_families_reject_near_misses_and_legacy_prefix() {
+    let cases: [(&[u8], RuleId); 3] = [
+        (b"pscale_pw_", RuleId::PlanetscalePassword),
+        (b"pscale_tkn_", RuleId::PlanetscaleToken),
+        (b"pscale_oauth_", RuleId::PlanetscaleOauthToken),
+    ];
+    for (prefix, rule) in cases {
+        assert!(
+            matches(&prefixed(prefix, b'a', 31)).is_empty(),
+            "{rule:?} short"
+        );
+        assert!(
+            matches(&prefixed(prefix, b'a', 65)).is_empty(),
+            "{rule:?} long"
+        );
+        assert!(
+            matches(&[prefixed(prefix, b'a', 64).as_slice(), b"a"].concat()).is_empty(),
+            "{rule:?} trailing identifier",
+        );
+    }
+    assert!(
+        matches(&[b"pscale_password_".as_slice(), b"a".repeat(40).as_slice()].concat()).is_empty(),
+        "legacy standalone prefix",
+    );
+    assert!(
+        matches(b"pscale_pw_public_identifier").is_empty(),
+        "public counterpart"
+    );
+}
+
+#[test]
+fn planetscale_families_respect_disabled_rules_and_stream_splits() {
+    let first = prefixed(b"pscale_pw_", b'a', 32);
+    let second = prefixed(b"pscale_tkn_", b'q', 64);
+    let third = prefixed(b"pscale_oauth_", b'9', 40);
+    let examples: [&[u8]; 3] = [&first, &second, &third];
+    for (token, rule) in [
+        (&first, RuleId::PlanetscalePassword),
+        (&second, RuleId::PlanetscaleToken),
+        (&third, RuleId::PlanetscaleOauthToken),
+    ] {
+        assert_eq!(
+            match_at(token, &[]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "enabled {rule:?}",
+        );
+        assert_ne!(
+            match_at(token, &[rule]).unwrap().map(|(id, _)| id),
+            Some(rule),
+            "disabled {rule:?}",
+        );
+    }
+    let registry = &crate::rules::BUILTINS;
+    for token in examples {
+        let expected = complete_provider_matches(token, registry).unwrap();
+        for split in 0..=token.len() {
+            let mut state = ProviderState::new();
+            let mut actual = Vec::new();
+            for fragment in [&token[..split], &token[split..]] {
+                state
+                    .push(fragment, registry, |candidate| {
+                        actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                    })
+                    .unwrap();
+            }
+            state
+                .finish(registry, |candidate| {
+                    actual.push((candidate.rule, candidate.span, candidate.value.to_vec()));
+                })
+                .unwrap();
+            assert_eq!(actual, expected, "split {split} in {token:?}");
+        }
+        assert_eq!(streamed(token, 1, registry).unwrap(), expected);
+    }
 }
 
 #[test]

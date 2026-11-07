@@ -257,6 +257,8 @@ pub enum RuleId {
     RazorpayKey,
     FlutterwaveKey,
     PlanetscalePassword,
+    PlanetscaleToken,
+    PlanetscaleOauthToken,
     CloudinaryUrl,
     // Phase 3: URI-based rules
     MongodbUri,
@@ -897,7 +899,21 @@ impl RuleId {
             ),
             Self::PlanetscalePassword => (
                 "planetscale-password",
-                "PlanetScale password",
+                "PlanetScale database password",
+                Severity::High,
+                Confidence::High,
+                "https://planetscale.com/docs/reference/api-overview",
+            ),
+            Self::PlanetscaleToken => (
+                "planetscale-token",
+                "PlanetScale service token",
+                Severity::High,
+                Confidence::High,
+                "https://planetscale.com/docs/reference/api-overview",
+            ),
+            Self::PlanetscaleOauthToken => (
+                "planetscale-oauth-token",
+                "PlanetScale OAuth token",
                 Severity::High,
                 Confidence::High,
                 "https://planetscale.com/docs/reference/api-overview",
@@ -1048,7 +1064,9 @@ const SHOPIFY_CUSTOM_TOKEN_PREFIXES: &[&[u8]] = &[b"shpcc_"];
 const SHOPIFY_SHARED_SECRET_PREFIXES: &[&[u8]] = &[b"shpss_"];
 const SHOPIFY_APP_PASSWORD_PREFIXES: &[&[u8]] = &[b"shppa_"];
 const STRIPE_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"sk_prod_", b"rk_prod_"];
-const PLANETSCALE_PASSWORD_PREFIXES: &[&[u8]] = &[b"pscale_password_"];
+const PLANETSCALE_PASSWORD_PREFIXES: &[&[u8]] = &[b"pscale_pw_"];
+const PLANETSCALE_TOKEN_PREFIXES: &[&[u8]] = &[b"pscale_tkn_"];
+const PLANETSCALE_OAUTH_TOKEN_PREFIXES: &[&[u8]] = &[b"pscale_oauth_"];
 // Phase 1: AI / ML Providers
 const MISTRAL_KEY_PREFIXES: &[&[u8]] = &[b"mv4-"];
 const CEREBRAS_KEY_PREFIXES: &[&[u8]] = &[b"csk_"];
@@ -1470,6 +1488,25 @@ fn netlify_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Opt
     Some(end)
 }
 
+/// PlanetScale publishes three credential prefixes with 32-64 byte bodies over
+/// `[A-Za-z0-9_.=-]`; the older `pscale_password_` spelling is not current.
+fn planetscale_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let is_body = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'=' | b'-');
+    let mut end = start;
+    while end - start < 64 && bytes.get(end).is_some_and(|&b| is_body(b)) {
+        end += 1;
+    }
+    if end - start < 32 {
+        return None;
+    }
+    if bytes.get(end).is_some_and(|&b| is_body(b)) {
+        return None;
+    }
+    Some(end)
+}
+
 /// Fly.io API tokens are `fo1_` plus exactly 43 `[A-Za-z0-9_-]` bytes.
 fn flyio_api_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
     let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
@@ -1787,11 +1824,6 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
             32,
         ),
         (RuleId::StripeAccessToken, STRIPE_ACCESS_TOKEN_PREFIXES, 32),
-        (
-            RuleId::PlanetscalePassword,
-            PLANETSCALE_PASSWORD_PREFIXES,
-            40,
-        ),
         // AI / ML Providers
         (RuleId::MistralKey, MISTRAL_KEY_PREFIXES, 20),
         (RuleId::CerebrasKey, CEREBRAS_KEY_PREFIXES, 20),
@@ -1874,6 +1906,21 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
         if let Some(end) = flyio_management_token_match(bytes, FLYIO_MANAGEMENT_TOKEN_PREFIXES) {
             return Ok(Some((RuleId::FlyioToken, end)));
+        }
+    }
+    for (rule, prefixes) in [
+        (RuleId::PlanetscalePassword, PLANETSCALE_PASSWORD_PREFIXES),
+        (RuleId::PlanetscaleToken, PLANETSCALE_TOKEN_PREFIXES),
+        (
+            RuleId::PlanetscaleOauthToken,
+            PLANETSCALE_OAUTH_TOKEN_PREFIXES,
+        ),
+    ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
+        if let Some(end) = planetscale_token_match(bytes, prefixes) {
+            return Ok(Some((rule, end)));
         }
     }
     // Phase 3: URI-based rules
