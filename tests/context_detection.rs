@@ -69,6 +69,33 @@ fn contexts_support_short_random_hex_headers_json_and_escaped_quotes() {
 }
 
 #[test]
+fn vendor_context_aliases_emit_only_generic_context_secrets() {
+    for line in [
+        b"bitbucket_api_token = \"kq7Zx9B4cV1nMz8K3pQw6RtYd\"".as_slice(),
+        b"uploadthing_token: \"T7v2n9B4x6M1z8K3qWp5RtY\"".as_slice(),
+        b"unleash_token = \"V2x7Kp9Qw3Rt8Ym4Ld6Za1N\"".as_slice(),
+        b"fastly_api_token=\"aU7tO5mT3kN9qW2eR5tY8uI0oP4sD6fG\"".as_slice(),
+        b"jellyfish_api_token = \"J3k9mQw2ErT8YUiO6pAsDfGh7Zx\"".as_slice(),
+    ] {
+        assert!(
+            rules(line).iter().any(|(id, _)| *id == "context-secret"),
+            "{line:?}",
+        );
+    }
+    for line in [
+        b"bitbucket_api_token".as_slice(),
+        b"doppler",
+        b"unleash_token",
+        b"sb_publishable_SyntheticPublicValue123456789",
+    ] {
+        assert!(rules(line).is_empty(), "{line:?}");
+    }
+    let supabase = rules(b"sb_secret_xxxxxxxxxxxxxxxxxxxxxx1234");
+    assert_eq!(supabase.len(), 1);
+    assert_eq!(supabase[0].0, "supabase-key");
+}
+
+#[test]
 fn file_scanning_uses_grammar_without_trusting_code_paths() {
     let directory = support::TempDir::new();
     let registry = Registry::compile(Config::default()).unwrap();

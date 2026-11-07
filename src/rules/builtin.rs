@@ -218,10 +218,40 @@ pub enum RuleId {
     TwilioAccountSid,
     TwilioApiKey,
     SentryOrgToken,
+    SentryPersonalToken,
+    GrafanaServiceAccountToken,
+    AxiomToken,
+    SonarQubeToken,
+    SonarQubeCloudToken,
+    KongKonnectToken,
+    TruffleHogEnterpriseSecret,
+    DopplerToken,
+    TailscaleApiToken,
+    TailscaleAuthToken,
+    ResendApiKey,
+    LaunchDarklyServerSdkToken,
+    FlagsmithServerToken,
+    GrowthBookSecretKey,
+    PostHogPersonalToken,
     GitlabCicdJobToken,
     GitlabDeployToken,
     GitlabFeatureFlagToken,
     GitlabPersonalAccessToken,
+    GitlabRunnerToken,
+    GitlabRunnerRegistrationToken,
+    GitlabFeedToken,
+    GitlabIncomingMailToken,
+    GitlabScimToken,
+    GitlabAgentToken,
+    GitlabOauthAppSecret,
+    GitlabTriggerToken,
+    CircleCiPersonalToken,
+    CircleCiProjectToken,
+    AtlassianApiToken,
+    NetlifyAccessToken,
+    FlyioToken,
+    PineconeApiKey,
+    AnthropicAdminKey,
     Auth0ManagementToken,
     OktaAccessToken,
     NotionApiKey,
@@ -244,6 +274,10 @@ pub enum RuleId {
     RazorpayKey,
     FlutterwaveKey,
     PlanetscalePassword,
+    PlanetscaleToken,
+    PlanetscaleOauthToken,
+    PaddleApiKey,
+    PlaidAccessToken,
     CloudinaryUrl,
     // Phase 3: URI-based rules
     MongodbUri,
@@ -615,6 +649,111 @@ impl RuleId {
                 Confidence::High,
                 "https://docs.sentry.io/meta/sso-and-orgs.html",
             ),
+            Self::SentryPersonalToken => (
+                "sentry-personal-token",
+                "Sentry personal API token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.sentry.io/security-legal-pii/security/token-formats/",
+            ),
+            Self::GrafanaServiceAccountToken => (
+                "grafana-service-account-token",
+                "Grafana service account token",
+                Severity::High,
+                Confidence::High,
+                "https://grafana.com/docs/grafana/latest/administration/service-accounts/",
+            ),
+            Self::AxiomToken => (
+                "axiom-token",
+                "Axiom API or personal token",
+                Severity::High,
+                Confidence::High,
+                "https://axiom.co/docs/reference/tokens",
+            ),
+            Self::SonarQubeToken => (
+                "sonarqube-token",
+                "SonarQube access token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.sonarsource.com/sonarqube-server/user-guide/managing-tokens",
+            ),
+            Self::SonarQubeCloudToken => (
+                "sonarqube-cloud-token",
+                "SonarQube Cloud access token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.sonarsource.com/sonarqube-server/user-guide/managing-tokens",
+            ),
+            Self::KongKonnectToken => (
+                "kong-konnect-token",
+                "Kong Konnect personal access token",
+                Severity::High,
+                Confidence::High,
+                "https://developer.konghq.com/konnect-api/",
+            ),
+            Self::TruffleHogEnterpriseSecret => (
+                "trufflehog-enterprise-secret",
+                "TruffleHog Enterprise integration secret",
+                Severity::High,
+                Confidence::High,
+                "https://trufflesecurity.com/docs",
+            ),
+            Self::DopplerToken => (
+                "doppler-token",
+                "Doppler service, personal, CLI, or scope token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.doppler.com/docs/service-tokens",
+            ),
+            Self::TailscaleApiToken => (
+                "tailscale-api-token",
+                "Tailscale API access token",
+                Severity::High,
+                Confidence::High,
+                "https://tailscale.com/docs/reference/key-prefixes",
+            ),
+            Self::TailscaleAuthToken => (
+                "tailscale-auth-token",
+                "Tailscale pre-authentication key",
+                Severity::High,
+                Confidence::High,
+                "https://tailscale.com/docs/reference/key-prefixes",
+            ),
+            Self::ResendApiKey => (
+                "resend-api-key",
+                "Resend API key",
+                Severity::High,
+                Confidence::High,
+                "https://resend.com/docs/api-reference/api-keys/create-api-key",
+            ),
+            Self::LaunchDarklyServerSdkToken => (
+                "launch-darkly-server-sdk-token",
+                "LaunchDarkly server-side SDK secret",
+                Severity::High,
+                Confidence::High,
+                "https://launchdarkly.com/docs/sdk/concepts/client-side-server-side",
+            ),
+            Self::FlagsmithServerToken => (
+                "flagsmith-server-token",
+                "Flagsmith server-side environment key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.flagsmith.com/integrating-with-flagsmith/sdks/server-side",
+            ),
+            Self::GrowthBookSecretKey => (
+                "growth-book-secret-key",
+                "GrowthBook REST secret key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.growthbook.io/api/introduction",
+            ),
+            Self::PostHogPersonalToken => (
+                "post-hog-personal-token",
+                "PostHog personal API token",
+                Severity::High,
+                Confidence::High,
+                "https://posthog.com/docs/api",
+            ),
             Self::GitlabCicdJobToken => (
                 "gitlab-cicd-job-token",
                 "GitLab CI/CD job token",
@@ -642,6 +781,111 @@ impl RuleId {
                 Severity::High,
                 Confidence::High,
                 "https://docs.gitlab.com/ee/user/profile/personal_access_tokens/",
+            ),
+            Self::GitlabRunnerToken => (
+                "gitlab-runner-token",
+                "GitLab runner token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabRunnerRegistrationToken => (
+                "gitlab-runner-registration-token",
+                "GitLab runner registration token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabFeedToken => (
+                "gitlab-feed-token",
+                "GitLab feed token",
+                Severity::Medium,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabIncomingMailToken => (
+                "gitlab-incoming-mail-token",
+                "GitLab incoming mail token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabScimToken => (
+                "gitlab-scim-token",
+                "GitLab SCIM token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabAgentToken => (
+                "gitlab-agent-token",
+                "GitLab agent token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabOauthAppSecret => (
+                "gitlab-oauth-app-secret",
+                "GitLab OAuth application secret",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::GitlabTriggerToken => (
+                "gitlab-trigger-token",
+                "GitLab trigger token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.gitlab.com/security/tokens/",
+            ),
+            Self::CircleCiPersonalToken => (
+                "circleci-personal-token",
+                "CircleCI personal access token",
+                Severity::High,
+                Confidence::High,
+                "https://circleci.com/changelog/new-format-for-api-access-tokens/",
+            ),
+            Self::CircleCiProjectToken => (
+                "circleci-project-token",
+                "CircleCI project context token",
+                Severity::High,
+                Confidence::High,
+                "https://circleci.com/changelog/new-format-for-api-access-tokens/",
+            ),
+            Self::AtlassianApiToken => (
+                "atlassian-api-token",
+                "Atlassian modern API token",
+                Severity::High,
+                Confidence::High,
+                "https://developer.atlassian.com/cloud/jira/platform/basic-auth-for-rest-apis/",
+            ),
+            Self::NetlifyAccessToken => (
+                "netlify-access-token",
+                "Netlify access token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.netlify.com/configure-sites/manage-deploy/manage-site-access-tokens/",
+            ),
+            Self::FlyioToken => (
+                "flyio-token",
+                "Fly.io API or management token",
+                Severity::High,
+                Confidence::High,
+                "https://docs.fly.io/en/latest/fly101/apps/security",
+            ),
+            Self::PineconeApiKey => (
+                "pinecone-api-key",
+                "Pinecone API key",
+                Severity::High,
+                Confidence::High,
+                "https://docs.pinecone.io/troubleshooting/retrieval-and-interaction-options",
+            ),
+            Self::AnthropicAdminKey => (
+                "anthropic-admin-key",
+                "Anthropic admin API key",
+                Severity::Critical,
+                Confidence::High,
+                "https://docs.anthropic.com/en/docs/keys",
             ),
             Self::Auth0ManagementToken => (
                 "auth0-management-token",
@@ -793,10 +1037,38 @@ impl RuleId {
             ),
             Self::PlanetscalePassword => (
                 "planetscale-password",
-                "PlanetScale password",
+                "PlanetScale database password",
                 Severity::High,
                 Confidence::High,
                 "https://planetscale.com/docs/reference/api-overview",
+            ),
+            Self::PlanetscaleToken => (
+                "planetscale-token",
+                "PlanetScale service token",
+                Severity::High,
+                Confidence::High,
+                "https://planetscale.com/docs/reference/api-overview",
+            ),
+            Self::PlanetscaleOauthToken => (
+                "planetscale-oauth-token",
+                "PlanetScale OAuth token",
+                Severity::High,
+                Confidence::High,
+                "https://planetscale.com/docs/reference/api-overview",
+            ),
+            Self::PaddleApiKey => (
+                "paddle-api-key",
+                "Paddle backend API key",
+                Severity::High,
+                Confidence::High,
+                "https://developer.paddle.com/api-reference/about/authentication",
+            ),
+            Self::PlaidAccessToken => (
+                "plaid-access-token",
+                "Plaid access token",
+                Severity::High,
+                Confidence::High,
+                "https://plaid.com/docs/api/",
             ),
             Self::CloudinaryUrl => (
                 "cloudinary-url",
@@ -894,7 +1166,7 @@ const VOYAGE_PREFIXES: &[&[u8]] = &[b"al-", b"pa-"];
 const CARTESIA_PREFIXES: &[&[u8]] = &[b"sk_car_"];
 const REPLICATE_PREFIXES: &[&[u8]] = &[b"r8_"];
 const VERCEL_PREFIXES: &[&[u8]] = &[b"vcp_", b"vci_", b"vca_", b"vcr_", b"vck_"];
-const SUPABASE_PREFIXES: &[&[u8]] = &[b"sb_publishable_", b"sb_secret_"];
+const SUPABASE_PREFIXES: &[&[u8]] = &[b"sb_secret_"];
 const CLOUDFLARE_PREFIXES: &[&[u8]] = &[b"cfk_", b"cfut_", b"cfat_"];
 
 // Phase 1: Cloud & Infrastructure
@@ -915,10 +1187,38 @@ const SLACK_WORKSPACE_TOKEN_PREFIXES: &[&[u8]] = &[b"xoxa-"];
 const SLACK_REFRESH_TOKEN_PREFIXES: &[&[u8]] = &[b"xoxr-"];
 // Phase 1: SaaS & Dev Tools
 const SENTRY_ORG_TOKEN_PREFIXES: &[&[u8]] = &[b"sntrys_"];
+const SENTRY_PERSONAL_TOKEN_PREFIXES: &[&[u8]] = &[b"sntryu_"];
+const GRAFANA_SERVICE_ACCOUNT_TOKEN_PREFIXES: &[&[u8]] = &[b"glsa_"];
+const AXIOM_TOKEN_PREFIXES: &[&[u8]] = &[b"xaat-", b"xapt-"];
+const SONARQUBE_TOKEN_PREFIXES: &[&[u8]] = &[b"squ_", b"sqp_", b"sqa_"];
+const SONARQUBE_CLOUD_TOKEN_PREFIXES: &[&[u8]] = &[b"sqco_"];
+const KONG_KONNECT_TOKEN_PREFIXES: &[&[u8]] = &[b"kpat_", b"spat_"];
+const TRUFFLEHOG_ENTERPRISE_SECRET_PREFIXES: &[&[u8]] = &[b"thog-secret-"];
+const TAILSCALE_API_TOKEN_PREFIXES: &[&[u8]] = &[b"tskey-api-"];
+const TAILSCALE_AUTH_TOKEN_PREFIXES: &[&[u8]] = &[b"tskey-auth-"];
+const RESEND_API_KEY_PREFIXES: &[&[u8]] = &[b"re_"];
+const LAUNCH_DARKLY_SERVER_SDK_TOKEN_PREFIXES: &[&[u8]] = &[b"sdk-"];
+const FLAGSMITH_SERVER_TOKEN_PREFIXES: &[&[u8]] = &[b"ser."];
+const GROWTHBOOK_SECRET_KEY_PREFIXES: &[&[u8]] = &[b"secret_"];
+const POSTHOG_PERSONAL_TOKEN_PREFIXES: &[&[u8]] = &[b"phx_"];
 const GITLAB_CICD_JOB_TOKEN_PREFIXES: &[&[u8]] = &[b"glcbt-"];
 const GITLAB_DEPLOY_TOKEN_PREFIXES: &[&[u8]] = &[b"gldt-"];
 const GITLAB_FEATURE_FLAG_TOKEN_PREFIXES: &[&[u8]] = &[b"glffct-"];
 const GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"glpat-"];
+const GITLAB_RUNNER_TOKEN_PREFIXES: &[&[u8]] = &[b"glrt-"];
+const GITLAB_RUNNER_REGISTRATION_TOKEN_PREFIXES: &[&[u8]] = &[b"glrtr-"];
+const GITLAB_FEED_TOKEN_PREFIXES: &[&[u8]] = &[b"glft-"];
+const GITLAB_INCOMING_MAIL_TOKEN_PREFIXES: &[&[u8]] = &[b"glimt-"];
+const GITLAB_SCIM_TOKEN_PREFIXES: &[&[u8]] = &[b"glsoat-"];
+const GITLAB_AGENT_TOKEN_PREFIXES: &[&[u8]] = &[b"glagent-"];
+const GITLAB_OAUTH_APP_SECRET_PREFIXES: &[&[u8]] = &[b"gloas-"];
+const GITLAB_TRIGGER_TOKEN_PREFIXES: &[&[u8]] = &[b"glptt-"];
+const CIRCLECI_PERSONAL_TOKEN_PREFIXES: &[&[u8]] = &[b"CCIPAT_"];
+const CIRCLECI_PROJECT_TOKEN_PREFIXES: &[&[u8]] = &[b"CCIPRJ_"];
+const ATLASSIAN_API_TOKEN_PREFIXES: &[&[u8]] = &[b"ATATT3"];
+const NETLIFY_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"nfp_"];
+const FLYIO_API_TOKEN_PREFIXES: &[&[u8]] = &[b"fo1_"];
+const FLYIO_MANAGEMENT_TOKEN_PREFIXES: &[&[u8]] = &[b"fm1a_", b"fm1r_", b"fm2_"];
 const AUTH0_MANAGEMENT_TOKEN_PREFIXES: &[&[u8]] = &[b"ua2_"];
 const OKTA_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"00a"];
 const NOTION_API_KEY_PREFIXES: &[&[u8]] = &[b"nt_"];
@@ -930,7 +1230,15 @@ const SHOPIFY_CUSTOM_TOKEN_PREFIXES: &[&[u8]] = &[b"shpcc_"];
 const SHOPIFY_SHARED_SECRET_PREFIXES: &[&[u8]] = &[b"shpss_"];
 const SHOPIFY_APP_PASSWORD_PREFIXES: &[&[u8]] = &[b"shppa_"];
 const STRIPE_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[b"sk_prod_", b"rk_prod_"];
-const PLANETSCALE_PASSWORD_PREFIXES: &[&[u8]] = &[b"pscale_password_"];
+const PLANETSCALE_PASSWORD_PREFIXES: &[&[u8]] = &[b"pscale_pw_"];
+const PLANETSCALE_TOKEN_PREFIXES: &[&[u8]] = &[b"pscale_tkn_"];
+const PLANETSCALE_OAUTH_TOKEN_PREFIXES: &[&[u8]] = &[b"pscale_oauth_"];
+const PADDLE_API_KEY_PREFIXES: &[&[u8]] = &[b"pdl_live_apikey_", b"pdl_sdbx_apikey_"];
+const PLAID_ACCESS_TOKEN_PREFIXES: &[&[u8]] = &[
+    b"access-sandbox-",
+    b"access-development-",
+    b"access-production-",
+];
 // Phase 1: AI / ML Providers
 const MISTRAL_KEY_PREFIXES: &[&[u8]] = &[b"mv4-"];
 const CEREBRAS_KEY_PREFIXES: &[&[u8]] = &[b"csk_"];
@@ -1290,6 +1598,534 @@ fn flutterwave_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
     None
 }
 
+/// GitLab documents per-type token families with an exact body length over
+/// `[A-Za-z0-9_-]`; a longer run is a different identifier, not this family.
+fn gitlab_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Atlassian's modern API token format: `ATATT3` plus 186 `[A-Za-z0-9_=-]` bytes.
+/// A longer run is another identifier; a shorter run is a near miss.
+fn atlassian_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'=' | b'-'))
+    {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-' || next == b'=')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Netlify access token: `nfp_` plus exactly 36 `[A-Za-z0-9_]` bytes.
+fn netlify_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_') {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Pinecone keys are `pcsk_`, a five- or six-byte alphanumeric group, `_`, then 63
+/// alphanumeric body bytes.
+fn pinecone_key_match(bytes: &[u8]) -> Option<usize> {
+    if !bytes.starts_with(b"pcsk_") {
+        return None;
+    }
+    for group_len in [5, 6] {
+        let group_end = 5 + group_len;
+        let body_start = group_end + 1;
+        let body_end = body_start + 63;
+        if bytes.get(group_end) != Some(&b'_') || bytes.len() < body_end {
+            continue;
+        }
+        let group = &bytes[5..group_end];
+        let body = &bytes[body_start..body_end];
+        if !group.iter().all(|b| b.is_ascii_alphanumeric()) {
+            continue;
+        }
+        if !body.iter().all(|b| b.is_ascii_alphanumeric()) {
+            continue;
+        }
+        if bytes
+            .get(body_end)
+            .is_some_and(|&next| is_word(next) || next == b'-')
+        {
+            continue;
+        }
+        return Some(body_end);
+    }
+    None
+}
+
+/// Anthropic admin keys are `sk-ant-admin01-` plus 93 `[A-Za-z0-9_-]` bytes ending in
+/// `AA`. Ordinary `sk-ant-` keys stay with the existing opaque rule.
+fn anthropic_admin_key_match(bytes: &[u8]) -> Option<usize> {
+    let prefix_len = b"sk-ant-admin01-".len();
+    if !bytes.starts_with(b"sk-ant-admin01-") {
+        return None;
+    }
+    let end = prefix_len + 93;
+    if bytes.len() < end {
+        return None;
+    }
+    let body = &bytes[prefix_len..end];
+    if !body
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(*b, b'_' | b'-'))
+    {
+        return None;
+    }
+    if bytes.get(end - 2) != Some(&b'A') || bytes.get(end - 1) != Some(&b'A') {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// PlanetScale publishes three credential prefixes with 32-64 byte bodies over
+/// `[A-Za-z0-9_.=-]`; the older `pscale_password_` spelling is not current.
+fn planetscale_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let is_body = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'=' | b'-');
+    let mut end = start;
+    while end - start < 64 && bytes.get(end).is_some_and(|&b| is_body(b)) {
+        end += 1;
+    }
+    if end - start < 32 {
+        return None;
+    }
+    if bytes.get(end).is_some_and(|&b| is_body(b)) {
+        return None;
+    }
+    Some(end)
+}
+
+/// Paddle publishes an exact backend API key grammar: a live or sandbox prefix,
+/// 26 lowercase alphanumeric bytes, `_`, 22 alphanumeric bytes, `_`, and three
+/// alphanumeric bytes.
+fn paddle_api_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    if bytes.len() < start + 53 {
+        return None;
+    }
+    if bytes.get(start + 26) != Some(&b'_') || bytes.get(start + 49) != Some(&b'_') {
+        return None;
+    }
+    let groups_ok = bytes[start..start + 26]
+        .iter()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && bytes[start + 27..start + 49]
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric())
+        && bytes[start + 50..start + 53]
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric());
+    if !groups_ok {
+        return None;
+    }
+    let end = start + 53;
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Fly.io API tokens (`fo1_` + 43) and Flagsmith server tokens (`ser.` + 43) use
+/// exact-length bodies over `[A-Za-z0-9_-]`; a longer run is a different identifier.
+fn alnum_dash_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Resend keys are `re_`, an 8-byte base58 component, `_`, and a 24-byte base58
+/// component; the base58 alphabet excludes `0`, `O`, `I`, and `l`.
+fn resend_api_key_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let is_base58 = |b: u8| {
+        (b'1'..=b'9').contains(&b)
+            || (b'A'..=b'H').contains(&b)
+            || (b'J'..=b'N').contains(&b)
+            || (b'P'..=b'Z').contains(&b)
+            || (b'a'..=b'k').contains(&b)
+            || (b'm'..=b'z').contains(&b)
+    };
+    let start = prefix.len();
+    if bytes.len() < start + 33 {
+        return None;
+    }
+    let first = &bytes[start..start + 8];
+    let second = &bytes[start + 9..start + 33];
+    if !first.iter().all(|&b| is_base58(b)) || bytes.get(start + 8) != Some(&b'_') {
+        return None;
+    }
+    if !second.iter().all(|&b| is_base58(b)) {
+        return None;
+    }
+    let end = start + 33;
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// GrowthBook REST secret keys are `secret_` plus 16-64 `[A-Za-z0-9_-]` bytes.
+fn growthbook_secret_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let is_body = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-');
+    let mut end = start;
+    while end - start < 64 && bytes.get(end).is_some_and(|&b| is_body(b)) {
+        end += 1;
+    }
+    if end - start < 16 {
+        return None;
+    }
+    if bytes.get(end).is_some_and(|&b| is_body(b)) {
+        return None;
+    }
+    Some(end)
+}
+
+/// PostHog personal tokens are `phx_` plus 43-48 `[A-Za-z0-9_]` bytes; public
+/// `phc_` project tokens stay out of this rule.
+fn posthog_personal_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let is_body = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut end = start;
+    while end - start < 48 && bytes.get(end).is_some_and(|&b| is_body(b)) {
+        end += 1;
+    }
+    if end - start < 43 {
+        return None;
+    }
+    if bytes.get(end).is_some_and(|&b| is_body(b)) {
+        return None;
+    }
+    Some(end)
+}
+
+/// Grafana service-account tokens are `glsa_` plus 32 alphanumeric bytes, `_`, and
+/// eight lowercase hex bytes.
+fn grafana_service_account_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    if bytes.len() < start + 41 {
+        return None;
+    }
+    let body = &bytes[start..start + 41];
+    if !body[..32].iter().all(|b| b.is_ascii_alphanumeric()) || body[32] != b'_' {
+        return None;
+    }
+    if !body[33..41]
+        .iter()
+        .all(|&b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return None;
+    }
+    let end = start + 41;
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Axiom (`xaat-`/`xapt-`), Plaid access tokens, and LaunchDarkly server SDK tokens
+/// (`sdk-`) carry a lowercase-hex UUID in the 8-4-4-4-12 grouping.
+fn hyphen_hex_uuid_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    if bytes.len() < start + 36 {
+        return None;
+    }
+    let body = &bytes[start..start + 36];
+    if body[8] != b'-' || body[13] != b'-' || body[18] != b'-' || body[23] != b'-' {
+        return None;
+    }
+    let is_hex_lower = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
+    for (from, to) in [(0, 8), (9, 13), (14, 18), (19, 23), (24, 36)] {
+        if !body[from..to].iter().all(|&b| is_hex_lower(b)) {
+            return None;
+        }
+    }
+    let end = start + 36;
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Fly.io management tokens are `fm1a_`, `fm1r_`, or `fm2_` plus 100-512 base64
+/// characters and up to three `=` padding bytes.
+fn flyio_management_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let mut end = start;
+    while end - start < 512
+        && bytes
+            .get(end)
+            .is_some_and(|&b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+    {
+        end += 1;
+    }
+    let body_len = end - start;
+    if body_len < 100 {
+        return None;
+    }
+    let mut padding = 0;
+    while padding < 2 && bytes.get(end).is_some_and(|&b| b == b'=') {
+        end += 1;
+        padding += 1;
+    }
+    if bytes.get(end).is_some_and(|&next| {
+        is_word(next) || next == b'/' || next == b'+' || next == b'-' || next == b'='
+    }) {
+        return None;
+    }
+    Some(end)
+}
+
+/// GitLab trigger tokens (`glptt-`) and Sentry personal tokens (`sntryu_`) use exact
+/// lowercase-hex bodies of 40 and 64 bytes respectively.
+fn lower_hex_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body
+        .iter()
+        .all(|&b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// SonarQube Cloud (`sqco_`) and Kong Konnect (`kpat_`/`spat_`) publish exact-length
+/// alphanumeric bodies; a longer run is a different identifier.
+fn alnum_token_match(bytes: &[u8], prefixes: &[&[u8]], body_len: usize) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let start = prefix.len();
+    let end = start + body_len;
+    let body = bytes.get(start..end)?;
+    if !body.iter().all(|&b| b.is_ascii_alphanumeric()) {
+        return None;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// Doppler tokens are `dp.` plus a type segment and a 40-44 byte alphanumeric
+/// secret. `st` may carry an optional dotted lowercase config segment; the other
+/// segments take `_`.
+fn doppler_token_match(bytes: &[u8]) -> Option<usize> {
+    if !bytes.starts_with(b"dp.") {
+        return None;
+    }
+    let secret_end = |start: usize| -> Option<usize> {
+        let mut end = start;
+        while end - start < 44 && bytes.get(end).is_some_and(|&b| b.is_ascii_alphanumeric()) {
+            end += 1;
+        }
+        if end - start < 40 {
+            return None;
+        }
+        if bytes
+            .get(end)
+            .is_some_and(|&next| is_word(next) || next == b'-')
+        {
+            return None;
+        }
+        Some(end)
+    };
+    if bytes.starts_with(b"dp.ct_") || bytes.starts_with(b"dp.pt_") || bytes.starts_with(b"dp.sa_")
+    {
+        return secret_end(6);
+    }
+    if bytes.starts_with(b"dp.scim_") {
+        return secret_end(8);
+    }
+    if bytes.starts_with(b"dp.audit_") {
+        return secret_end(9);
+    }
+    if !bytes.starts_with(b"dp.st.") {
+        return None;
+    }
+    let is_scope = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'-');
+    let mut scope_end = 6;
+    while scope_end - 6 < 35 && bytes.get(scope_end).is_some_and(|&b| is_scope(b)) {
+        scope_end += 1;
+    }
+    if scope_end - 6 >= 2 && bytes.get(scope_end) == Some(&b'.') {
+        return secret_end(scope_end + 1);
+    }
+    secret_end(6)
+}
+
+/// Tailscale credential families carry a type prefix, a nonempty alphanumeric
+/// or `_` component, `-`, and a second nonempty component. Public `tskey-client`
+/// identifiers stay out of these rules.
+fn tailscale_token_match(bytes: &[u8], prefixes: &[&[u8]]) -> Option<usize> {
+    let prefix = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix))?;
+    let is_part = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let start = prefix.len();
+    if !bytes.get(start).is_some_and(|&b| is_part(b)) {
+        return None;
+    }
+    let mut end = start;
+    while bytes.get(end).is_some_and(|&b| is_part(b)) {
+        end += 1;
+    }
+    if bytes.get(end) != Some(&b'-') {
+        return None;
+    }
+    let second = end + 1;
+    if !bytes.get(second).is_some_and(|&b| is_part(b)) {
+        return None;
+    }
+    end = second;
+    while bytes.get(end).is_some_and(|&b| is_part(b)) {
+        end += 1;
+    }
+    if bytes
+        .get(end)
+        .is_some_and(|&next| is_word(next) || next == b'-')
+    {
+        return None;
+    }
+    Some(end)
+}
+
+/// CircleCI announced format: prefix, 22-byte base58 encoded UUID, `_`, 40 hex.
+/// Legacy 40-hex-only values require context and stay out of this rule.
+fn circleci_match(bytes: &[u8]) -> Option<(RuleId, usize)> {
+    for (prefixes, rule) in [
+        (
+            CIRCLECI_PERSONAL_TOKEN_PREFIXES,
+            RuleId::CircleCiPersonalToken,
+        ),
+        (
+            CIRCLECI_PROJECT_TOKEN_PREFIXES,
+            RuleId::CircleCiProjectToken,
+        ),
+    ] {
+        let Some(prefix) = prefixes.iter().find(|&&prefix| bytes.starts_with(prefix)) else {
+            continue;
+        };
+        let id_start = prefix.len();
+        let id_end = id_start + 22;
+        let hex_start = id_end + 1;
+        let hex_end = hex_start + 40;
+        let Some(id_part) = bytes.get(id_start..id_end) else {
+            continue;
+        };
+        // Base58 excludes the confusable 0, O, I, and l characters.
+        if !id_part
+            .iter()
+            .all(|&b| b.is_ascii_alphanumeric() && !matches!(b, b'0' | b'O' | b'I' | b'l'))
+        {
+            continue;
+        }
+        if bytes.get(id_end) != Some(&b'_') {
+            continue;
+        }
+        let Some(hex_part) = bytes.get(hex_start..hex_end) else {
+            continue;
+        };
+        if !hex_part.iter().all(|&b| b.is_ascii_hexdigit()) {
+            continue;
+        }
+        if bytes
+            .get(hex_end)
+            .is_some_and(|&next| is_word(next) || next == b'-')
+        {
+            continue;
+        }
+        return Some((rule, hex_end));
+    }
+    None
+}
+
 fn uri_match(bytes: &[u8], prefixes: &[&[u8]], rule: RuleId) -> Option<(RuleId, usize)> {
     let prefix = prefixes.iter().find(|&&p| bytes.starts_with(p))?;
     let after_scheme = &bytes[prefix.len()..];
@@ -1320,7 +2156,180 @@ fn uri_match(bytes: &[u8], prefixes: &[&[u8]], rule: RuleId) -> Option<(RuleId, 
     Some((rule, end))
 }
 
+/// Two-byte head prefilter for the provider chain. Every structural match (and
+/// its candidate-limit error) is reachable only after one of the registered
+/// literals starts at the position, so a position whose first two bytes head no
+/// literal returns `Ok(None)` without walking the chain. Kept as data next to
+/// the prefix tables so adding a rule cannot silently disable the prefilter.
+const PROVIDER_HEAD_LITERALS: &[&[&[u8]]] = &[
+    GITHUB_PREFIXES,
+    STRIPE_SECRET_PREFIXES,
+    STRIPE_RESTRICTED_PREFIXES,
+    SLACK_PREFIXES,
+    OPENAI_PREFIXES,
+    OPENROUTER_PREFIXES,
+    ANTHROPIC_PREFIXES,
+    GROQ_PREFIXES,
+    PERPLEXITY_PREFIXES,
+    HUGGINGFACE_PREFIXES,
+    XAI_PREFIXES,
+    GOOGLE_API_PREFIXES,
+    ALIBABA_PREFIXES,
+    BAIDU_PREFIXES,
+    WANDB_PREFIXES,
+    FIRECRAWL_PREFIXES,
+    LANGSMITH_PREFIXES,
+    VOYAGE_PREFIXES,
+    CARTESIA_PREFIXES,
+    REPLICATE_PREFIXES,
+    VERCEL_PREFIXES,
+    SUPABASE_PREFIXES,
+    CLOUDFLARE_PREFIXES,
+    DIGITALOCEAN_PAT_PREFIXES,
+    DIGITALOCEAN_OAUTH_PREFIXES,
+    DIGITALOCEAN_REFRESH_PREFIXES,
+    HEROKU_API_KEY_PREFIXES,
+    CLOUDINARY_URL_PREFIXES,
+    CLOJARS_TOKEN_PREFIXES,
+    CRATESIO_TOKEN_PREFIXES,
+    PYPY_TOKEN_PREFIXES,
+    RUBYGENS_API_KEY_PREFIXES,
+    SLACK_BOT_TOKEN_PREFIXES,
+    SLACK_USER_TOKEN_PREFIXES,
+    SLACK_WORKSPACE_TOKEN_PREFIXES,
+    SLACK_REFRESH_TOKEN_PREFIXES,
+    SENTRY_ORG_TOKEN_PREFIXES,
+    SENTRY_PERSONAL_TOKEN_PREFIXES,
+    GRAFANA_SERVICE_ACCOUNT_TOKEN_PREFIXES,
+    AXIOM_TOKEN_PREFIXES,
+    SONARQUBE_TOKEN_PREFIXES,
+    SONARQUBE_CLOUD_TOKEN_PREFIXES,
+    KONG_KONNECT_TOKEN_PREFIXES,
+    TRUFFLEHOG_ENTERPRISE_SECRET_PREFIXES,
+    TAILSCALE_API_TOKEN_PREFIXES,
+    TAILSCALE_AUTH_TOKEN_PREFIXES,
+    RESEND_API_KEY_PREFIXES,
+    LAUNCH_DARKLY_SERVER_SDK_TOKEN_PREFIXES,
+    FLAGSMITH_SERVER_TOKEN_PREFIXES,
+    GROWTHBOOK_SECRET_KEY_PREFIXES,
+    POSTHOG_PERSONAL_TOKEN_PREFIXES,
+    GITLAB_CICD_JOB_TOKEN_PREFIXES,
+    GITLAB_DEPLOY_TOKEN_PREFIXES,
+    GITLAB_FEATURE_FLAG_TOKEN_PREFIXES,
+    GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES,
+    GITLAB_RUNNER_TOKEN_PREFIXES,
+    GITLAB_RUNNER_REGISTRATION_TOKEN_PREFIXES,
+    GITLAB_FEED_TOKEN_PREFIXES,
+    GITLAB_INCOMING_MAIL_TOKEN_PREFIXES,
+    GITLAB_SCIM_TOKEN_PREFIXES,
+    GITLAB_AGENT_TOKEN_PREFIXES,
+    GITLAB_OAUTH_APP_SECRET_PREFIXES,
+    GITLAB_TRIGGER_TOKEN_PREFIXES,
+    CIRCLECI_PERSONAL_TOKEN_PREFIXES,
+    CIRCLECI_PROJECT_TOKEN_PREFIXES,
+    ATLASSIAN_API_TOKEN_PREFIXES,
+    NETLIFY_ACCESS_TOKEN_PREFIXES,
+    FLYIO_API_TOKEN_PREFIXES,
+    FLYIO_MANAGEMENT_TOKEN_PREFIXES,
+    AUTH0_MANAGEMENT_TOKEN_PREFIXES,
+    OKTA_ACCESS_TOKEN_PREFIXES,
+    NOTION_API_KEY_PREFIXES,
+    LINEAR_API_KEY_PREFIXES,
+    FIGMA_TOKEN_PREFIXES,
+    SQUARE_ACCESS_TOKEN_PREFIXES,
+    SHOPIFY_ACCESS_TOKEN_PREFIXES,
+    SHOPIFY_CUSTOM_TOKEN_PREFIXES,
+    SHOPIFY_SHARED_SECRET_PREFIXES,
+    SHOPIFY_APP_PASSWORD_PREFIXES,
+    STRIPE_ACCESS_TOKEN_PREFIXES,
+    PLANETSCALE_PASSWORD_PREFIXES,
+    PLANETSCALE_TOKEN_PREFIXES,
+    PLANETSCALE_OAUTH_TOKEN_PREFIXES,
+    PADDLE_API_KEY_PREFIXES,
+    PLAID_ACCESS_TOKEN_PREFIXES,
+    MISTRAL_KEY_PREFIXES,
+    CEREBRAS_KEY_PREFIXES,
+    TOGETHERAI_KEY_PREFIXES,
+    FIREWORKS_AI_KEY_PREFIXES,
+    STABILITY_AI_KEY_PREFIXES,
+    DEEPGRAM_KEY_PREFIXES,
+    RAZORPAY_KEY_PREFIXES,
+    MONGODB_URI_PREFIXES,
+    POSTGRES_URI_PREFIXES,
+    REDIS_URI_PREFIXES,
+    SQLSERVER_URI_PREFIXES,
+    MYSQL_URI_PREFIXES,
+    COCKROACHDB_URI_PREFIXES,
+    PRIVATE_KEY_MARKERS,
+];
+const PROVIDER_HEAD_EXTRA_LITERALS: [&[u8]; 13] = [
+    b"AKIA",            // aws_match
+    b"ASIA",            // aws_match
+    b"AC",              // twilio_match
+    b"SK",              // twilio_match
+    b"SG.",             // sendgrid_match
+    b"SWMKEY-1-",       // docker_swarm_match
+    b"SWMTKN-1-",       // docker_swarm_match
+    b"FLWSECK-",        // flutterwave_match (FLWTESTCK- shares this head)
+    b"xkeysib-",        // sendinblue_match
+    b"pi_",             // stripe_payment_intent_match
+    b"dp.",             // doppler_token_match (all dp.<type> literals share this head)
+    b"pcsk_",           // pinecone_key_match
+    b"sk-ant-admin01-", // anthropic_admin_key_match
+];
+
+/// Build the 256x256 head-byte bitmap at compile time. A one-byte prefix (none
+/// today) opens every second byte for its head; telegram digits do the same.
+const fn provider_head_bits() -> [bool; 65536] {
+    let mut bits = [false; 65536];
+    let mut any_second = [false; 256];
+    let mut group_index = 0;
+    while group_index < PROVIDER_HEAD_LITERALS.len() {
+        let group = PROVIDER_HEAD_LITERALS[group_index];
+        let mut prefix_index = 0;
+        while prefix_index < group.len() {
+            let prefix = group[prefix_index];
+            if prefix.len() == 1 {
+                any_second[prefix[0] as usize] = true;
+            } else if prefix.len() >= 2 {
+                bits[(((prefix[0] as u16) << 8) | prefix[1] as u16) as usize] = true;
+            }
+            prefix_index += 1;
+        }
+        group_index += 1;
+    }
+    let mut extra_index = 0;
+    while extra_index < PROVIDER_HEAD_EXTRA_LITERALS.len() {
+        let literal = PROVIDER_HEAD_EXTRA_LITERALS[extra_index];
+        bits[(((literal[0] as u16) << 8) | literal[1] as u16) as usize] = true;
+        extra_index += 1;
+    }
+    let mut digit = b'0';
+    while digit <= b'9' {
+        any_second[digit as usize] = true;
+        digit += 1;
+    }
+    let mut head = 0;
+    while head < 256 {
+        if any_second[head] {
+            let mut slot = head * 256;
+            while slot < head * 256 + 256 {
+                bits[slot] = true;
+                slot += 1;
+            }
+        }
+        head += 1;
+    }
+    bits
+}
+const PROVIDER_HEAD_BITS: &[bool; 65536] = &provider_head_bits();
+
 fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>, ScanError> {
+    if bytes.len() >= 2
+        && !PROVIDER_HEAD_BITS[(((bytes[0] as u16) << 8) | bytes[1] as u16) as usize]
+    {
+        return Ok(None);
+    }
     if let Some(end) = (!disabled.contains(&RuleId::AwsAccessKeyId))
         .then(|| aws_match(bytes))
         .flatten()
@@ -1342,6 +2351,11 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
     if !disabled.contains(&RuleId::SlackWebhook) {
         if let Some(end) = slack_match(bytes)? {
             return Ok(Some((RuleId::SlackWebhook, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::AnthropicAdminKey) {
+        if let Some(end) = anthropic_admin_key_match(bytes) {
+            return Ok(Some((RuleId::AnthropicAdminKey, end)));
         }
     }
     // LLM provider and AI infrastructure API keys (more specific prefixes first)
@@ -1454,17 +2468,6 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
             GITLAB_CICD_JOB_TOKEN_PREFIXES,
             25,
         ),
-        (RuleId::GitlabDeployToken, GITLAB_DEPLOY_TOKEN_PREFIXES, 25),
-        (
-            RuleId::GitlabFeatureFlagToken,
-            GITLAB_FEATURE_FLAG_TOKEN_PREFIXES,
-            25,
-        ),
-        (
-            RuleId::GitlabPersonalAccessToken,
-            GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES,
-            25,
-        ),
         (
             RuleId::Auth0ManagementToken,
             AUTH0_MANAGEMENT_TOKEN_PREFIXES,
@@ -1496,11 +2499,6 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
             32,
         ),
         (RuleId::StripeAccessToken, STRIPE_ACCESS_TOKEN_PREFIXES, 32),
-        (
-            RuleId::PlanetscalePassword,
-            PLANETSCALE_PASSWORD_PREFIXES,
-            40,
-        ),
         // AI / ML Providers
         (RuleId::MistralKey, MISTRAL_KEY_PREFIXES, 20),
         (RuleId::CerebrasKey, CEREBRAS_KEY_PREFIXES, 20),
@@ -1515,6 +2513,181 @@ fn match_at(bytes: &[u8], disabled: &[RuleId]) -> Result<Option<(RuleId, usize)>
         }
         if let Some(end) = api_key_match_with_min(bytes, prefixes, body_min)? {
             return Ok(Some((rule, end)));
+        }
+    }
+    // GitLab token families with documented exact body lengths.
+    for (rule, prefixes, body_len) in [
+        (
+            RuleId::GitlabPersonalAccessToken,
+            GITLAB_PERSONAL_ACCESS_TOKEN_PREFIXES,
+            20,
+        ),
+        (RuleId::GitlabDeployToken, GITLAB_DEPLOY_TOKEN_PREFIXES, 20),
+        (
+            RuleId::GitlabFeatureFlagToken,
+            GITLAB_FEATURE_FLAG_TOKEN_PREFIXES,
+            20,
+        ),
+        (RuleId::GitlabRunnerToken, GITLAB_RUNNER_TOKEN_PREFIXES, 20),
+        (
+            RuleId::GitlabRunnerRegistrationToken,
+            GITLAB_RUNNER_REGISTRATION_TOKEN_PREFIXES,
+            20,
+        ),
+        (RuleId::GitlabFeedToken, GITLAB_FEED_TOKEN_PREFIXES, 20),
+        (RuleId::GitlabScimToken, GITLAB_SCIM_TOKEN_PREFIXES, 20),
+        (
+            RuleId::GitlabIncomingMailToken,
+            GITLAB_INCOMING_MAIL_TOKEN_PREFIXES,
+            25,
+        ),
+        (RuleId::GitlabAgentToken, GITLAB_AGENT_TOKEN_PREFIXES, 50),
+        (
+            RuleId::GitlabOauthAppSecret,
+            GITLAB_OAUTH_APP_SECRET_PREFIXES,
+            64,
+        ),
+    ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
+        if let Some(end) = gitlab_token_match(bytes, prefixes, body_len) {
+            return Ok(Some((rule, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::GitlabTriggerToken) {
+        if let Some(end) = lower_hex_token_match(bytes, GITLAB_TRIGGER_TOKEN_PREFIXES, 40) {
+            return Ok(Some((RuleId::GitlabTriggerToken, end)));
+        }
+    }
+    if let Some((rule, end)) = circleci_match(bytes) {
+        if !disabled.contains(&rule) {
+            return Ok(Some((rule, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::AtlassianApiToken) {
+        if let Some(end) = atlassian_token_match(bytes, ATLASSIAN_API_TOKEN_PREFIXES, 186) {
+            return Ok(Some((RuleId::AtlassianApiToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::NetlifyAccessToken) {
+        if let Some(end) = netlify_token_match(bytes, NETLIFY_ACCESS_TOKEN_PREFIXES, 36) {
+            return Ok(Some((RuleId::NetlifyAccessToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::FlyioToken) {
+        if let Some(end) = alnum_dash_token_match(bytes, FLYIO_API_TOKEN_PREFIXES, 43) {
+            return Ok(Some((RuleId::FlyioToken, end)));
+        }
+        if let Some(end) = flyio_management_token_match(bytes, FLYIO_MANAGEMENT_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::FlyioToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::SentryPersonalToken) {
+        if let Some(end) = lower_hex_token_match(bytes, SENTRY_PERSONAL_TOKEN_PREFIXES, 64) {
+            return Ok(Some((RuleId::SentryPersonalToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::GrafanaServiceAccountToken) {
+        if let Some(end) =
+            grafana_service_account_match(bytes, GRAFANA_SERVICE_ACCOUNT_TOKEN_PREFIXES)
+        {
+            return Ok(Some((RuleId::GrafanaServiceAccountToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::AxiomToken) {
+        if let Some(end) = hyphen_hex_uuid_match(bytes, AXIOM_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::AxiomToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::SonarQubeToken) {
+        if let Some(end) = lower_hex_token_match(bytes, SONARQUBE_TOKEN_PREFIXES, 40) {
+            return Ok(Some((RuleId::SonarQubeToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::SonarQubeCloudToken) {
+        if let Some(end) = alnum_token_match(bytes, SONARQUBE_CLOUD_TOKEN_PREFIXES, 59) {
+            return Ok(Some((RuleId::SonarQubeCloudToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::KongKonnectToken) {
+        if let Some(end) = alnum_token_match(bytes, KONG_KONNECT_TOKEN_PREFIXES, 49) {
+            return Ok(Some((RuleId::KongKonnectToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::TruffleHogEnterpriseSecret) {
+        if let Some(end) = lower_hex_token_match(bytes, TRUFFLEHOG_ENTERPRISE_SECRET_PREFIXES, 32) {
+            return Ok(Some((RuleId::TruffleHogEnterpriseSecret, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::DopplerToken) {
+        if let Some(end) = doppler_token_match(bytes) {
+            return Ok(Some((RuleId::DopplerToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::TailscaleApiToken) {
+        if let Some(end) = tailscale_token_match(bytes, TAILSCALE_API_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::TailscaleApiToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::TailscaleAuthToken) {
+        if let Some(end) = tailscale_token_match(bytes, TAILSCALE_AUTH_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::TailscaleAuthToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::ResendApiKey) {
+        if let Some(end) = resend_api_key_match(bytes, RESEND_API_KEY_PREFIXES) {
+            return Ok(Some((RuleId::ResendApiKey, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::LaunchDarklyServerSdkToken) {
+        if let Some(end) = hyphen_hex_uuid_match(bytes, LAUNCH_DARKLY_SERVER_SDK_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::LaunchDarklyServerSdkToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::FlagsmithServerToken) {
+        if let Some(end) = alnum_dash_token_match(bytes, FLAGSMITH_SERVER_TOKEN_PREFIXES, 43) {
+            return Ok(Some((RuleId::FlagsmithServerToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::GrowthBookSecretKey) {
+        if let Some(end) = growthbook_secret_match(bytes, GROWTHBOOK_SECRET_KEY_PREFIXES) {
+            return Ok(Some((RuleId::GrowthBookSecretKey, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::PostHogPersonalToken) {
+        if let Some(end) = posthog_personal_token_match(bytes, POSTHOG_PERSONAL_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::PostHogPersonalToken, end)));
+        }
+    }
+    for (rule, prefixes) in [
+        (RuleId::PlanetscalePassword, PLANETSCALE_PASSWORD_PREFIXES),
+        (RuleId::PlanetscaleToken, PLANETSCALE_TOKEN_PREFIXES),
+        (
+            RuleId::PlanetscaleOauthToken,
+            PLANETSCALE_OAUTH_TOKEN_PREFIXES,
+        ),
+    ] {
+        if disabled.contains(&rule) {
+            continue;
+        }
+        if let Some(end) = planetscale_token_match(bytes, prefixes) {
+            return Ok(Some((rule, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::PaddleApiKey) {
+        if let Some(end) = paddle_api_key_match(bytes, PADDLE_API_KEY_PREFIXES) {
+            return Ok(Some((RuleId::PaddleApiKey, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::PlaidAccessToken) {
+        if let Some(end) = hyphen_hex_uuid_match(bytes, PLAID_ACCESS_TOKEN_PREFIXES) {
+            return Ok(Some((RuleId::PlaidAccessToken, end)));
+        }
+    }
+    if !disabled.contains(&RuleId::PineconeApiKey) {
+        if let Some(end) = pinecone_key_match(bytes) {
+            return Ok(Some((RuleId::PineconeApiKey, end)));
         }
     }
     // Phase 3: URI-based rules
