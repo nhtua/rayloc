@@ -2292,7 +2292,7 @@ const fn provider_head_bits() -> [bool; 65536] {
             if prefix.len() == 1 {
                 any_second[prefix[0] as usize] = true;
             } else if prefix.len() >= 2 {
-                bits[((prefix[0] as u16) << 8 | prefix[1] as u16) as usize] = true;
+                bits[(((prefix[0] as u16) << 8) | prefix[1] as u16) as usize] = true;
             }
             prefix_index += 1;
         }
@@ -2301,7 +2301,7 @@ const fn provider_head_bits() -> [bool; 65536] {
     let mut extra_index = 0;
     while extra_index < PROVIDER_HEAD_EXTRA_LITERALS.len() {
         let literal = PROVIDER_HEAD_EXTRA_LITERALS[extra_index];
-        bits[((literal[0] as u16) << 8 | literal[1] as u16) as usize] = true;
+        bits[(((literal[0] as u16) << 8) | literal[1] as u16) as usize] = true;
         extra_index += 1;
     }
     let mut digit = b'0';

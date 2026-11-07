@@ -976,7 +976,7 @@ fn sentry_grafana_axiom_families_accept_documented_shapes_only() {
         matches(&personal),
         vec![(RuleId::SentryPersonalToken, 0..personal.len())]
     );
-    for hex_fill in [b'0', b'9', b'a', b'f'] {
+    for hex_fill in *b"09af" {
         let service = [
             b"glsa_".as_slice(),
             b"a".repeat(32).as_slice(),
@@ -1161,7 +1161,7 @@ fn resend_launchdarkly_flagsmith_growthbook_posthog_families_reject_near_misses_
     assert!(matches(short_first).is_empty(), "resend short first part");
     assert!(matches(long_first).is_empty(), "resend long first part");
     assert!(matches(bad_alphabet).is_empty(), "resend zero digit");
-    for excluded in [b'O', b'I', b'l'] {
+    for excluded in *b"OIl" {
         let mut bad = bad_alphabet.to_vec();
         bad[b"re_1234567".len()] = excluded;
         assert!(
@@ -1805,7 +1805,7 @@ fn planetscale_families_use_current_prefixes_and_bounded_bodies() {
         (b"pscale_oauth_", RuleId::PlanetscaleOauthToken),
     ];
     for (prefix, rule) in cases {
-        for fill in [b'a', b'Z', b'0', b'_', b'.', b'=', b'-'] {
+        for fill in *b"aZ0_.=-" {
             for count in [32, 64] {
                 let token = prefixed(prefix, fill, count);
                 assert_eq!(
@@ -1899,7 +1899,7 @@ fn planetscale_families_respect_disabled_rules_and_stream_splits() {
 fn flyio_token_family_accepts_documented_shapes_only() {
     let fo1 = prefixed(b"fo1_", b'Z', 43);
     assert_eq!(matches(&fo1), vec![(RuleId::FlyioToken, 0..fo1.len())]);
-    for fill in [b'a', b'0', b'+', b'/'] {
+    for fill in *b"a0+/" {
         for count in [100, 512] {
             for padding in [0, 1, 2] {
                 let mut token = prefixed(b"fm2_", fill, count);
@@ -2012,7 +2012,7 @@ fn atlassian_netlify_structural_families_respect_complete_spans() {
         matches(&netlify),
         vec![(RuleId::NetlifyAccessToken, 0..netlify.len())]
     );
-    for fill in [b'=', b'-', b'9', b'Z'] {
+    for fill in *b"=-9Z" {
         let token = prefixed(b"ATATT3", fill, 186);
         assert_eq!(
             matches(&token),
@@ -2218,16 +2218,16 @@ fn provider_head_prefilter_agrees_with_the_registered_tables() {
     for group in PROVIDER_HEAD_LITERALS {
         for prefix in *group {
             if prefix.len() >= 2 {
-                assert!(bits[((prefix[0] as u16) << 8 | prefix[1] as u16) as usize]);
+                assert!(bits[(((prefix[0] as u16) << 8) | prefix[1] as u16) as usize]);
             }
         }
     }
     for literal in PROVIDER_HEAD_EXTRA_LITERALS {
-        assert!(bits[((literal[0] as u16) << 8 | literal[1] as u16) as usize]);
+        assert!(bits[(((literal[0] as u16) << 8) | literal[1] as u16) as usize]);
     }
     for digit_head in b'0'..=b'9' {
-        for second in [b'a', b'Z', b'9', b'_'] {
-            assert!(bits[((digit_head as u16) << 8 | second as u16) as usize]);
+        for second in *b"aZ9_" {
+            assert!(bits[(((digit_head as u16) << 8) | second as u16) as usize]);
         }
     }
     let doppler = [b"dp.ct_".as_slice(), b"9".repeat(40).as_slice()].concat();
@@ -2269,7 +2269,7 @@ fn provider_head_prefilter_agrees_with_the_registered_tables() {
         (b' ', b' '),
         (b'\n', b'x'),
     ] {
-        let head = (first as u16) << 8 | second as u16;
+        let head = ((first as u16) << 8) | second as u16;
         assert!(!bits[head as usize]);
         let candidate = &[first, second, b'i', b'n', b'n', b'o'];
         assert_eq!(match_at(candidate, &[]).unwrap(), None);
