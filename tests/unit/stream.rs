@@ -422,7 +422,7 @@ fn line_session_with_long_jose_token_crossing_boundary() {
 fn long_line_jose_token_is_emitted_when_stream_finishes() {
     let mut line = vec![b'x'; crate::scanner::chunk::CHUNK_BYTES];
     line.extend_from_slice(
-        b" Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+        b" Authorization: Bearer   eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
     );
     let outcome = scan_reader(&mut Cursor::new(line), 1);
     assert_eq!(outcome.exit_code(), 1);
