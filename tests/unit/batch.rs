@@ -449,8 +449,8 @@ fn wave_planner_multiple_small_batches() {
     let plan = plan_wave(input, 1, 8, limits).unwrap();
     // Each line is 2 bytes, target is 4, so 2 lines per batch
     assert_eq!(plan.len, 4);
-    for i in 0..plan.len {
-        assert_eq!(plan.batches[i].lines, 2);
+    for batch in &plan.batches[..plan.len] {
+        assert_eq!(batch.lines, 2);
     }
 }
 
