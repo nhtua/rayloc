@@ -5,7 +5,7 @@
 [![Rust checks](https://github.com/nhtua/rayloc/actions/workflows/ci.yml/badge.svg)](https://github.com/nhtua/rayloc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**A fast, offline secret scanner that stops credentials before they reach your Git remote.**
+**The fastest offline secret scanner that stops credentials before they reach your Git remote.**
 
 **rayloc** is pronounced *RAY-lock*: /ˈreɪ.lɒk/ (UK), /ˈreɪ.lɑːk/ (US).
 
