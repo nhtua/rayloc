@@ -228,15 +228,15 @@ pre-commit Rust backend.
 
 | Category | Coverage |
 | --- | --- |
-| Cloud and infrastructure | AWS, Azure AD, Cloudflare, DigitalOcean, Docker Swarm, Heroku, Supabase, Vercel, Vultr |
-| AI providers and tooling | OpenAI, Anthropic, Google/Gemini, Groq, Hugging Face, Mistral, Perplexity, xAI, Alibaba Cloud, Baidu, Replicate, Weights & Biases, LangSmith, Voyage AI, Firecrawl, and other distinctive API keys |
-| Developer platforms and package registries | GitHub tokens and app credentials, GitLab, Sentry, Auth0, Okta, Notion, Linear, Figma, Shopify, Clojars, Crates.io, PyPI, RubyGems, and NuGet |
-| Communication and monitoring | Slack and GovSlack, Telegram bots, SendGrid, Brevo, Datadog, Grafana, New Relic, PagerDuty, Splunk, and Sumo Logic |
-| Payments and commerce | Stripe, Square, Twilio, Razorpay, Flutterwave, and Cloudinary URLs |
-| Database connection strings | MongoDB, PostgreSQL, Redis, SQL Server, MySQL, and CockroachDB URIs containing `user:password@` credentials |
+| Cloud and infrastructure | AWS, Azure (AD secrets, DevOps PATs, and service keys for Maps, Storage, Speech, and other services), Cloudflare, DigitalOcean, Docker (PATs and Swarm), Heroku, HashiCorp (Vault and Terraform), Doppler, Pulumi, Octopus Deploy, Temporal Cloud, Tailscale, LocalStack, JFrog, Oracle, Siemens, Salesforce, Supabase, Vercel, and Vultr |
+| AI providers and tooling | OpenAI, Anthropic, Google/Gemini, Groq, Hugging Face, Mistral, Perplexity, xAI, Cohere, DeepSeek, OpenRouter, Databricks, Tavily, Alibaba Cloud, Baidu, Replicate, Weights & Biases, LangSmith, Voyage AI, Firecrawl, and other distinctive API keys |
+| Developer platforms and package registries | GitHub tokens and app credentials, GitLab, Bitbucket, Bitrise, Buildkite, Sourcegraph, Contentful, Postman, ReadMe, WakaTime, Atlassian, Asana, Airtable, Canva, Adobe, Cloudsmith, 1Password, Sentry, Auth0, Okta, Notion, Linear, Figma, Shopify, Clojars, Crates.io, PyPI, RubyGems, NuGet, and Hex (Hash Devices) |
+| Communication and monitoring | Slack and GovSlack, Discord, Telegram bots, Lark (Feishu), Mailgun, Mandrill, Mailersend, Lob (SendGrid), MessageBird, OneSignal, HubSpot, Intercom, SendGrid, Brevo, Datadog, Grafana, New Relic, Dynatrace, LogicMonitor, Rootly, PagerDuty, Splunk, and Sumo Logic |
+| Payments and commerce | Stripe, Square, Twilio, Razorpay, Flutterwave, Checkout.com, Asaas, Cashfree, GoCardless, Midtrans, Paddle, Persona, Rainforest, Shopee, Shippo and EasyPost shipping keys, and Cloudinary URLs |
+| Database connection strings | MongoDB (incl. Atlas), PostgreSQL (incl. PlanetScale and Neon), Redis, SQL Server, MySQL, CockroachDB, Snowflake, and DataStax Astra URIs and credentials containing `user:password@` secrets |
 | Private keys | PEM private-key markers |
 | JWT / JOSE | Compact tokens, checked for valid structure |
-| Generic secrets | High-entropy values in assignments, and strong password literals of 8+ bytes |
+| Generic secrets | High-entropy values in assignments, strong password literals of 8+ bytes, and `Authorization` headers with Basic or Bearer credentials |
 | Custom | Your own regexes in [`.rayloc.yaml`](#configuration) |
 
 A finding means a credential **may** be exposed. rayloc does not check whether it
