@@ -326,9 +326,12 @@ fn oversized_jose_headers_and_deep_json_report_incomplete_scans() {
 }
 #[test]
 fn quoted_authorization_headers_capture_only_the_bearer_value() {
-    let line = b"{\"Authorization\": \"Bearer Q7v2n9B4x6M1z8K3\"}";
+    // The double space keeps this fixture on the context path: the builtin
+    // bearer-header rule only captures markers that end immediately before
+    // the value.
+    let line = b"{\"Authorization\": \"Bearer  Q7v2n9B4x6M1z8K3\"}";
     let matches = rules(line);
-    assert_eq!(matches, [("context-secret", 26..42)]);
+    assert_eq!(matches, [("context-secret", 27..43)]);
 }
 #[test]
 fn strong_context_words_use_snake_and_camel_boundaries() {

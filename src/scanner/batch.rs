@@ -543,18 +543,10 @@ pub(super) fn execute_wave(
             .checked_add(committed_bytes)
             .ok_or(ScanError::CounterOverflow)?;
         result?;
-        for i in 1..plan.len {
+        for batch in &plan.batches[1..plan.len] {
             let bytes_before = progress.bytes_read;
             let result = scan_serial_batch(
-                bytes,
-                plan.batches[i],
-                context,
-                limits,
-                progress,
-                line,
-                outcome,
-                collector,
-                emitter,
+                bytes, *batch, context, limits, progress, line, outcome, collector, emitter,
             );
             let committed_bytes = progress.bytes_read - bytes_before;
             outcome.stats.bytes_read = outcome

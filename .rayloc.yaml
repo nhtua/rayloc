@@ -4,6 +4,13 @@ version: "1"
 default_entropy_threshold: 4.5
 rules: []
 accepted:
+  - "wxy30"
+  - "xmf40"
+  - "25n85"
+  - "cv32x"
+  - "3mcev"
+  - "33131"
+  - "ftpf7"
   - "zx74a"
   - "x6mbn"
   - "tkfr9"
